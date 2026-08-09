@@ -1,0 +1,11 @@
+{
+  "name": "geopixelcons-library",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Versioned GeoPixelcons++ feature library bundle",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node --test tests/*.test.mjs",
+    "verify": "npm run build && npm test"
+  }
+}
