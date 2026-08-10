@@ -1,2 +1,37 @@
-# geopixelcons-library
-A place to store the growing Geopixelcons code
+# GeoPixelcons Library
+
+The versioned, readable `@require` bundle for GeoPixelcons++. It owns the large
+feature implementation while the companion shell stays tiny enough for
+Greasyfork.
+
+The first migration is deliberately compatibility-first: the legacy private
+application IIFE remains intact inside an idempotent `GeoPixelconsLibrary.boot()`
+wrapper. That moves code without `eval`, global-state leaks, or a risky
+feature-by-feature rewrite.
+
+## Local verification
+
+```powershell
+npm ci
+npm run verify
+```
+
+`dist/geopixelcons-library.js` is committed because jsDelivr serves this exact
+file from an immutable Git tag. Never hand-edit it; rebuild it with `npm run
+build`.
+
+## Releases
+
+1. Work on an internal `feature/<name>` branch and open a PR to `main`.
+2. The PR workflow creates immutable preview tags such as
+   `v1.0.0-feature-library-migration-1`. They are test candidates, never the
+   URL published to Greasyfork.
+3. For the one-time `v1.0.0` baseline, merge the reviewed PR and manually run
+   **Bootstrap stable release** from GitHub Actions. That creates the first
+   stable GitHub Release and tag without changing `main`.
+4. Later, Release Please opens a separate, reviewable release PR after merged
+   `feat:` or `fix:` work. Merging that PR creates the stable tag and release.
+5. Verify the jsDelivr bytes and SRI before updating the shell repository.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md), [AGENTS.md](AGENTS.md), and
+[CLAUDE.md](CLAUDE.md) for the architecture and AI working agreement.

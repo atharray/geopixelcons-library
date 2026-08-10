@@ -1,0 +1,44 @@
+name: Prepare stable release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-main
+  cancel-in-progress: false
+
+jobs:
+  bootstrap-check:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - id: check
+        name: Require the one-time stable baseline tag
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Release Please is waiting for the explicit v${version} bootstrap tag."
+          fi
+  release-please:
+    needs: bootstrap-check
+    if: needs.bootstrap-check.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

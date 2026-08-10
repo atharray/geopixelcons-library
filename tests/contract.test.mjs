@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import vm from 'node:vm';
+
+const artifact = readFileSync(new URL('../dist/geopixelcons-library.js', import.meta.url), 'utf8');
+
+test('loads as a side-effect-free factory before the main userscript', () => {
+    const sandbox = { Object, Error };
+    vm.createContext(sandbox);
+    assert.doesNotThrow(() => vm.runInContext(artifact, sandbox, { filename: 'geopixelcons-library.js' }));
+    assert.equal(sandbox.GeoPixelconsLibrary.version, '1.0.0');
+    assert.equal(typeof sandbox.GeoPixelconsLibrary.boot, 'function');
+});
+
+test('keeps the legacy application behind the boot boundary', () => {
+    assert.match(artifact, /function boot\(\)/);
+    assert.match(artifact, /FEATURE: Mobile System Overhaul/);
+    assert.match(artifact, /const VERSION = '2\.0\.0';/);
+    assert.match(artifact, /const LIBRARY_VERSION = '1\.0\.0'; \/\/ x-release-please-version/);
+});
