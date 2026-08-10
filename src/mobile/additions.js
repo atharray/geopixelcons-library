@@ -706,11 +706,20 @@
         // highest-volume mutation source on this page (markers/overlays
         // repositioning every frame), and nothing this controller cares
         // about (the UI scale targets, toggleEyedropper_Bottom, commitBtn)
-        // ever lives inside the map/renderer container, so a mutation whose
-        // target sits inside it can never affect this controller.
+        // ever lives inside any of these containers, so a mutation whose
+        // target sits inside one can never affect this controller.
+        // #players-container (guild-overhaul.js) confirmed via source read:
+        // its updatePlayerPositions() sets marker.element.style on every
+        // map move/rotate/zoom tick -- exactly the "zooming in and out is
+        // especially frame laggy" symptom, and it's a document.body child,
+        // not nested under #map/.maplibregl-canvas-container/#gpp-renderer-root
+        // at all, so it was invisible to this guard before. #territory-canvas,
+        // #gpc-markers-canvas, #gpc-markers-overlay are the same class of
+        // always-on, map-reactive overlay from other features.
         function mutationTargetInMapContainer(target) {
             return !!(target && typeof target.closest === 'function'
-                && target.closest('#map, .maplibregl-canvas-container, #gpp-renderer-root'));
+                && target.closest('#map, .maplibregl-canvas-container, #gpp-renderer-root, '
+                    + '#players-container, #territory-canvas, #gpc-markers-canvas, #gpc-markers-overlay'));
         }
 
         function onMutations(records) {

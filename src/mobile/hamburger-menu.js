@@ -611,11 +611,22 @@
         // manual tree-walk work: pan/zoom on the map is by far the
         // highest-volume mutation source on this page (markers/overlays
         // repositioning every frame), and #controls-left never lives inside
-        // the map/renderer container, so a mutation whose target sits
-        // inside it can never affect this menu.
+        // any of these containers, so a mutation whose target sits inside
+        // one can never affect this menu. This observer is the most exposed
+        // of the three to that noise -- it's the only one that also watches
+        // `style` attribute changes across the whole document subtree, and
+        // #players-container (guild-overhaul.js) confirmed via source read:
+        // its updatePlayerPositions() sets marker.element.style on every
+        // map move/rotate/zoom tick, and it's a document.body child, not
+        // nested under #map/.maplibregl-canvas-container/#gpp-renderer-root
+        // at all -- exactly the "zooming in and out is especially frame
+        // laggy" symptom. #territory-canvas, #gpc-markers-canvas,
+        // #gpc-markers-overlay are the same class of always-on, map-reactive
+        // overlay from other features.
         function mutationTargetInMapContainer(target) {
             return !!(target && typeof target.closest === 'function'
-                && target.closest('#map, .maplibregl-canvas-container, #gpp-renderer-root'));
+                && target.closest('#map, .maplibregl-canvas-container, #gpp-renderer-root, '
+                    + '#players-container, #territory-canvas, #gpc-markers-canvas, #gpc-markers-overlay'));
         }
 
         function mutationsAffectMenu(records) {
@@ -651,6 +662,18 @@
             if (mutationsAffectMenu(records)) scheduleRefresh();
         }
 
+        // Split into three narrower .observe() registrations on the same
+        // observer instance (records from all three are delivered merged
+        // into one onMutations() call, same as one broad registration)
+        // instead of a single document-wide attributes+childList+subtree
+        // watch. That single broad watch used to mean ANY attribute change
+        // ANYWHERE on the page -- most notably map markers/overlays
+        // repositioning via their own `style` attribute during pan/zoom --
+        // had to be filtered here, making this the most exposed of the
+        // three mobile MutationObservers to that noise (the other two never
+        // watch attributes at all). mutationsAffectMenu()'s own filtering
+        // logic is unchanged; it's already correct for records from any of
+        // these three sources.
         function observe() {
             const MutationObserverCtor = windowRef && windowRef.MutationObserver
                 ? windowRef.MutationObserver
@@ -658,20 +681,39 @@
             const target = documentRef.documentElement || documentRef.body;
             if (!MutationObserverCtor || !target) return;
             if (!observer) observer = new MutationObserverCtor(onMutations);
-            observer.observe(target, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: [
-                    'class',
-                    'title',
-                    'disabled',
-                    'aria-disabled',
-                    'aria-label',
-                    'hidden',
-                    'style',
-                ],
-            });
+            // Broad but cheap: childList only, so a brand-new #controls-left
+            // (or one removed and replaced) is still detected wherever it
+            // appears -- structural changes are comparatively rare next to
+            // the constant stream of attribute churn elsewhere on the page.
+            observer.observe(target, { childList: true, subtree: true });
+            // Narrow: only body's own class attribute, for live theme
+            // (dark/light) reactivity -- mirrors native-controls.js's own
+            // identical registration for the same purpose.
+            if (documentRef.body) {
+                observer.observe(documentRef.body, { attributes: true, attributeFilter: ['class'] });
+            }
+            // Narrow but deep: full attribute tracking, scoped to
+            // #controls-left's own subtree only, once it's known to exist --
+            // this is the detailed native-button-state tracking (enabled/
+            // disabled, alert markers, labels) this menu actually needs;
+            // nothing outside #controls-left was ever relevant to it.
+            const controlsLeft = documentRef.getElementById('controls-left');
+            if (controlsLeft) {
+                observer.observe(controlsLeft, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: [
+                        'class',
+                        'title',
+                        'disabled',
+                        'aria-disabled',
+                        'aria-label',
+                        'hidden',
+                        'style',
+                    ],
+                });
+            }
         }
 
         function refresh() {

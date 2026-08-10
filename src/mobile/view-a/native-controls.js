@@ -61,7 +61,7 @@
     // (installMobileTheme(), theme.js) now -- no per-render dark-mode
     // detection or hex-literal branching needed here at all; the cascade
     // reacts to the site's own `body.dark` class on its own.
-    function applyMobilePanelTheme(documentRef, shell) {
+    function applyMobilePanelTheme(documentRef, shell, lifecycle) {
         setMobileCssText(shell.root, [
             'position:fixed',
             'left:0',
@@ -103,6 +103,28 @@
         // way as shell.closeButton, an ordinary icon-only row control.
         const brushSwapProxy = documentRef.getElementById(MOBILE_BRUSH_SWAP_PROXY_ID);
         if (brushSwapProxy) applyBrushSwapProxyTheme(brushSwapProxy);
+        // Round 4 real-device feedback: the real Paint button carries
+        // native classes that let it grow to fill the row's available
+        // flex space, making it far wider than any other control here.
+        // Individual style.setProperty(..., 'important') calls (not
+        // setMobileCssText's wholesale cssText overwrite, which would
+        // clobber whatever else the native game code has already set
+        // inline on this specific button) cap it to a fixed, compact size
+        // without touching anything else about it. capturePresentation()
+        // first, same as every other native element this controller
+        // touches -- without it, these inline styles are never restored
+        // on destroy(), permanently narrowing the real Paint button even
+        // after Mobile Overhaul tears down.
+        const commitBtn = documentRef.getElementById('commitBtn');
+        if (commitBtn) {
+            if (lifecycle && typeof lifecycle.capturePresentation === 'function') {
+                lifecycle.capturePresentation(commitBtn);
+            }
+            commitBtn.style.setProperty('flex', '0 1 auto', 'important');
+            commitBtn.style.setProperty('width', 'auto', 'important');
+            commitBtn.style.setProperty('min-width', '64px', 'important');
+            commitBtn.style.setProperty('max-width', '96px', 'important');
+        }
         setMobileCssText(shell.row, [
             'display:flex',
             'align-items:center',
@@ -190,7 +212,7 @@
 
             shell = { root, panel, closeButton, row };
             lifecycle.listen(closeButton, 'click', closePanel);
-            applyMobilePanelTheme(documentRef, shell);
+            applyMobilePanelTheme(documentRef, shell, lifecycle);
             syncOpenPresentation();
             return shell;
         }
@@ -553,7 +575,7 @@
             if (destroyed) return controller;
             if (typeof bridge.ensureRuntimeHooks === 'function') bridge.ensureRuntimeHooks();
             ensureShell();
-            if (shell) applyMobilePanelTheme(documentRef, shell);
+            if (shell) applyMobilePanelTheme(documentRef, shell, lifecycle);
             suppressSurface(documentRef.getElementById('bottomControls'));
             suppressSurface(documentRef.getElementById('gpp-modal'));
             relocateNativeControls();
@@ -613,12 +635,21 @@
         // querySelector work above: pan/zoom on the map is by far the
         // highest-volume mutation source on this page (markers/overlays
         // repositioning every frame), and none of the ids/selectors this
-        // controller ever cares about live inside the map/renderer
-        // container -- so a mutation whose target sits inside it can never
-        // affect this controller and is safe to discard immediately.
+        // controller ever cares about live inside any of these containers --
+        // so a mutation whose target sits inside one can never affect this
+        // controller and is safe to discard immediately. #players-container
+        // (guild-overhaul.js) confirmed via source read: its
+        // updatePlayerPositions() sets marker.element.style on every map
+        // move/rotate/zoom tick -- exactly the "zooming in and out is
+        // especially frame laggy" symptom, and it's a document.body child,
+        // not nested under #map/.maplibregl-canvas-container/#gpp-renderer-root
+        // at all, so it was invisible to this guard before. #territory-canvas,
+        // #gpc-markers-canvas, #gpc-markers-overlay are the same class of
+        // always-on, map-reactive overlay from other features.
         function nativeMutationTargetInMapContainer(target) {
             return !!(target && typeof target.closest === 'function'
-                && target.closest('#map, .maplibregl-canvas-container, #gpp-renderer-root'));
+                && target.closest('#map, .maplibregl-canvas-container, #gpp-renderer-root, '
+                    + '#players-container, #territory-canvas, #gpc-markers-canvas, #gpc-markers-overlay'));
         }
 
         function nativeMutationsAffectController(records) {
