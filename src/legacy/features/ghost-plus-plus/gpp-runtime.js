@@ -386,7 +386,15 @@
         } else {
             deletions.push(gppDbDelete(GPP_TEMPLATE_STORE, template.id));
         }
-        await Promise.all(deletions);
+        // Mutate in-memory state synchronously, BEFORE awaiting the
+        // IndexedDB deletes -- matching every gppMobile* mutator's own
+        // ordering. A concurrent write for this same template (e.g. Mobile
+        // Overhaul's color-sync listener, which resolves the focused
+        // template synchronously off gppTemplates/gppFocusedTemplateId on
+        // every native color-pick event) must see the template already
+        // gone, not still resolvable, or its own later-created PUT
+        // transaction can land after this function's DELETE transaction
+        // commits and resurrect an orphaned state row.
         gppTemplates = gppTemplates.filter(t => t.id !== template.id);
         gppNormalizeTemplateOrder();
         if (gppFocusedTemplateId === template.id) {
@@ -394,6 +402,7 @@
             gppSettings.focusedTemplateId = gppFocusedTemplateId;
             gppSaveSettings();
         }
+        await Promise.all(deletions);
         await Promise.all(gppTemplates.map(gppPersistTemplateState));
     }
 
