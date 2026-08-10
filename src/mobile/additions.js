@@ -12,11 +12,9 @@
     const MOBILE_UI_SCALE_TARGET_SELECTOR = [
         '[data-gpc-mobile-scale-surface]',
         '#gpc-mobile-hamburger',
-        '.gpc-mobile-panel-header',
         '.gpc-mobile-native-controls-row',
         '.gpc-mobile-view-a',
         '.gpc-mobile-view-b',
-        '#gpc-mobile-template-reticle',
     ].join(',');
 
     function createMobileAdditions(bridge, lifecycle, shell, callbacks) {
@@ -135,15 +133,7 @@
         const style = element('style');
         style.textContent = `
             .gpc-mobile-additions {
-                --gma-surface: #ffffff; --gma-surface-2: #f8fafc; --gma-text: #1e293b;
-                --gma-muted: #64748b; --gma-border: #cbd5e1; --gma-button: #e2e8f0;
-                --gma-accent: #2563eb; --gma-danger: #b91c1c;
-                color: var(--gma-text); font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-            }
-            body.dark .gpc-mobile-additions {
-                --gma-surface: #1e1e2e; --gma-surface-2: #313244; --gma-text: #cdd6f4;
-                --gma-muted: #a6adc8; --gma-border: #585b70; --gma-button: #45475a;
-                --gma-accent: #89b4fa; --gma-danger: #f38ba8;
+                color: var(--gpp-mobile-text); font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
             }
             .gpc-mobile-preview-overlay[hidden], .gpc-mobile-ui-scale-slider[hidden] { display: none !important; }
             .gpc-mobile-preview-overlay {
@@ -156,24 +146,24 @@
             .gpc-mobile-preview-card {
                 box-sizing: border-box; width: min(94vw, 520px); max-height: min(88vh, 760px);
                 display: flex; flex-direction: column; gap: 10px; overflow: auto; padding: 14px;
-                border: 1px solid var(--gma-border); border-radius: 14px; background: var(--gma-surface);
-                color: var(--gma-text); box-shadow: 0 18px 50px rgba(0,0,0,.35);
+                border: 1px solid var(--gpp-mobile-border); border-radius: 14px; background: var(--gpp-mobile-surface);
+                color: var(--gpp-mobile-text); box-shadow: 0 18px 50px rgba(0,0,0,.35);
                 padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));
             }
             .gpc-mobile-preview-header { display: flex; align-items: center; gap: 8px; }
             .gpc-mobile-preview-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 18px; }
             .gpc-mobile-preview-close, .gpc-mobile-preview-action, .gpc-mobile-eyedropper-fallback {
-                box-sizing: border-box; min-width: 44px; min-height: 44px; border: 1px solid var(--gma-border);
-                border-radius: 9px; padding: 8px 11px; background: var(--gma-button); color: var(--gma-text);
+                box-sizing: border-box; min-width: 44px; min-height: 44px; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 9px; padding: 8px 11px; background: var(--gpp-mobile-surface-3); color: var(--gpp-mobile-text);
                 font: inherit; font-weight: 650; cursor: pointer; touch-action: manipulation;
             }
             .gpc-mobile-preview-close { font-size: 20px; line-height: 1; }
             .gpc-mobile-preview-action:focus-visible, .gpc-mobile-preview-close:focus-visible,
             .gpc-mobile-ui-scale-button:focus-visible, .gpc-mobile-ui-scale-range:focus-visible,
-            .gpc-mobile-preview-scope:focus-visible { outline: 3px solid var(--gma-accent); outline-offset: 2px; }
+            .gpc-mobile-preview-scope:focus-visible { outline: 3px solid var(--gpp-mobile-focus); outline-offset: 2px; }
             .gpc-mobile-preview-frame {
                 min-height: 132px; display: grid; place-items: center; overflow: auto; padding: 8px;
-                border: 1px solid var(--gma-border); border-radius: 10px; background: var(--gma-surface-2);
+                border: 1px solid var(--gpp-mobile-border); border-radius: 10px; background: var(--gpp-mobile-surface-2);
             }
             .gpc-mobile-preview-frame canvas, .gpc-mobile-preview-frame img {
                 display: block; max-width: 100%; height: auto; image-rendering: pixelated;
@@ -181,29 +171,30 @@
             .gpc-mobile-preview-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
             .gpc-mobile-preview-hex { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
             .gpc-mobile-preview-scope {
-                box-sizing: border-box; min-height: 44px; width: 100%; border: 1px solid var(--gma-border);
-                border-radius: 9px; padding: 8px; background: var(--gma-surface-2); color: var(--gma-text); font: inherit;
+                box-sizing: border-box; min-height: 44px; width: 100%; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 9px; padding: 8px; background: var(--gpp-mobile-surface-2); color: var(--gpp-mobile-text); font: inherit;
             }
-            .gpc-mobile-preview-status { min-height: 1.3em; color: var(--gma-muted); font-size: 13px; }
-            .gpc-mobile-preview-status[data-kind="error"] { color: var(--gma-danger); }
+            .gpc-mobile-preview-status { min-height: 1.3em; color: var(--gpp-mobile-muted); font-size: 13px; }
+            .gpc-mobile-preview-status[data-kind="error"] { color: var(--gpp-mobile-danger); }
             .gpc-mobile-preview-status[data-kind="success"] { color: #15803d; }
             body.dark .gpc-mobile-preview-status[data-kind="success"] { color: #a6e3a1; }
             .gpc-mobile-ui-scale-control {
-                position: fixed; z-index: 100020; top: max(8px, env(safe-area-inset-top, 0px));
-                right: max(8px, env(safe-area-inset-right, 0px)); pointer-events: auto;
+                /* An ordinary row item now, alongside the relocated native
+                   controls and the close button -- not a floating corner
+                   overlay with no relationship to anything else on screen. */
+                flex: 0 0 auto; display: flex; align-items: center;
             }
             .gpc-mobile-ui-scale-surface {
                 display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 4px;
-                border: 1px solid var(--gma-border); border-radius: 11px; background: var(--gma-surface);
-                box-shadow: 0 5px 18px rgba(0,0,0,.2);
+                border: 1px solid var(--gpp-mobile-border); border-radius: 11px; background: var(--gpp-mobile-surface-2);
             }
             .gpc-mobile-ui-scale-button {
                 box-sizing: border-box; min-width: 58px; min-height: 44px; border: 0; border-radius: 8px;
-                padding: 7px; background: var(--gma-button); color: var(--gma-text); font: inherit;
+                padding: 7px; background: var(--gpp-mobile-surface-3); color: var(--gpp-mobile-text); font: inherit;
                 font-weight: 700; cursor: pointer; touch-action: manipulation;
             }
             .gpc-mobile-ui-scale-slider { display: flex; align-items: center; gap: 6px; min-width: 170px; }
-            .gpc-mobile-ui-scale-range { min-width: 118px; min-height: 44px; accent-color: var(--gma-accent); touch-action: none; }
+            .gpc-mobile-ui-scale-range { min-width: 118px; min-height: 44px; accent-color: var(--gpp-mobile-focus); touch-action: none; }
             .gpc-mobile-ui-scale-output { min-width: 42px; font-size: 12px; font-weight: 700; text-align: right; }
             .gpc-mobile-eyedropper-label { margin-left: 4px; font: inherit; font-size: 12px; }
             @media (orientation: landscape) and (max-height: 520px) {
@@ -211,7 +202,6 @@
                 .gpc-mobile-preview-card { width: min(96vw, 720px); max-height: calc(100vh - 12px); }
                 .gpc-mobile-preview-frame { min-height: 88px; max-height: 34vh; }
                 .gpc-mobile-preview-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-                .gpc-mobile-ui-scale-control { top: max(4px, env(safe-area-inset-top, 0px)); }
             }
             @media (max-width: 380px) {
                 .gpc-mobile-preview-actions, .gpc-mobile-preview-hex { grid-template-columns: 1fr; }
@@ -238,7 +228,7 @@
         const previewHeader = element('div', 'gpc-mobile-preview-header');
         const previewTitle = element('h2', 'gpc-mobile-preview-title', 'Template preview');
         previewTitle.id = 'gpc-mobile-preview-title';
-        const closeButton = button('gpc-mobile-preview-close', '\u00d7', 'Close template preview');
+        const closeButton = button('gpc-mobile-preview-close', '\u2715', 'Close template preview');
         previewHeader.appendChild(previewTitle);
         previewHeader.appendChild(closeButton);
 
@@ -349,7 +339,6 @@
 
         function collectScaleTargets() {
             const candidates = [
-                shell.header,
                 shell.row,
                 previewCard,
                 scaleSurface,
@@ -888,7 +877,12 @@
         }
 
         mountTarget.appendChild(overlay);
-        mountTarget.appendChild(scaleRoot);
+        // The scale control lives in the native controls row now (an
+        // ordinary row item, not a floating top-right corner button with no
+        // relationship to anything else on screen) -- shell.row itself is
+        // always append-last by native-controls.js's own refresh(), so this
+        // only needs to land somewhere inside it, not specifically last.
+        shell.row.appendChild(scaleRoot);
 
         return controller;
     }

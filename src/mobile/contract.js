@@ -12,7 +12,8 @@
     const MOBILE_OVERHAUL_BRIDGE_METHODS = [
         'isDark', 'ready', 'subscribeRefresh', 'getTemplates', 'getFocusedTemplate',
         'focusTemplate', 'deleteTemplate', 'getPaletteRows', 'selectColor', 'renderThumbnail',
-        'renderFullPreview', 'readCenterGrid', 'canEditPosition', 'commitPosition', 'nudge',
+        'renderFullPreview', 'readCenterGrid', 'canEditPosition', 'commitPosition',
+        'beginPlacement', 'cancelPlacement', 'isPlacementActive', 'nudge',
         'isPreviewForced', 'togglePreview', 'setGroupNoise', 'scanTemplate', 'getScanBusy',
         'buyUnownedColors', 'getHexValues', 'copyHexValues', 'goTo', 'activateEyedropper',
         'getSelectedPaintColor', 'ensureRuntimeHooks', 'disposeHostEffects',

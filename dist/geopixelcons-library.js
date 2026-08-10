@@ -18,6 +18,82 @@ var mobileOverhaulInit = (function () {
     const GPP_MOBILE_UI_VERSION = '1.0.0';
 
 
+    // Shared visual token source for the whole Mobile System Overhaul UI.
+    // Matches Ghost++'s own actual palette (gpp-ui-shell.js's t2(light, dark)
+    // calls) exactly, so the mobile surface looks and feels like one
+    // product instead of five independently-tuned palettes (the previous
+    // state: panel-core.js's --mva-*, template-settings.js's --mvb-*, and
+    // additions.js's --gma-* custom-property blocks each invented their own
+    // slightly different grays/text colors, plus four unrelated "accent"
+    // hues -- blue/yellow/orange/green -- across the same feature; and
+    // native-controls.js/hamburger-menu.js hardcoded a fifth and sixth set
+    // of hex literals inline via their own JS-computed dark-mode checks).
+    //
+    // Every mobile file now reads these as plain CSS custom properties
+    // (var(--gpp-mobile-*)) instead of defining its own tokens or computing
+    // "is dark" in JS. The cascade handles light/dark automatically -- CSS
+    // custom properties re-resolve live if `body`'s `dark` class changes,
+    // with no re-render needed.
+    function installMobileTheme(documentRef) {
+        var doc = documentRef || (typeof document !== 'undefined' ? document : null);
+        if (!doc || !doc.head || doc.getElementById('gpc-mobile-theme-style')) return;
+        var style = doc.createElement('style');
+        style.id = 'gpc-mobile-theme-style';
+        style.textContent = `
+            :root {
+                --gpp-mobile-surface: #ffffff;
+                --gpp-mobile-surface-2: #f8fafc;
+                --gpp-mobile-surface-3: #e5e7eb;
+                --gpp-mobile-text: #111827;
+                --gpp-mobile-text-2: #334155;
+                --gpp-mobile-muted: #64748b;
+                --gpp-mobile-border: #d1d5db;
+                --gpp-mobile-focus: #2563eb;
+                --gpp-mobile-focus-wash: rgba(37, 99, 235, .06);
+                --gpp-mobile-danger: #dc2626;
+                --gpp-mobile-shadow: rgba(15, 23, 42, .28);
+            }
+            body.dark {
+                --gpp-mobile-surface: #1e1e2e;
+                --gpp-mobile-surface-2: #181825;
+                --gpp-mobile-surface-3: #313244;
+                --gpp-mobile-text: #f5f5f5;
+                --gpp-mobile-text-2: #cdd6f4;
+                --gpp-mobile-muted: #a6adc8;
+                --gpp-mobile-border: #45475a;
+                --gpp-mobile-focus: #89b4fa;
+                --gpp-mobile-focus-wash: rgba(137, 180, 250, .08);
+                --gpp-mobile-danger: #f38ba8;
+                --gpp-mobile-shadow: rgba(0, 0, 0, .6);
+            }
+        `;
+        doc.head.appendChild(style);
+    }
+
+    // Small inline-SVG icon set replacing the previous unclear/obscure
+    // unicode glyphs (a fisheye dot for "show all colors", a filled-square
+    // glyph for "hide thumbnail", etc.) with crisp, single-color icons that
+    // scale cleanly and can't render as a font-coverage tofu box. All are
+    // 18x18 viewBoxes, stroke-based, `currentColor`, matching a plain flat
+    // style rather than any particular icon library.
+    var MOBILE_ICONS = {
+        // 2x2 grid of small squares -- "every color swatch," for Show all colors.
+        showAllColors: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="6" height="6" rx="1"/><rect x="10" y="2" width="6" height="6" rx="1"/><rect x="2" y="10" width="6" height="6" rx="1"/><rect x="10" y="10" width="6" height="6" rx="1"/></svg>',
+        // A single framed square with a slash -- "hide/collapse the preview thumbnail."
+        hideThumbnail: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="12" height="12" rx="2"/><path d="M4 14 L14 4" stroke-linecap="round"/></svg>',
+        // A plain gear -- "template settings" -- rendered as crisp strokes
+        // instead of relying on a system emoji font's gear glyph.
+        settings: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="2.6"/><path d="M9 2.4v2.1M9 13.5v2.1M15.6 9h-2.1M4.5 9H2.4M13.6 4.4l-1.5 1.5M5.9 12.1l-1.5 1.5M13.6 13.6l-1.5-1.5M5.9 5.9L4.4 4.4" stroke-linecap="round"/></svg>',
+        // Ghost++'s own close glyph (U+2715), for visual consistency across
+        // the desktop and mobile shells instead of two different X characters.
+        close: '✕',
+    };
+
+    function mobileIconMarkup(name) {
+        return MOBILE_ICONS[name] || '';
+    }
+
+
     const MOBILE_OVERHAUL_API_VERSION = 1;
 
     // Every function-typed member gppBuildMobileOverhaulBridge() (the main
@@ -32,7 +108,8 @@ var mobileOverhaulInit = (function () {
     const MOBILE_OVERHAUL_BRIDGE_METHODS = [
         'isDark', 'ready', 'subscribeRefresh', 'getTemplates', 'getFocusedTemplate',
         'focusTemplate', 'deleteTemplate', 'getPaletteRows', 'selectColor', 'renderThumbnail',
-        'renderFullPreview', 'readCenterGrid', 'canEditPosition', 'commitPosition', 'nudge',
+        'renderFullPreview', 'readCenterGrid', 'canEditPosition', 'commitPosition',
+        'beginPlacement', 'cancelPlacement', 'isPlacementActive', 'nudge',
         'isPreviewForced', 'togglePreview', 'setGroupNoise', 'scanTemplate', 'getScanBusy',
         'buyUnownedColors', 'getHexValues', 'copyHexValues', 'goTo', 'activateEyedropper',
         'getSelectedPaintColor', 'ensureRuntimeHooks', 'disposeHostEffects',
@@ -374,15 +451,24 @@ var mobileOverhaulInit = (function () {
         }
     }
 
+    // Sets each declaration individually via setProperty() instead of
+    // overwriting the whole style.cssText. A full-cssText overwrite would
+    // silently wipe out any inline property this function doesn't own --
+    // concretely, additions.js applies the global UI scale as an inline
+    // `zoom` on this same root element, and a cssText overwrite from
+    // openMenu()'s own standalone refresh() (outside native-controls.js's
+    // refresh cycle, which would otherwise immediately reapply it) reset
+    // the scale back to 1 every time the hamburger opened.
     function mobileHamburgerSetCss(element, declarations) {
-        element.style.cssText = declarations.join(';');
-    }
-
-    function mobileHamburgerIsDark(documentRef) {
-        // GeoPixels' body.dark class is authoritative. Falling back to the OS
-        // preference can create a mixed light/dark surface when the site's
-        // explicit theme differs from the device theme.
-        return !!(documentRef.body && mobileHamburgerHasClass(documentRef.body, 'dark'));
+        for (const declaration of declarations) {
+            const separatorIndex = declaration.indexOf(':');
+            if (separatorIndex < 0) continue;
+            const property = declaration.slice(0, separatorIndex).trim();
+            const value = declaration.slice(separatorIndex + 1).trim();
+            if (element.style.getPropertyValue(property) !== value) {
+                element.style.setProperty(property, value);
+            }
+        }
     }
 
     function createMobileHamburgerMenu(bridge, lifecycle, callbacks = {}) {
@@ -534,7 +620,6 @@ var mobileOverhaulInit = (function () {
 
         function applyTheme() {
             if (!shell) return;
-            const dark = mobileHamburgerIsDark(documentRef);
             mobileHamburgerSetCss(shell.root, [
                 'position:fixed',
                 'top:calc(env(safe-area-inset-top, 0px) + 12px)',
@@ -550,11 +635,11 @@ var mobileOverhaulInit = (function () {
                 'width:44px',
                 'height:44px',
                 'padding:0',
-                'border:1px solid ' + (dark ? '#86efac' : '#15803d'),
+                'border:1px solid var(--gpp-mobile-focus)',
                 'border-radius:12px',
-                'background:' + (dark ? '#4ade80' : '#16a34a'),
-                'color:' + (dark ? '#052e16' : '#ffffff'),
-                'box-shadow:0 4px 14px ' + (dark ? 'rgba(0,0,0,0.45)' : 'rgba(15,23,42,0.25)'),
+                'background:var(--gpp-mobile-focus)',
+                'color:#ffffff',
+                'box-shadow:0 4px 14px var(--gpp-mobile-shadow)',
                 'font:700 25px/1 system-ui,-apple-system,sans-serif',
                 'cursor:pointer',
                 'touch-action:manipulation',
@@ -567,8 +652,8 @@ var mobileOverhaulInit = (function () {
                 'width:11px',
                 'height:11px',
                 'border-radius:999px',
-                'border:2px solid ' + (dark ? '#1e1e2e' : '#ffffff'),
-                'background:' + (dark ? '#f87171' : '#dc2626'),
+                'border:2px solid var(--gpp-mobile-surface)',
+                'background:var(--gpp-mobile-danger)',
                 'pointer-events:none',
             ]);
             mobileHamburgerSetCss(shell.menu, [
@@ -581,11 +666,11 @@ var mobileOverhaulInit = (function () {
                 'overflow-y:auto',
                 'overscroll-behavior:contain',
                 'padding:8px',
-                'border:1px solid ' + (dark ? '#45475a' : '#dbe3ee'),
+                'border:1px solid var(--gpp-mobile-border)',
                 'border-radius:12px',
-                'background:' + (dark ? '#1e1e2e' : '#ffffff'),
-                'color:' + (dark ? '#cdd6f4' : '#1e293b'),
-                'box-shadow:0 12px 32px ' + (dark ? 'rgba(0,0,0,0.55)' : 'rgba(15,23,42,0.24)'),
+                'background:var(--gpp-mobile-surface)',
+                'color:var(--gpp-mobile-text)',
+                'box-shadow:0 12px 32px var(--gpp-mobile-shadow)',
                 'touch-action:pan-y',
             ]);
         }
@@ -595,7 +680,7 @@ var mobileOverhaulInit = (function () {
             while (shell.menu.firstChild) shell.menu.removeChild(shell.menu.firstChild);
         }
 
-        function appendSection(path, hasAlert, dark) {
+        function appendSection(path, hasAlert) {
             const divider = documentRef.createElement('div');
             divider.className = 'gpc-mobile-flat-menu-section';
             divider.setAttribute('role', 'presentation');
@@ -606,8 +691,8 @@ var mobileOverhaulInit = (function () {
                 'min-height:28px',
                 'margin:5px 4px 3px',
                 'padding:5px 4px 3px',
-                'border-top:1px solid ' + (dark ? '#45475a' : '#e2e8f0'),
-                'color:' + (dark ? '#a6adc8' : '#64748b'),
+                'border-top:1px solid var(--gpp-mobile-border)',
+                'color:var(--gpp-mobile-muted)',
                 'font-size:11px',
                 'font-weight:800',
                 'letter-spacing:.035em',
@@ -623,7 +708,7 @@ var mobileOverhaulInit = (function () {
                     'width:8px',
                     'height:8px',
                     'border-radius:999px',
-                    'background:' + (dark ? '#f87171' : '#dc2626'),
+                    'background:var(--gpp-mobile-danger)',
                     'flex:0 0 auto',
                 ]);
                 divider.appendChild(marker);
@@ -631,7 +716,7 @@ var mobileOverhaulInit = (function () {
             shell.menu.appendChild(divider);
         }
 
-        function appendAction(action, index, dark) {
+        function appendAction(action, index) {
             const proxy = documentRef.createElement('button');
             proxy.type = 'button';
             proxy.className = 'gpc-mobile-flat-menu-action';
@@ -650,8 +735,8 @@ var mobileOverhaulInit = (function () {
                 'padding:9px 12px',
                 'border:0',
                 'border-radius:9px',
-                'background:' + (dark ? '#313244' : '#f1f5f9'),
-                'color:' + (dark ? '#cdd6f4' : '#1e293b'),
+                'background:var(--gpp-mobile-surface-2)',
+                'color:var(--gpp-mobile-text)',
                 'font:600 14px/1.25 system-ui,-apple-system,sans-serif',
                 'text-align:left',
                 'cursor:' + (action.disabled ? 'not-allowed' : 'pointer'),
@@ -670,7 +755,6 @@ var mobileOverhaulInit = (function () {
                 ? Number(activeBefore.getAttribute('data-gpc-mobile-action-index'))
                 : -1;
             clearMenu();
-            const dark = mobileHamburgerIsDark(documentRef);
             let currentPath = '';
             for (let index = 0; index < actions.length; index += 1) {
                 const action = actions[index];
@@ -679,10 +763,10 @@ var mobileOverhaulInit = (function () {
                     const sectionHasAlert = actions.some(candidate => (
                         candidate.path.join(' \u203a ') === path && candidate.alert
                     ));
-                    appendSection(path, sectionHasAlert, dark);
+                    appendSection(path, sectionHasAlert);
                     currentPath = path;
                 }
-                appendAction(action, index, dark);
+                appendAction(action, index);
             }
 
             if (actions.length === 0) {
@@ -692,7 +776,7 @@ var mobileOverhaulInit = (function () {
                 mobileHamburgerSetCss(empty, [
                     'margin:0',
                     'padding:12px',
-                    'color:' + (dark ? '#a6adc8' : '#64748b'),
+                    'color:var(--gpp-mobile-muted)',
                     'font-size:13px',
                 ]);
                 shell.menu.appendChild(empty);
@@ -1069,8 +1153,8 @@ var mobileOverhaulInit = (function () {
         if (!bridge || typeof bridge !== 'object') {
             throw new TypeError('View A requires the Mobile Overhaul bridge');
         }
-        if (!shell || !shell.panel || !shell.header || !shell.row) {
-            throw new TypeError('View A requires shell.panel, shell.header, and shell.row');
+        if (!shell || !shell.panel || !shell.row) {
+            throw new TypeError('View A requires shell.panel and shell.row');
         }
 
         const documentRef = (bridge.env && bridge.env.document) || shell.panel.ownerDocument;
@@ -1155,6 +1239,12 @@ var mobileOverhaulInit = (function () {
             return node;
         }
 
+        function iconButton(className, iconName, label) {
+            const node = button(className, undefined, label);
+            node.innerHTML = mobileIconMarkup(iconName);
+            return node;
+        }
+
         function listen(target, type, listener, options) {
             if (!target || typeof target.addEventListener !== 'function') return;
             if (lifecycle && typeof lifecycle.listen === 'function') {
@@ -1206,18 +1296,10 @@ var mobileOverhaulInit = (function () {
         const staticStyle = element('style');
         staticStyle.textContent = `
             .gpc-mobile-view-a {
-                --mva-surface: #ffffff; --mva-surface-2: #f8fafc; --mva-text: #1e293b;
-                --mva-muted: #64748b; --mva-border: #cbd5e1; --mva-button: #e2e8f0;
-                --mva-button-active: #facc15; --mva-focus: #2563eb; --mva-danger: #b91c1c;
                 box-sizing: border-box; position: relative; display: flex; flex: 1 1 auto; min-height: 0;
                 flex-direction: column; gap: 6px; overflow: hidden; padding: 4px 48px 4px 0;
-                color: var(--mva-text);
+                color: var(--gpp-mobile-text);
                 overscroll-behavior: contain;
-            }
-            body.dark .gpc-mobile-view-a {
-                --mva-surface: #1e1e2e; --mva-surface-2: #313244; --mva-text: #cdd6f4;
-                --mva-muted: #a6adc8; --mva-border: #585b70; --mva-button: #45475a;
-                --mva-button-active: #f9e2af; --mva-focus: #89b4fa; --mva-danger: #f38ba8;
             }
             .gpc-mva-resize-handle {
                 position: absolute; z-index: 4; top: 0; right: 0; width: 44px; height: 100%;
@@ -1227,38 +1309,38 @@ var mobileOverhaulInit = (function () {
             .gpc-mva-resize-handle::after {
                 content: ''; position: absolute; top: 50%; right: 12px; width: 4px; height: 32px;
                 transform: translateY(-50%);
-                border-radius: 999px; background: var(--mva-border);
+                border-radius: 999px; background: var(--gpp-mobile-border);
             }
             .gpc-mva-toolbar { display: flex; align-items: center; gap: 6px; min-width: 0; }
             .gpc-mva-search, .gpc-mva-select, .gpc-mva-count {
-                box-sizing: border-box; min-height: 44px; border: 1px solid var(--mva-border);
-                border-radius: 8px; background: var(--mva-surface-2); color: var(--mva-text);
+                box-sizing: border-box; min-height: 44px; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 8px; background: var(--gpp-mobile-surface-2); color: var(--gpp-mobile-text);
                 font: inherit; font-size: 14px; padding: 8px;
             }
             .gpc-mva-search { flex: 1 1 110px; min-width: 88px; }
             .gpc-mva-tool-button {
                 box-sizing: border-box; min-width: 44px; min-height: 44px; padding: 6px 9px;
-                border: 1px solid var(--mva-border); border-radius: 8px;
-                background: var(--mva-button); color: var(--mva-text); font: inherit;
+                border: 1px solid var(--gpp-mobile-border); border-radius: 8px;
+                background: var(--gpp-mobile-surface-3); color: var(--gpp-mobile-text); font: inherit;
                 font-size: 18px; cursor: pointer; touch-action: manipulation;
+                display: inline-flex; align-items: center; justify-content: center;
             }
             .gpc-mva-tool-button[aria-pressed='true'] {
-                background: var(--mva-button-active); color: #422006;
-                box-shadow: 0 0 0 2px color-mix(in srgb, var(--mva-button-active) 50%, transparent);
+                background: var(--gpp-mobile-focus); color: #ffffff;
+                box-shadow: 0 0 0 2px var(--gpp-mobile-focus-wash);
             }
-            body.dark .gpc-mva-tool-button[aria-pressed='true'] { color: #422006; }
             .gpc-mva-fold-region { position: relative; }
             .gpc-mva-fold {
                 position: absolute; z-index: 8; right: 0; bottom: calc(100% + 6px); width: min(360px, 92vw);
                 box-sizing: border-box; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-                padding: 10px; border: 1px solid var(--mva-border); border-radius: 10px;
-                background: var(--mva-surface); color: var(--mva-text);
+                padding: 10px; border: 1px solid var(--gpp-mobile-border); border-radius: 10px;
+                background: var(--gpp-mobile-surface); color: var(--gpp-mobile-text);
                 box-shadow: 0 8px 24px rgba(15, 23, 42, .24); overscroll-behavior: contain;
             }
             body.dark .gpc-mva-fold { box-shadow: 0 8px 24px rgba(0, 0, 0, .45); }
             .gpc-mva-fold[hidden] { display: none; }
             .gpc-mva-field { display: flex; min-width: 0; flex-direction: column; gap: 4px;
-                color: var(--mva-muted); font-size: 12px; font-weight: 700; }
+                color: var(--gpp-mobile-muted); font-size: 12px; font-weight: 700; }
             .gpc-mva-filter { min-height: 132px; }
             .gpc-mva-count-row { grid-column: 1 / -1; display: flex; gap: 8px; }
             .gpc-mva-count { width: 50%; }
@@ -1276,10 +1358,10 @@ var mobileOverhaulInit = (function () {
             }
             .gpc-mva-swatch {
                 box-sizing: border-box; position: relative; flex: 0 0 58px; min-width: 58px; min-height: 54px;
-                border: 2px solid var(--mva-border); border-radius: 9px; overflow: hidden;
+                border: 2px solid var(--gpp-mobile-border); border-radius: 9px; overflow: hidden;
                 cursor: pointer; scroll-snap-align: start; touch-action: manipulation;
             }
-            .gpc-mva-swatch[aria-pressed='true'] { border-color: var(--mva-focus); box-shadow: 0 0 0 2px var(--mva-focus); }
+            .gpc-mva-swatch[aria-pressed='true'] { border-color: var(--gpp-mobile-focus); box-shadow: 0 0 0 2px var(--gpp-mobile-focus); }
             .gpc-mva-swatch:disabled { cursor: progress; opacity: .65; }
             .gpc-mva-swatch-label {
                 position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 1px;
@@ -1288,21 +1370,21 @@ var mobileOverhaulInit = (function () {
             }
             body.dark .gpc-mva-swatch-label { background: rgba(0, 0, 0, .78); color: #ffffff; }
             .gpc-mva-scrub { box-sizing: border-box; width: 100%; min-height: 24px; margin: 0; touch-action: pan-x; }
-            .gpc-mva-empty { align-self: center; padding: 8px; color: var(--mva-muted); font-size: 12px; }
+            .gpc-mva-empty { align-self: center; padding: 8px; color: var(--gpp-mobile-muted); font-size: 12px; }
             .gpc-mva-thumbnail-column { display: flex; min-width: 0; flex-direction: column; }
             .gpc-mva-thumbnail {
                 box-sizing: border-box; display: flex; flex: 1 1 auto; min-height: 64px; align-items: center;
-                justify-content: center; padding: 4px; border: 1px solid var(--mva-border);
-                border-radius: 9px; background: var(--mva-surface-2); color: var(--mva-muted);
+                justify-content: center; padding: 4px; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 9px; background: var(--gpp-mobile-surface-2); color: var(--gpp-mobile-muted);
                 overflow: hidden; cursor: pointer; touch-action: manipulation;
             }
             .gpc-mva-thumbnail canvas, .gpc-mva-thumbnail img {
                 display: block; max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: pixelated;
             }
-            .gpc-mva-stats { flex: 0 0 auto; min-height: 18px; color: var(--mva-muted);
+            .gpc-mva-stats { flex: 0 0 auto; min-height: 18px; color: var(--gpp-mobile-muted);
                 font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .gpc-mva-status { min-height: 16px; color: var(--mva-danger); font-size: 11px; }
-            .gpc-mobile-view-a :focus-visible { outline: 3px solid var(--mva-focus); outline-offset: 2px; }
+            .gpc-mva-status { min-height: 16px; color: var(--gpp-mobile-danger); font-size: 11px; }
+            .gpc-mobile-view-a :focus-visible { outline: 3px solid var(--gpp-mobile-focus); outline-offset: 2px; }
             @media (orientation: landscape) and (max-height: 520px) {
                 .gpc-mobile-view-a { gap: 3px; padding-bottom: max(2px, env(safe-area-inset-bottom, 0px)); }
                 .gpc-mva-workspace { min-height: 54px; }
@@ -1326,15 +1408,15 @@ var mobileOverhaulInit = (function () {
         searchInput.spellcheck = false;
         searchInput.setAttribute('aria-label', 'Fuzzy hex color search');
 
-        const showAllButton = button('gpc-mva-tool-button', '◉', 'Show all template colors');
+        const showAllButton = iconButton('gpc-mva-tool-button', 'showAllColors', 'Show all template colors');
         showAllButton.title = 'Show all colors';
         showAllButton.setAttribute('aria-pressed', 'false');
 
-        const thumbnailToggle = button('gpc-mva-tool-button', '▣', 'Hide template thumbnail');
+        const thumbnailToggle = iconButton('gpc-mva-tool-button', 'hideThumbnail', 'Hide template thumbnail');
         thumbnailToggle.title = 'Hide template thumbnail';
         thumbnailToggle.setAttribute('aria-pressed', 'false');
 
-        const wrenchButton = button('gpc-mva-tool-button', '⚙', 'Open template settings');
+        const wrenchButton = iconButton('gpc-mva-tool-button', 'settings', 'Open template settings');
         wrenchButton.title = 'Template settings';
 
         const foldRegion = element('div', 'gpc-mva-fold-region');
@@ -1520,7 +1602,12 @@ var mobileOverhaulInit = (function () {
             refresh();
             let selection;
             try {
-                selection = bridge.selectColor(row.index);
+                // While "Show all colors" is on, selecting a swatch only
+                // changes the active native paint color -- it must not
+                // narrow template.mask back down to one color, or the map
+                // would stop showing the rest of the project as a guide the
+                // moment the user picks a color to actually paint with.
+                selection = bridge.selectColor(row.index, { narrowMask: !showAll });
             } catch (error) {
                 selection = Promise.reject(error);
             }
@@ -1928,6 +2015,10 @@ var mobileOverhaulInit = (function () {
             }
         }
 
+        function isPlacementActive() {
+            return typeof bridge.isPlacementActive === 'function' && !!bridge.isPlacementActive();
+        }
+
         function setStatus(message, kind) {
             statusMessage = String(message || '');
             statusKind = String(kind || '');
@@ -1958,34 +2049,25 @@ var mobileOverhaulInit = (function () {
         const staticStyle = element('style');
         staticStyle.textContent = `
             .gpc-mobile-view-b {
-                --mvb-surface: #ffffff; --mvb-surface-2: #f8fafc; --mvb-text: #1e293b;
-                --mvb-muted: #64748b; --mvb-border: #cbd5e1; --mvb-button: #e2e8f0;
-                --mvb-accent: #ea580c; --mvb-accent-text: #ffffff; --mvb-focus: #2563eb;
-                --mvb-danger: #b91c1c; box-sizing: border-box; display: flex; flex: 1 1 auto;
-                min-height: 0; flex-direction: column; gap: 7px; overflow: hidden; color: var(--mvb-text);
+                box-sizing: border-box; display: flex; flex: 1 1 auto;
+                min-height: 0; flex-direction: column; gap: 7px; overflow: hidden; color: var(--gpp-mobile-text);
                 padding: 3px 0 max(4px, env(safe-area-inset-bottom, 0px));
                 overscroll-behavior: contain;
-            }
-            body.dark .gpc-mobile-view-b {
-                --mvb-surface: #1e1e2e; --mvb-surface-2: #313244; --mvb-text: #cdd6f4;
-                --mvb-muted: #a6adc8; --mvb-border: #585b70; --mvb-button: #45475a;
-                --mvb-accent: #fab387; --mvb-accent-text: #11111b; --mvb-focus: #89b4fa;
-                --mvb-danger: #f38ba8;
             }
             .gpc-mvb-topbar { display: flex; align-items: center; gap: 7px; min-width: 0; }
             .gpc-mvb-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 15px; line-height: 1.2; }
             .gpc-mvb-button, .gpc-mvb-input {
-                box-sizing: border-box; min-width: 44px; min-height: 44px; border: 1px solid var(--mvb-border);
-                border-radius: 8px; background: var(--mvb-button); color: var(--mvb-text);
+                box-sizing: border-box; min-width: 44px; min-height: 44px; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 8px; background: var(--gpp-mobile-surface-3); color: var(--gpp-mobile-text);
                 font: inherit; font-size: 14px; touch-action: manipulation;
             }
             .gpc-mvb-button { padding: 7px 10px; cursor: pointer; font-weight: 700; }
             .gpc-mvb-button[disabled], .gpc-mvb-input[disabled] { opacity: .48; cursor: not-allowed; }
             .gpc-mvb-button:focus-visible, .gpc-mvb-input:focus-visible {
-                outline: 3px solid var(--mvb-focus); outline-offset: 2px;
+                outline: 3px solid var(--gpp-mobile-focus); outline-offset: 2px;
             }
             .gpc-mvb-return { font-size: 20px; }
-            .gpc-mvb-preview[aria-pressed="true"] { background: var(--mvb-accent); color: var(--mvb-accent-text); }
+            .gpc-mvb-preview[aria-pressed="true"] { background: var(--gpp-mobile-focus); color: #ffffff; }
             .gpc-mvb-list {
                 flex: 1 1 auto; min-height: 68px; overflow-y: auto; padding: 2px 3px 2px 0;
                 display: flex; flex-direction: column; gap: 6px; overscroll-behavior: contain;
@@ -1993,18 +2075,18 @@ var mobileOverhaulInit = (function () {
             }
             .gpc-mvb-card {
                 display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center;
-                gap: 7px; min-height: 58px; padding: 5px; border: 1px solid var(--mvb-border);
-                border-radius: 10px; background: var(--mvb-surface-2);
+                gap: 7px; min-height: 58px; padding: 5px; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 10px; background: var(--gpp-mobile-surface-2);
             }
             .gpc-mvb-card.is-focused {
                 grid-template-columns: 72px minmax(0, 1fr); min-height: 84px;
-                border: 2px solid var(--mvb-accent); background: var(--mvb-surface);
+                border: 2px solid var(--gpp-mobile-focus); background: var(--gpp-mobile-surface);
             }
             .gpc-mvb-card.is-ephemeral { border-style: dashed; }
             .gpc-mvb-thumb {
                 width: 48px; height: 48px; display: grid; place-items: center; overflow: hidden;
-                border: 1px solid var(--mvb-border); border-radius: 7px; background: var(--mvb-surface);
-                color: var(--mvb-muted); font-size: 10px;
+                border: 1px solid var(--gpp-mobile-border); border-radius: 7px; background: var(--gpp-mobile-surface);
+                color: var(--gpp-mobile-muted); font-size: 10px;
             }
             .gpc-mvb-card.is-focused .gpc-mvb-thumb { width: 72px; height: 72px; grid-row: span 2; }
             .gpc-mvb-thumb > canvas, .gpc-mvb-thumb > img {
@@ -2012,20 +2094,20 @@ var mobileOverhaulInit = (function () {
             }
             .gpc-mvb-card-copy { min-width: 0; }
             .gpc-mvb-card-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 800; }
-            .gpc-mvb-card-meta { margin-top: 2px; color: var(--mvb-muted); font-size: 11px; }
+            .gpc-mvb-card-meta { margin-top: 2px; color: var(--gpp-mobile-muted); font-size: 11px; }
             .gpc-mvb-card-actions { display: flex; align-items: center; gap: 5px; }
             .gpc-mvb-card.is-focused .gpc-mvb-card-actions { grid-column: 2; justify-content: flex-start; }
             .gpc-mvb-card-action { min-width: 44px; min-height: 44px; padding: 5px 8px; }
-            .gpc-mvb-delete { color: var(--mvb-danger); }
-            .gpc-mvb-empty { padding: 14px 8px; color: var(--mvb-muted); text-align: center; }
+            .gpc-mvb-delete { color: var(--gpp-mobile-danger); }
+            .gpc-mvb-empty { padding: 14px 8px; color: var(--gpp-mobile-muted); text-align: center; }
             .gpc-mvb-position {
                 flex: 0 0 auto; display: grid; grid-template-columns: minmax(96px, 1.2fr) minmax(0, 1fr) auto;
-                align-items: center; gap: 7px; padding-top: 6px; border-top: 1px solid var(--mvb-border);
+                align-items: center; gap: 7px; padding-top: 6px; border-top: 1px solid var(--gpp-mobile-border);
             }
-            .gpc-mvb-set-location { align-self: stretch; background: var(--mvb-accent); color: var(--mvb-accent-text); }
+            .gpc-mvb-set-location { align-self: stretch; background: var(--gpp-mobile-focus); color: #ffffff; }
             .gpc-mvb-coordinates { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-width: 0; }
-            .gpc-mvb-coordinate { min-width: 0; color: var(--mvb-muted); font-size: 11px; font-weight: 700; }
-            .gpc-mvb-input { width: 100%; padding: 6px; background: var(--mvb-surface-2); }
+            .gpc-mvb-coordinate { min-width: 0; color: var(--gpp-mobile-muted); font-size: 11px; font-weight: 700; }
+            .gpc-mvb-input { width: 100%; padding: 6px; background: var(--gpp-mobile-surface-2); }
             .gpc-mvb-dpad {
                 display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(2, 44px);
                 gap: 3px; touch-action: manipulation;
@@ -2035,18 +2117,16 @@ var mobileOverhaulInit = (function () {
             .gpc-mvb-nudge[data-mobile-nudge="left"] { grid-column: 1; grid-row: 2; }
             .gpc-mvb-nudge[data-mobile-nudge="down"] { grid-column: 2; grid-row: 2; }
             .gpc-mvb-nudge[data-mobile-nudge="right"] { grid-column: 3; grid-row: 2; }
-            .gpc-mvb-status { min-height: 16px; color: var(--mvb-muted); font-size: 11px; }
-            .gpc-mvb-status[data-kind="error"] { color: var(--mvb-danger); }
-            .gpc-mobile-view-b-reticle {
-                position: fixed; z-index: 99989; left: 50%; top: 50%; width: 52px; height: 52px;
-                min-width: 52px; min-height: 52px; margin: -26px 0 0 -26px; padding: 0;
-                border: 2px solid #ffffff; border-radius: 50%; background: rgba(234, 88, 12, .82);
-                color: #ffffff; box-shadow: 0 0 0 2px rgba(15, 23, 42, .72), 0 4px 16px rgba(0, 0, 0, .35);
-                font: 800 26px/1 system-ui, sans-serif; cursor: crosshair; pointer-events: auto;
-                touch-action: manipulation; user-select: none;
+            .gpc-mvb-status { min-height: 16px; color: var(--gpp-mobile-muted); font-size: 11px; }
+            .gpc-mvb-status[data-kind="error"] { color: var(--gpp-mobile-danger); }
+            .gpc-mvb-place {
+                grid-column: 1 / -1; min-height: 44px; background: var(--gpp-mobile-surface-3);
+                color: var(--gpp-mobile-text); border: 1px dashed var(--gpp-mobile-border);
             }
-            body.dark .gpc-mobile-view-b-reticle { background: rgba(250, 179, 135, .9); color: #11111b; }
-            .gpc-mobile-view-b-reticle[disabled] { opacity: .45; cursor: not-allowed; }
+            .gpc-mvb-place[aria-pressed="true"] {
+                background: var(--gpp-mobile-focus); color: #ffffff; border-style: solid;
+            }
+            .gpc-mvb-place[disabled] { opacity: .45; cursor: not-allowed; }
             @media (orientation: landscape) and (max-height: 540px) {
                 .gpc-mobile-view-b { gap: 4px; }
                 .gpc-mvb-card { min-height: 52px; }
@@ -2114,9 +2194,16 @@ var mobileOverhaulInit = (function () {
 
         const status = element('div', 'gpc-mvb-status');
         status.setAttribute('aria-live', 'polite');
-        const reticle = button('gpc-mobile-view-b-reticle', '\u2316', 'Use the map center as the template top-left draft location');
-        reticle.id = 'gpc-mobile-template-reticle';
+        // Tap-to-place: an ordinary panel button now, not a separate element
+        // floating over the map -- arms gppBeginPlacementCapture (via the
+        // bridge) and the next tap anywhere on the map commits the position
+        // directly, exactly like desktop's own Place button. No special
+        // mount target needed, unlike the reticle this replaces.
+        const placeButton = button('gpc-mvb-button gpc-mvb-place', 'Tap map to place', 'Tap the map to set the template location');
+        placeButton.id = 'gpc-mobile-template-place';
+        placeButton.setAttribute('aria-pressed', 'false');
 
+        positionControls.appendChild(placeButton);
         positionControls.appendChild(setLocationButton);
         positionControls.appendChild(coordinates);
         positionControls.appendChild(dpad);
@@ -2126,22 +2213,6 @@ var mobileOverhaulInit = (function () {
         root.appendChild(positionControls);
         root.appendChild(status);
         shell.panel.appendChild(root);
-
-        function reticleMountTarget() {
-            if (shell.root && shell.root !== shell.panel) return shell.root;
-            if (shell.panel.parentNode && shell.panel.parentNode !== shell.panel) return shell.panel.parentNode;
-            return documentRef.body || documentRef.documentElement;
-        }
-
-        function mountReticle() {
-            if (!visible || destroyed || reticle.parentNode) return;
-            const target = reticleMountTarget();
-            if (target && target !== shell.panel) target.appendChild(reticle);
-        }
-
-        function unmountReticle() {
-            if (reticle.parentNode) reticle.parentNode.removeChild(reticle);
-        }
 
         function findActionTarget(start, boundary, attributeName) {
             let current = start;
@@ -2251,10 +2322,15 @@ var mobileOverhaulInit = (function () {
             xInput.disabled = actionBusy || !editable;
             yInput.disabled = actionBusy || !editable;
             setLocationButton.disabled = actionBusy || !editable || !validDraft;
-            reticle.disabled = actionBusy || !editable;
-            reticle.title = editable
-                ? 'Pan the map, then tap to copy the center cell into X/Y'
-                : 'This template position cannot be changed';
+            const placing = isPlacementActive();
+            placeButton.disabled = actionBusy || !editable;
+            placeButton.setAttribute('aria-pressed', String(placing));
+            placeButton.textContent = placing ? 'Tap the map…' : 'Tap map to place';
+            placeButton.title = !editable
+                ? 'This template position cannot be changed'
+                : placing
+                    ? 'Tap anywhere on the map to set the location, or tap again to cancel'
+                    : 'Tap the map to set the template location';
             for (const child of Array.from(dpad.childNodes || [])) {
                 if (child && 'disabled' in child) child.disabled = actionBusy || !canNudge;
             }
@@ -2289,8 +2365,6 @@ var mobileOverhaulInit = (function () {
             const version = ++refreshVersion;
             root.hidden = !visible;
             root.setAttribute('aria-hidden', String(!visible));
-            if (visible) mountReticle();
-            else unmountReticle();
 
             let personalTemplates = [];
             let nextFocused = null;
@@ -2333,7 +2407,10 @@ var mobileOverhaulInit = (function () {
             visible = false;
             root.hidden = true;
             root.setAttribute('aria-hidden', 'true');
-            unmountReticle();
+            // Leaving View B while placement is armed must not leave a
+            // capture-phase map listener dangling behind -- Return/any exit
+            // path cancels it, same as navigating away always should.
+            cancelTapToPlace();
             return false;
         }
 
@@ -2409,36 +2486,51 @@ var mobileOverhaulInit = (function () {
             }
         }
 
-        function readReticleDraft() {
-            if (actionBusy || !mobileViewBCanEditPosition(bridge, focusedTemplate)
-                || typeof bridge.readCenterGrid !== 'function') return;
-            let result;
-            try {
-                result = bridge.readCenterGrid();
-            } catch (error) {
-                setStatus('Could not read the map center.', 'error');
-                reportError(error, 'readCenterGrid');
-                return;
-            }
-            const applyPoint = value => {
-                if (destroyed) return;
-                const point = mobileViewBNormalizeGridPoint(value);
-                if (!point) {
-                    setStatus('The map center is outside the paint grid.', 'error');
-                    return;
-                }
-                setDraft(point, true);
-                setStatus('Draft X ' + point.gridX + ', Y ' + point.gridY + '. Tap Set Location to commit.', 'success');
-            };
-            if (result && typeof result.then === 'function') {
-                result.then(applyPoint).catch(error => {
+        function startTapToPlace() {
+            if (actionBusy || isPlacementActive() || !mobileViewBCanEditPosition(bridge, focusedTemplate)
+                || typeof bridge.beginPlacement !== 'function') return;
+            const template = focusedTemplate;
+            bridge.beginPlacement(
+                template,
+                point => {
+                    // onPlaced -- the bridge already committed the position
+                    // directly (matching desktop's Place button: a tap IS
+                    // the commit, there is no intermediate draft step here).
+                    // Placement-active state is read from the bridge, never
+                    // cached locally: committing runs gppMobilePostlude()
+                    // (a full refresh fan-out) BEFORE this callback fires,
+                    // so a locally-cached flag here would still read stale
+                    // during that intermediate refresh -- the bridge's own
+                    // gppMobilePlacementActive is already correct by then.
                     if (destroyed) return;
-                    setStatus('Could not read the map center.', 'error');
-                    reportError(error, 'readCenterGrid');
-                });
-            } else {
-                applyPoint(result);
+                    if (point) {
+                        setDraft(point, false);
+                        setStatus('Location set to X ' + point.gridX + ', Y ' + point.gridY + '.', 'success');
+                    } else {
+                        setStatus('Could not set that location.', 'error');
+                    }
+                    syncPositionPresentation();
+                },
+                (message, isError) => {
+                    if (destroyed) return;
+                    setStatus(message, isError ? 'error' : 'success');
+                    syncPositionPresentation();
+                }
+            );
+            syncPositionPresentation();
+        }
+
+        function cancelTapToPlace() {
+            if (!isPlacementActive()) return;
+            if (typeof bridge.cancelPlacement === 'function') {
+                try { bridge.cancelPlacement(); } catch (error) { reportError(error, 'cancelPlacement'); }
             }
+            if (!destroyed) syncPositionPresentation();
+        }
+
+        function togglePlacement() {
+            if (isPlacementActive()) cancelTapToPlace();
+            else startTapToPlace();
         }
 
         function commitDraftLocation() {
@@ -2512,7 +2604,7 @@ var mobileOverhaulInit = (function () {
             visible = false;
             refreshVersion += 1;
             actionVersion += 1;
-            unmountReticle();
+            cancelTapToPlace();
             if (typeof unsubscribeRefresh === 'function') {
                 try { unsubscribeRefresh(); } catch (error) { reportError(error, 'unsubscribeRefresh'); }
             }
@@ -2534,7 +2626,7 @@ var mobileOverhaulInit = (function () {
         listen(returnButton, 'click', returnToPainting);
         listen(previewButton, 'click', togglePreview);
         listen(list, 'click', handleListAction);
-        listen(reticle, 'click', readReticleDraft);
+        listen(placeButton, 'click', togglePlacement);
         listen(setLocationButton, 'click', commitDraftLocation);
         listen(xInput, 'input', updateDraftFromInputs);
         listen(yInput, 'input', updateDraftFromInputs);
@@ -2567,11 +2659,9 @@ var mobileOverhaulInit = (function () {
     const MOBILE_UI_SCALE_TARGET_SELECTOR = [
         '[data-gpc-mobile-scale-surface]',
         '#gpc-mobile-hamburger',
-        '.gpc-mobile-panel-header',
         '.gpc-mobile-native-controls-row',
         '.gpc-mobile-view-a',
         '.gpc-mobile-view-b',
-        '#gpc-mobile-template-reticle',
     ].join(',');
 
     function createMobileAdditions(bridge, lifecycle, shell, callbacks) {
@@ -2690,15 +2780,7 @@ var mobileOverhaulInit = (function () {
         const style = element('style');
         style.textContent = `
             .gpc-mobile-additions {
-                --gma-surface: #ffffff; --gma-surface-2: #f8fafc; --gma-text: #1e293b;
-                --gma-muted: #64748b; --gma-border: #cbd5e1; --gma-button: #e2e8f0;
-                --gma-accent: #2563eb; --gma-danger: #b91c1c;
-                color: var(--gma-text); font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-            }
-            body.dark .gpc-mobile-additions {
-                --gma-surface: #1e1e2e; --gma-surface-2: #313244; --gma-text: #cdd6f4;
-                --gma-muted: #a6adc8; --gma-border: #585b70; --gma-button: #45475a;
-                --gma-accent: #89b4fa; --gma-danger: #f38ba8;
+                color: var(--gpp-mobile-text); font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
             }
             .gpc-mobile-preview-overlay[hidden], .gpc-mobile-ui-scale-slider[hidden] { display: none !important; }
             .gpc-mobile-preview-overlay {
@@ -2711,24 +2793,24 @@ var mobileOverhaulInit = (function () {
             .gpc-mobile-preview-card {
                 box-sizing: border-box; width: min(94vw, 520px); max-height: min(88vh, 760px);
                 display: flex; flex-direction: column; gap: 10px; overflow: auto; padding: 14px;
-                border: 1px solid var(--gma-border); border-radius: 14px; background: var(--gma-surface);
-                color: var(--gma-text); box-shadow: 0 18px 50px rgba(0,0,0,.35);
+                border: 1px solid var(--gpp-mobile-border); border-radius: 14px; background: var(--gpp-mobile-surface);
+                color: var(--gpp-mobile-text); box-shadow: 0 18px 50px rgba(0,0,0,.35);
                 padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));
             }
             .gpc-mobile-preview-header { display: flex; align-items: center; gap: 8px; }
             .gpc-mobile-preview-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 18px; }
             .gpc-mobile-preview-close, .gpc-mobile-preview-action, .gpc-mobile-eyedropper-fallback {
-                box-sizing: border-box; min-width: 44px; min-height: 44px; border: 1px solid var(--gma-border);
-                border-radius: 9px; padding: 8px 11px; background: var(--gma-button); color: var(--gma-text);
+                box-sizing: border-box; min-width: 44px; min-height: 44px; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 9px; padding: 8px 11px; background: var(--gpp-mobile-surface-3); color: var(--gpp-mobile-text);
                 font: inherit; font-weight: 650; cursor: pointer; touch-action: manipulation;
             }
             .gpc-mobile-preview-close { font-size: 20px; line-height: 1; }
             .gpc-mobile-preview-action:focus-visible, .gpc-mobile-preview-close:focus-visible,
             .gpc-mobile-ui-scale-button:focus-visible, .gpc-mobile-ui-scale-range:focus-visible,
-            .gpc-mobile-preview-scope:focus-visible { outline: 3px solid var(--gma-accent); outline-offset: 2px; }
+            .gpc-mobile-preview-scope:focus-visible { outline: 3px solid var(--gpp-mobile-focus); outline-offset: 2px; }
             .gpc-mobile-preview-frame {
                 min-height: 132px; display: grid; place-items: center; overflow: auto; padding: 8px;
-                border: 1px solid var(--gma-border); border-radius: 10px; background: var(--gma-surface-2);
+                border: 1px solid var(--gpp-mobile-border); border-radius: 10px; background: var(--gpp-mobile-surface-2);
             }
             .gpc-mobile-preview-frame canvas, .gpc-mobile-preview-frame img {
                 display: block; max-width: 100%; height: auto; image-rendering: pixelated;
@@ -2736,29 +2818,30 @@ var mobileOverhaulInit = (function () {
             .gpc-mobile-preview-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
             .gpc-mobile-preview-hex { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
             .gpc-mobile-preview-scope {
-                box-sizing: border-box; min-height: 44px; width: 100%; border: 1px solid var(--gma-border);
-                border-radius: 9px; padding: 8px; background: var(--gma-surface-2); color: var(--gma-text); font: inherit;
+                box-sizing: border-box; min-height: 44px; width: 100%; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 9px; padding: 8px; background: var(--gpp-mobile-surface-2); color: var(--gpp-mobile-text); font: inherit;
             }
-            .gpc-mobile-preview-status { min-height: 1.3em; color: var(--gma-muted); font-size: 13px; }
-            .gpc-mobile-preview-status[data-kind="error"] { color: var(--gma-danger); }
+            .gpc-mobile-preview-status { min-height: 1.3em; color: var(--gpp-mobile-muted); font-size: 13px; }
+            .gpc-mobile-preview-status[data-kind="error"] { color: var(--gpp-mobile-danger); }
             .gpc-mobile-preview-status[data-kind="success"] { color: #15803d; }
             body.dark .gpc-mobile-preview-status[data-kind="success"] { color: #a6e3a1; }
             .gpc-mobile-ui-scale-control {
-                position: fixed; z-index: 100020; top: max(8px, env(safe-area-inset-top, 0px));
-                right: max(8px, env(safe-area-inset-right, 0px)); pointer-events: auto;
+                /* An ordinary row item now, alongside the relocated native
+                   controls and the close button -- not a floating corner
+                   overlay with no relationship to anything else on screen. */
+                flex: 0 0 auto; display: flex; align-items: center;
             }
             .gpc-mobile-ui-scale-surface {
                 display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 4px;
-                border: 1px solid var(--gma-border); border-radius: 11px; background: var(--gma-surface);
-                box-shadow: 0 5px 18px rgba(0,0,0,.2);
+                border: 1px solid var(--gpp-mobile-border); border-radius: 11px; background: var(--gpp-mobile-surface-2);
             }
             .gpc-mobile-ui-scale-button {
                 box-sizing: border-box; min-width: 58px; min-height: 44px; border: 0; border-radius: 8px;
-                padding: 7px; background: var(--gma-button); color: var(--gma-text); font: inherit;
+                padding: 7px; background: var(--gpp-mobile-surface-3); color: var(--gpp-mobile-text); font: inherit;
                 font-weight: 700; cursor: pointer; touch-action: manipulation;
             }
             .gpc-mobile-ui-scale-slider { display: flex; align-items: center; gap: 6px; min-width: 170px; }
-            .gpc-mobile-ui-scale-range { min-width: 118px; min-height: 44px; accent-color: var(--gma-accent); touch-action: none; }
+            .gpc-mobile-ui-scale-range { min-width: 118px; min-height: 44px; accent-color: var(--gpp-mobile-focus); touch-action: none; }
             .gpc-mobile-ui-scale-output { min-width: 42px; font-size: 12px; font-weight: 700; text-align: right; }
             .gpc-mobile-eyedropper-label { margin-left: 4px; font: inherit; font-size: 12px; }
             @media (orientation: landscape) and (max-height: 520px) {
@@ -2766,7 +2849,6 @@ var mobileOverhaulInit = (function () {
                 .gpc-mobile-preview-card { width: min(96vw, 720px); max-height: calc(100vh - 12px); }
                 .gpc-mobile-preview-frame { min-height: 88px; max-height: 34vh; }
                 .gpc-mobile-preview-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-                .gpc-mobile-ui-scale-control { top: max(4px, env(safe-area-inset-top, 0px)); }
             }
             @media (max-width: 380px) {
                 .gpc-mobile-preview-actions, .gpc-mobile-preview-hex { grid-template-columns: 1fr; }
@@ -2793,7 +2875,7 @@ var mobileOverhaulInit = (function () {
         const previewHeader = element('div', 'gpc-mobile-preview-header');
         const previewTitle = element('h2', 'gpc-mobile-preview-title', 'Template preview');
         previewTitle.id = 'gpc-mobile-preview-title';
-        const closeButton = button('gpc-mobile-preview-close', '\u00d7', 'Close template preview');
+        const closeButton = button('gpc-mobile-preview-close', '\u2715', 'Close template preview');
         previewHeader.appendChild(previewTitle);
         previewHeader.appendChild(closeButton);
 
@@ -2904,7 +2986,6 @@ var mobileOverhaulInit = (function () {
 
         function collectScaleTargets() {
             const candidates = [
-                shell.header,
                 shell.row,
                 previewCard,
                 scaleSurface,
@@ -3443,7 +3524,12 @@ var mobileOverhaulInit = (function () {
         }
 
         mountTarget.appendChild(overlay);
-        mountTarget.appendChild(scaleRoot);
+        // The scale control lives in the native controls row now (an
+        // ordinary row item, not a floating top-right corner button with no
+        // relationship to anything else on screen) -- shell.row itself is
+        // always append-last by native-controls.js's own refresh(), so this
+        // only needs to land somewhere inside it, not specifically last.
+        shell.row.appendChild(scaleRoot);
 
         return controller;
     }
@@ -3475,20 +3561,16 @@ var mobileOverhaulInit = (function () {
         throw new Error('GeoPixelcons++ Mobile Overhaul requires a DOM document');
     }
 
-    function isMobileDarkTheme(documentRef) {
-        // Match the site's explicit Tailwind theme instead of the OS theme;
-        // the two can legitimately differ.
-        return !!(documentRef.body && documentRef.body.classList
-            && documentRef.body.classList.contains('dark'));
-    }
-
     function setMobileCssText(element, declarations) {
         const cssText = declarations.join(';');
         if (element.style.cssText !== cssText) element.style.cssText = cssText;
     }
 
+    // Colors come entirely from the shared var(--gpp-mobile-*) tokens
+    // (installMobileTheme(), theme.js) now -- no per-render dark-mode
+    // detection or hex-literal branching needed here at all; the cascade
+    // reacts to the site's own `body.dark` class on its own.
     function applyMobilePanelTheme(documentRef, shell) {
-        const dark = isMobileDarkTheme(documentRef);
         setMobileCssText(shell.root, [
             'position:fixed',
             'left:0',
@@ -3503,35 +3585,27 @@ var mobileOverhaulInit = (function () {
             'width:100%',
             'min-height:96px',
             'padding:8px 10px calc(8px + env(safe-area-inset-bottom, 0px))',
-            'background:' + (dark ? '#1e1e2e' : '#ffffff'),
-            'color:' + (dark ? '#cdd6f4' : '#1e293b'),
-            'border-top:1px solid ' + (dark ? '#45475a' : '#e2e8f0'),
-            'box-shadow:0 -10px 30px ' + (dark ? 'rgba(0,0,0,0.45)' : 'rgba(15,23,42,0.18)'),
+            'background:var(--gpp-mobile-surface)',
+            'color:var(--gpp-mobile-text)',
+            'border-top:1px solid var(--gpp-mobile-border)',
+            'box-shadow:0 -10px 30px var(--gpp-mobile-shadow)',
             'pointer-events:auto',
             'touch-action:manipulation',
             'overscroll-behavior:contain',
-        ]);
-        setMobileCssText(shell.header, [
-            'display:flex',
-            'align-items:center',
-            'justify-content:space-between',
-            'gap:8px',
-            'margin-bottom:6px',
-            'font-size:12px',
-            'font-weight:700',
         ]);
         setMobileCssText(shell.closeButton, [
             'min-width:44px',
             'min-height:44px',
             'border:0',
             'border-radius:8px',
-            'background:' + (dark ? '#585b70' : '#e2e8f0'),
-            'color:' + (dark ? '#cdd6f4' : '#1e293b'),
+            'background:var(--gpp-mobile-surface-3)',
+            'color:var(--gpp-mobile-text)',
             'font:inherit',
-            'font-size:20px',
+            'font-size:16px',
             'line-height:1',
             'cursor:pointer',
             'touch-action:manipulation',
+            'flex:0 0 auto',
         ]);
         setMobileCssText(shell.row, [
             'display:flex',
@@ -3597,31 +3671,28 @@ var mobileOverhaulInit = (function () {
             panel.setAttribute('role', 'region');
             panel.setAttribute('aria-label', 'GeoPixelcons++ mobile painting controls');
 
-            const header = documentRef.createElement('div');
-            header.id = 'gpc-mobile-panel-header';
-            header.className = 'gpc-mobile-panel-header';
-
-            const title = documentRef.createElement('span');
-            title.textContent = 'Mobile painting';
-
+            // No separate title bar -- it was just "Mobile painting" text
+            // plus this close button and nothing else. The close button now
+            // lives at the right edge of the native controls row instead,
+            // alongside everything else the user actually interacts with.
             const closeButton = documentRef.createElement('button');
             closeButton.id = 'gpc-mobile-panel-close';
             closeButton.type = 'button';
-            closeButton.textContent = '\u00d7';
+            closeButton.textContent = '\u2715';
             closeButton.setAttribute('aria-label', 'Close mobile painting controls');
 
             const row = documentRef.createElement('div');
             row.id = MOBILE_NATIVE_ROW_ID;
             row.className = 'gpc-mobile-native-controls-row';
+            // closeButton is appended in refresh(), after every other row
+            // item is placed, so it always lands rightmost regardless of
+            // what relocateNativeControls()/the UI scale control add later.
 
-            header.appendChild(title);
-            header.appendChild(closeButton);
-            panel.appendChild(header);
             panel.appendChild(row);
             root.appendChild(panel);
             mountTarget.appendChild(root);
 
-            shell = { root, panel, header, closeButton, row };
+            shell = { root, panel, closeButton, row };
             lifecycle.listen(closeButton, 'click', closePanel);
             applyMobilePanelTheme(documentRef, shell);
             syncOpenPresentation();
@@ -3857,6 +3928,13 @@ var mobileOverhaulInit = (function () {
             ensureViewA();
             ensureViewB();
             ensureAdditions();
+            // Appended last, unconditionally, so it always ends up rightmost
+            // regardless of what relocateNativeControls()/the UI scale
+            // control just added -- appendChild on an already-connected
+            // node just moves it, so this is a cheap no-op once settled.
+            if (shell && shell.row.lastElementChild !== shell.closeButton) {
+                shell.row.appendChild(shell.closeButton);
+            }
             applyActiveView();
             syncOpenPresentation();
             return controller;
@@ -4059,6 +4137,7 @@ var mobileOverhaulInit = (function () {
 
     async function initMobileOverhaul(bridge) {
         validateMobileOverhaulBridge(bridge);
+        installMobileTheme(bridge.env && bridge.env.document);
         if (activeController) return activeController;
         if (activeInitPromise) return activeInitPromise;
 
@@ -34372,6 +34451,7 @@ applyLockState();
     let gppMobilePaintOriginalFetch = null;
     let gppMobilePaintWrappedFetch = null;
     let gppMobileLateHookRetryTimer = null;
+    let gppMobilePlacementActive = false;
 
     function gppMobileOverhaulEnsureOpen() {
         if (gppMobileOverhaulController && typeof gppMobileOverhaulController.openPanel === 'function') {
@@ -34642,6 +34722,60 @@ applyLockState();
         return true;
     }
 
+    // Tap-to-place: reuses gpp-placement.js's gppBeginPlacementCapture()
+    // directly -- the exact same capture-phase, DOM-hit-tested mechanism
+    // desktop's own Place button and the E keyboard shortcut already use
+    // safely (no gesture-collision risk with the map's own pan/zoom, since
+    // this was already proven out there). Replaces the mobile-only fixed
+    // reticle system, which reinvented positioning instead of reusing this.
+    // Commits directly on the first map tap -- there is no intermediate
+    // "draft" step here, matching how the desktop Place button itself
+    // behaves (a tap IS the commit), unlike the manual X/Y input fields
+    // (template-settings.js's own separate draft-then-Set-Location flow),
+    // which are untouched by this and remain their own precise-entry path.
+    function gppMobileBeginPlacement(templateOrId, onPlaced, onStatus) {
+        const template = typeof templateOrId === 'string' ? gppMobileFindTemplate(templateOrId) : templateOrId;
+        if (!template) {
+            if (onStatus) onStatus('Focus a template first.', true);
+            return false;
+        }
+        if (gppIsPositionLocked(template)) {
+            if (onStatus) onStatus('This template’s position is locked.', true);
+            return false;
+        }
+        if (typeof gppBeginPlacementCapture !== 'function') {
+            if (onStatus) onStatus('Placement is not available yet.', true);
+            return false;
+        }
+        gppMobilePlacementActive = true;
+        gppBeginPlacementCapture(
+            template,
+            position => {
+                gppMobilePlacementActive = false;
+                gppMobileCommitPosition(template, position.gridX, position.gridY)
+                    .then(committed => { if (onPlaced) onPlaced(committed ? position : null); })
+                    .catch(error => {
+                        console.error('[GeoPixelcons++] Mobile Overhaul failed to commit a tapped position:', error);
+                        if (onStatus) onStatus('Could not set that location.', true);
+                    });
+            },
+            (message, isError) => {
+                if (isError) gppMobilePlacementActive = false;
+                if (onStatus) onStatus(message, isError);
+            }
+        );
+        return true;
+    }
+
+    function gppMobileCancelPlacement() {
+        gppMobilePlacementActive = false;
+        if (typeof gppCancelPlacementCapture === 'function') gppCancelPlacementCapture();
+    }
+
+    function gppMobileIsPlacementActive() {
+        return gppMobilePlacementActive;
+    }
+
     async function gppMobileNudge(templateOrId, deltaX, deltaY) {
         const template = typeof templateOrId === 'string' ? gppMobileFindTemplate(templateOrId) : templateOrId;
         if (!template || !template.position) return false;
@@ -34789,6 +34923,9 @@ applyLockState();
             readCenterGrid: () => gppMobileReadCenterGrid(),
             canEditPosition: template => !!template && !gppIsPositionLocked(template),
             commitPosition: (template, x, y) => gppMobileCommitPosition(template, x, y),
+            beginPlacement: (template, onPlaced, onStatus) => gppMobileBeginPlacement(template, onPlaced, onStatus),
+            cancelPlacement: () => gppMobileCancelPlacement(),
+            isPlacementActive: () => gppMobileIsPlacementActive(),
             nudge: (template, dx, dy) => gppMobileNudge(template, dx, dy),
             isPreviewForced: id => gppForcedVisibleTemplateIds.has(id),
             togglePreview: template => gppMobileTogglePreview(template),

@@ -124,6 +124,10 @@
             }
         }
 
+        function isPlacementActive() {
+            return typeof bridge.isPlacementActive === 'function' && !!bridge.isPlacementActive();
+        }
+
         function setStatus(message, kind) {
             statusMessage = String(message || '');
             statusKind = String(kind || '');
@@ -154,34 +158,25 @@
         const staticStyle = element('style');
         staticStyle.textContent = `
             .gpc-mobile-view-b {
-                --mvb-surface: #ffffff; --mvb-surface-2: #f8fafc; --mvb-text: #1e293b;
-                --mvb-muted: #64748b; --mvb-border: #cbd5e1; --mvb-button: #e2e8f0;
-                --mvb-accent: #ea580c; --mvb-accent-text: #ffffff; --mvb-focus: #2563eb;
-                --mvb-danger: #b91c1c; box-sizing: border-box; display: flex; flex: 1 1 auto;
-                min-height: 0; flex-direction: column; gap: 7px; overflow: hidden; color: var(--mvb-text);
+                box-sizing: border-box; display: flex; flex: 1 1 auto;
+                min-height: 0; flex-direction: column; gap: 7px; overflow: hidden; color: var(--gpp-mobile-text);
                 padding: 3px 0 max(4px, env(safe-area-inset-bottom, 0px));
                 overscroll-behavior: contain;
-            }
-            body.dark .gpc-mobile-view-b {
-                --mvb-surface: #1e1e2e; --mvb-surface-2: #313244; --mvb-text: #cdd6f4;
-                --mvb-muted: #a6adc8; --mvb-border: #585b70; --mvb-button: #45475a;
-                --mvb-accent: #fab387; --mvb-accent-text: #11111b; --mvb-focus: #89b4fa;
-                --mvb-danger: #f38ba8;
             }
             .gpc-mvb-topbar { display: flex; align-items: center; gap: 7px; min-width: 0; }
             .gpc-mvb-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 15px; line-height: 1.2; }
             .gpc-mvb-button, .gpc-mvb-input {
-                box-sizing: border-box; min-width: 44px; min-height: 44px; border: 1px solid var(--mvb-border);
-                border-radius: 8px; background: var(--mvb-button); color: var(--mvb-text);
+                box-sizing: border-box; min-width: 44px; min-height: 44px; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 8px; background: var(--gpp-mobile-surface-3); color: var(--gpp-mobile-text);
                 font: inherit; font-size: 14px; touch-action: manipulation;
             }
             .gpc-mvb-button { padding: 7px 10px; cursor: pointer; font-weight: 700; }
             .gpc-mvb-button[disabled], .gpc-mvb-input[disabled] { opacity: .48; cursor: not-allowed; }
             .gpc-mvb-button:focus-visible, .gpc-mvb-input:focus-visible {
-                outline: 3px solid var(--mvb-focus); outline-offset: 2px;
+                outline: 3px solid var(--gpp-mobile-focus); outline-offset: 2px;
             }
             .gpc-mvb-return { font-size: 20px; }
-            .gpc-mvb-preview[aria-pressed="true"] { background: var(--mvb-accent); color: var(--mvb-accent-text); }
+            .gpc-mvb-preview[aria-pressed="true"] { background: var(--gpp-mobile-focus); color: #ffffff; }
             .gpc-mvb-list {
                 flex: 1 1 auto; min-height: 68px; overflow-y: auto; padding: 2px 3px 2px 0;
                 display: flex; flex-direction: column; gap: 6px; overscroll-behavior: contain;
@@ -189,18 +184,18 @@
             }
             .gpc-mvb-card {
                 display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center;
-                gap: 7px; min-height: 58px; padding: 5px; border: 1px solid var(--mvb-border);
-                border-radius: 10px; background: var(--mvb-surface-2);
+                gap: 7px; min-height: 58px; padding: 5px; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 10px; background: var(--gpp-mobile-surface-2);
             }
             .gpc-mvb-card.is-focused {
                 grid-template-columns: 72px minmax(0, 1fr); min-height: 84px;
-                border: 2px solid var(--mvb-accent); background: var(--mvb-surface);
+                border: 2px solid var(--gpp-mobile-focus); background: var(--gpp-mobile-surface);
             }
             .gpc-mvb-card.is-ephemeral { border-style: dashed; }
             .gpc-mvb-thumb {
                 width: 48px; height: 48px; display: grid; place-items: center; overflow: hidden;
-                border: 1px solid var(--mvb-border); border-radius: 7px; background: var(--mvb-surface);
-                color: var(--mvb-muted); font-size: 10px;
+                border: 1px solid var(--gpp-mobile-border); border-radius: 7px; background: var(--gpp-mobile-surface);
+                color: var(--gpp-mobile-muted); font-size: 10px;
             }
             .gpc-mvb-card.is-focused .gpc-mvb-thumb { width: 72px; height: 72px; grid-row: span 2; }
             .gpc-mvb-thumb > canvas, .gpc-mvb-thumb > img {
@@ -208,20 +203,20 @@
             }
             .gpc-mvb-card-copy { min-width: 0; }
             .gpc-mvb-card-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 800; }
-            .gpc-mvb-card-meta { margin-top: 2px; color: var(--mvb-muted); font-size: 11px; }
+            .gpc-mvb-card-meta { margin-top: 2px; color: var(--gpp-mobile-muted); font-size: 11px; }
             .gpc-mvb-card-actions { display: flex; align-items: center; gap: 5px; }
             .gpc-mvb-card.is-focused .gpc-mvb-card-actions { grid-column: 2; justify-content: flex-start; }
             .gpc-mvb-card-action { min-width: 44px; min-height: 44px; padding: 5px 8px; }
-            .gpc-mvb-delete { color: var(--mvb-danger); }
-            .gpc-mvb-empty { padding: 14px 8px; color: var(--mvb-muted); text-align: center; }
+            .gpc-mvb-delete { color: var(--gpp-mobile-danger); }
+            .gpc-mvb-empty { padding: 14px 8px; color: var(--gpp-mobile-muted); text-align: center; }
             .gpc-mvb-position {
                 flex: 0 0 auto; display: grid; grid-template-columns: minmax(96px, 1.2fr) minmax(0, 1fr) auto;
-                align-items: center; gap: 7px; padding-top: 6px; border-top: 1px solid var(--mvb-border);
+                align-items: center; gap: 7px; padding-top: 6px; border-top: 1px solid var(--gpp-mobile-border);
             }
-            .gpc-mvb-set-location { align-self: stretch; background: var(--mvb-accent); color: var(--mvb-accent-text); }
+            .gpc-mvb-set-location { align-self: stretch; background: var(--gpp-mobile-focus); color: #ffffff; }
             .gpc-mvb-coordinates { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-width: 0; }
-            .gpc-mvb-coordinate { min-width: 0; color: var(--mvb-muted); font-size: 11px; font-weight: 700; }
-            .gpc-mvb-input { width: 100%; padding: 6px; background: var(--mvb-surface-2); }
+            .gpc-mvb-coordinate { min-width: 0; color: var(--gpp-mobile-muted); font-size: 11px; font-weight: 700; }
+            .gpc-mvb-input { width: 100%; padding: 6px; background: var(--gpp-mobile-surface-2); }
             .gpc-mvb-dpad {
                 display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(2, 44px);
                 gap: 3px; touch-action: manipulation;
@@ -231,18 +226,16 @@
             .gpc-mvb-nudge[data-mobile-nudge="left"] { grid-column: 1; grid-row: 2; }
             .gpc-mvb-nudge[data-mobile-nudge="down"] { grid-column: 2; grid-row: 2; }
             .gpc-mvb-nudge[data-mobile-nudge="right"] { grid-column: 3; grid-row: 2; }
-            .gpc-mvb-status { min-height: 16px; color: var(--mvb-muted); font-size: 11px; }
-            .gpc-mvb-status[data-kind="error"] { color: var(--mvb-danger); }
-            .gpc-mobile-view-b-reticle {
-                position: fixed; z-index: 99989; left: 50%; top: 50%; width: 52px; height: 52px;
-                min-width: 52px; min-height: 52px; margin: -26px 0 0 -26px; padding: 0;
-                border: 2px solid #ffffff; border-radius: 50%; background: rgba(234, 88, 12, .82);
-                color: #ffffff; box-shadow: 0 0 0 2px rgba(15, 23, 42, .72), 0 4px 16px rgba(0, 0, 0, .35);
-                font: 800 26px/1 system-ui, sans-serif; cursor: crosshair; pointer-events: auto;
-                touch-action: manipulation; user-select: none;
+            .gpc-mvb-status { min-height: 16px; color: var(--gpp-mobile-muted); font-size: 11px; }
+            .gpc-mvb-status[data-kind="error"] { color: var(--gpp-mobile-danger); }
+            .gpc-mvb-place {
+                grid-column: 1 / -1; min-height: 44px; background: var(--gpp-mobile-surface-3);
+                color: var(--gpp-mobile-text); border: 1px dashed var(--gpp-mobile-border);
             }
-            body.dark .gpc-mobile-view-b-reticle { background: rgba(250, 179, 135, .9); color: #11111b; }
-            .gpc-mobile-view-b-reticle[disabled] { opacity: .45; cursor: not-allowed; }
+            .gpc-mvb-place[aria-pressed="true"] {
+                background: var(--gpp-mobile-focus); color: #ffffff; border-style: solid;
+            }
+            .gpc-mvb-place[disabled] { opacity: .45; cursor: not-allowed; }
             @media (orientation: landscape) and (max-height: 540px) {
                 .gpc-mobile-view-b { gap: 4px; }
                 .gpc-mvb-card { min-height: 52px; }
@@ -310,9 +303,16 @@
 
         const status = element('div', 'gpc-mvb-status');
         status.setAttribute('aria-live', 'polite');
-        const reticle = button('gpc-mobile-view-b-reticle', '\u2316', 'Use the map center as the template top-left draft location');
-        reticle.id = 'gpc-mobile-template-reticle';
+        // Tap-to-place: an ordinary panel button now, not a separate element
+        // floating over the map -- arms gppBeginPlacementCapture (via the
+        // bridge) and the next tap anywhere on the map commits the position
+        // directly, exactly like desktop's own Place button. No special
+        // mount target needed, unlike the reticle this replaces.
+        const placeButton = button('gpc-mvb-button gpc-mvb-place', 'Tap map to place', 'Tap the map to set the template location');
+        placeButton.id = 'gpc-mobile-template-place';
+        placeButton.setAttribute('aria-pressed', 'false');
 
+        positionControls.appendChild(placeButton);
         positionControls.appendChild(setLocationButton);
         positionControls.appendChild(coordinates);
         positionControls.appendChild(dpad);
@@ -322,22 +322,6 @@
         root.appendChild(positionControls);
         root.appendChild(status);
         shell.panel.appendChild(root);
-
-        function reticleMountTarget() {
-            if (shell.root && shell.root !== shell.panel) return shell.root;
-            if (shell.panel.parentNode && shell.panel.parentNode !== shell.panel) return shell.panel.parentNode;
-            return documentRef.body || documentRef.documentElement;
-        }
-
-        function mountReticle() {
-            if (!visible || destroyed || reticle.parentNode) return;
-            const target = reticleMountTarget();
-            if (target && target !== shell.panel) target.appendChild(reticle);
-        }
-
-        function unmountReticle() {
-            if (reticle.parentNode) reticle.parentNode.removeChild(reticle);
-        }
 
         function findActionTarget(start, boundary, attributeName) {
             let current = start;
@@ -447,10 +431,15 @@
             xInput.disabled = actionBusy || !editable;
             yInput.disabled = actionBusy || !editable;
             setLocationButton.disabled = actionBusy || !editable || !validDraft;
-            reticle.disabled = actionBusy || !editable;
-            reticle.title = editable
-                ? 'Pan the map, then tap to copy the center cell into X/Y'
-                : 'This template position cannot be changed';
+            const placing = isPlacementActive();
+            placeButton.disabled = actionBusy || !editable;
+            placeButton.setAttribute('aria-pressed', String(placing));
+            placeButton.textContent = placing ? 'Tap the map…' : 'Tap map to place';
+            placeButton.title = !editable
+                ? 'This template position cannot be changed'
+                : placing
+                    ? 'Tap anywhere on the map to set the location, or tap again to cancel'
+                    : 'Tap the map to set the template location';
             for (const child of Array.from(dpad.childNodes || [])) {
                 if (child && 'disabled' in child) child.disabled = actionBusy || !canNudge;
             }
@@ -485,8 +474,6 @@
             const version = ++refreshVersion;
             root.hidden = !visible;
             root.setAttribute('aria-hidden', String(!visible));
-            if (visible) mountReticle();
-            else unmountReticle();
 
             let personalTemplates = [];
             let nextFocused = null;
@@ -529,7 +516,10 @@
             visible = false;
             root.hidden = true;
             root.setAttribute('aria-hidden', 'true');
-            unmountReticle();
+            // Leaving View B while placement is armed must not leave a
+            // capture-phase map listener dangling behind -- Return/any exit
+            // path cancels it, same as navigating away always should.
+            cancelTapToPlace();
             return false;
         }
 
@@ -605,36 +595,51 @@
             }
         }
 
-        function readReticleDraft() {
-            if (actionBusy || !mobileViewBCanEditPosition(bridge, focusedTemplate)
-                || typeof bridge.readCenterGrid !== 'function') return;
-            let result;
-            try {
-                result = bridge.readCenterGrid();
-            } catch (error) {
-                setStatus('Could not read the map center.', 'error');
-                reportError(error, 'readCenterGrid');
-                return;
-            }
-            const applyPoint = value => {
-                if (destroyed) return;
-                const point = mobileViewBNormalizeGridPoint(value);
-                if (!point) {
-                    setStatus('The map center is outside the paint grid.', 'error');
-                    return;
-                }
-                setDraft(point, true);
-                setStatus('Draft X ' + point.gridX + ', Y ' + point.gridY + '. Tap Set Location to commit.', 'success');
-            };
-            if (result && typeof result.then === 'function') {
-                result.then(applyPoint).catch(error => {
+        function startTapToPlace() {
+            if (actionBusy || isPlacementActive() || !mobileViewBCanEditPosition(bridge, focusedTemplate)
+                || typeof bridge.beginPlacement !== 'function') return;
+            const template = focusedTemplate;
+            bridge.beginPlacement(
+                template,
+                point => {
+                    // onPlaced -- the bridge already committed the position
+                    // directly (matching desktop's Place button: a tap IS
+                    // the commit, there is no intermediate draft step here).
+                    // Placement-active state is read from the bridge, never
+                    // cached locally: committing runs gppMobilePostlude()
+                    // (a full refresh fan-out) BEFORE this callback fires,
+                    // so a locally-cached flag here would still read stale
+                    // during that intermediate refresh -- the bridge's own
+                    // gppMobilePlacementActive is already correct by then.
                     if (destroyed) return;
-                    setStatus('Could not read the map center.', 'error');
-                    reportError(error, 'readCenterGrid');
-                });
-            } else {
-                applyPoint(result);
+                    if (point) {
+                        setDraft(point, false);
+                        setStatus('Location set to X ' + point.gridX + ', Y ' + point.gridY + '.', 'success');
+                    } else {
+                        setStatus('Could not set that location.', 'error');
+                    }
+                    syncPositionPresentation();
+                },
+                (message, isError) => {
+                    if (destroyed) return;
+                    setStatus(message, isError ? 'error' : 'success');
+                    syncPositionPresentation();
+                }
+            );
+            syncPositionPresentation();
+        }
+
+        function cancelTapToPlace() {
+            if (!isPlacementActive()) return;
+            if (typeof bridge.cancelPlacement === 'function') {
+                try { bridge.cancelPlacement(); } catch (error) { reportError(error, 'cancelPlacement'); }
             }
+            if (!destroyed) syncPositionPresentation();
+        }
+
+        function togglePlacement() {
+            if (isPlacementActive()) cancelTapToPlace();
+            else startTapToPlace();
         }
 
         function commitDraftLocation() {
@@ -708,7 +713,7 @@
             visible = false;
             refreshVersion += 1;
             actionVersion += 1;
-            unmountReticle();
+            cancelTapToPlace();
             if (typeof unsubscribeRefresh === 'function') {
                 try { unsubscribeRefresh(); } catch (error) { reportError(error, 'unsubscribeRefresh'); }
             }
@@ -730,7 +735,7 @@
         listen(returnButton, 'click', returnToPainting);
         listen(previewButton, 'click', togglePreview);
         listen(list, 'click', handleListAction);
-        listen(reticle, 'click', readReticleDraft);
+        listen(placeButton, 'click', togglePlacement);
         listen(setLocationButton, 'click', commitDraftLocation);
         listen(xInput, 'input', updateDraftFromInputs);
         listen(yInput, 'input', updateDraftFromInputs);

@@ -191,15 +191,24 @@
         }
     }
 
+    // Sets each declaration individually via setProperty() instead of
+    // overwriting the whole style.cssText. A full-cssText overwrite would
+    // silently wipe out any inline property this function doesn't own --
+    // concretely, additions.js applies the global UI scale as an inline
+    // `zoom` on this same root element, and a cssText overwrite from
+    // openMenu()'s own standalone refresh() (outside native-controls.js's
+    // refresh cycle, which would otherwise immediately reapply it) reset
+    // the scale back to 1 every time the hamburger opened.
     function mobileHamburgerSetCss(element, declarations) {
-        element.style.cssText = declarations.join(';');
-    }
-
-    function mobileHamburgerIsDark(documentRef) {
-        // GeoPixels' body.dark class is authoritative. Falling back to the OS
-        // preference can create a mixed light/dark surface when the site's
-        // explicit theme differs from the device theme.
-        return !!(documentRef.body && mobileHamburgerHasClass(documentRef.body, 'dark'));
+        for (const declaration of declarations) {
+            const separatorIndex = declaration.indexOf(':');
+            if (separatorIndex < 0) continue;
+            const property = declaration.slice(0, separatorIndex).trim();
+            const value = declaration.slice(separatorIndex + 1).trim();
+            if (element.style.getPropertyValue(property) !== value) {
+                element.style.setProperty(property, value);
+            }
+        }
     }
 
     function createMobileHamburgerMenu(bridge, lifecycle, callbacks = {}) {
@@ -351,7 +360,6 @@
 
         function applyTheme() {
             if (!shell) return;
-            const dark = mobileHamburgerIsDark(documentRef);
             mobileHamburgerSetCss(shell.root, [
                 'position:fixed',
                 'top:calc(env(safe-area-inset-top, 0px) + 12px)',
@@ -367,11 +375,11 @@
                 'width:44px',
                 'height:44px',
                 'padding:0',
-                'border:1px solid ' + (dark ? '#86efac' : '#15803d'),
+                'border:1px solid var(--gpp-mobile-focus)',
                 'border-radius:12px',
-                'background:' + (dark ? '#4ade80' : '#16a34a'),
-                'color:' + (dark ? '#052e16' : '#ffffff'),
-                'box-shadow:0 4px 14px ' + (dark ? 'rgba(0,0,0,0.45)' : 'rgba(15,23,42,0.25)'),
+                'background:var(--gpp-mobile-focus)',
+                'color:#ffffff',
+                'box-shadow:0 4px 14px var(--gpp-mobile-shadow)',
                 'font:700 25px/1 system-ui,-apple-system,sans-serif',
                 'cursor:pointer',
                 'touch-action:manipulation',
@@ -384,8 +392,8 @@
                 'width:11px',
                 'height:11px',
                 'border-radius:999px',
-                'border:2px solid ' + (dark ? '#1e1e2e' : '#ffffff'),
-                'background:' + (dark ? '#f87171' : '#dc2626'),
+                'border:2px solid var(--gpp-mobile-surface)',
+                'background:var(--gpp-mobile-danger)',
                 'pointer-events:none',
             ]);
             mobileHamburgerSetCss(shell.menu, [
@@ -398,11 +406,11 @@
                 'overflow-y:auto',
                 'overscroll-behavior:contain',
                 'padding:8px',
-                'border:1px solid ' + (dark ? '#45475a' : '#dbe3ee'),
+                'border:1px solid var(--gpp-mobile-border)',
                 'border-radius:12px',
-                'background:' + (dark ? '#1e1e2e' : '#ffffff'),
-                'color:' + (dark ? '#cdd6f4' : '#1e293b'),
-                'box-shadow:0 12px 32px ' + (dark ? 'rgba(0,0,0,0.55)' : 'rgba(15,23,42,0.24)'),
+                'background:var(--gpp-mobile-surface)',
+                'color:var(--gpp-mobile-text)',
+                'box-shadow:0 12px 32px var(--gpp-mobile-shadow)',
                 'touch-action:pan-y',
             ]);
         }
@@ -412,7 +420,7 @@
             while (shell.menu.firstChild) shell.menu.removeChild(shell.menu.firstChild);
         }
 
-        function appendSection(path, hasAlert, dark) {
+        function appendSection(path, hasAlert) {
             const divider = documentRef.createElement('div');
             divider.className = 'gpc-mobile-flat-menu-section';
             divider.setAttribute('role', 'presentation');
@@ -423,8 +431,8 @@
                 'min-height:28px',
                 'margin:5px 4px 3px',
                 'padding:5px 4px 3px',
-                'border-top:1px solid ' + (dark ? '#45475a' : '#e2e8f0'),
-                'color:' + (dark ? '#a6adc8' : '#64748b'),
+                'border-top:1px solid var(--gpp-mobile-border)',
+                'color:var(--gpp-mobile-muted)',
                 'font-size:11px',
                 'font-weight:800',
                 'letter-spacing:.035em',
@@ -440,7 +448,7 @@
                     'width:8px',
                     'height:8px',
                     'border-radius:999px',
-                    'background:' + (dark ? '#f87171' : '#dc2626'),
+                    'background:var(--gpp-mobile-danger)',
                     'flex:0 0 auto',
                 ]);
                 divider.appendChild(marker);
@@ -448,7 +456,7 @@
             shell.menu.appendChild(divider);
         }
 
-        function appendAction(action, index, dark) {
+        function appendAction(action, index) {
             const proxy = documentRef.createElement('button');
             proxy.type = 'button';
             proxy.className = 'gpc-mobile-flat-menu-action';
@@ -467,8 +475,8 @@
                 'padding:9px 12px',
                 'border:0',
                 'border-radius:9px',
-                'background:' + (dark ? '#313244' : '#f1f5f9'),
-                'color:' + (dark ? '#cdd6f4' : '#1e293b'),
+                'background:var(--gpp-mobile-surface-2)',
+                'color:var(--gpp-mobile-text)',
                 'font:600 14px/1.25 system-ui,-apple-system,sans-serif',
                 'text-align:left',
                 'cursor:' + (action.disabled ? 'not-allowed' : 'pointer'),
@@ -487,7 +495,6 @@
                 ? Number(activeBefore.getAttribute('data-gpc-mobile-action-index'))
                 : -1;
             clearMenu();
-            const dark = mobileHamburgerIsDark(documentRef);
             let currentPath = '';
             for (let index = 0; index < actions.length; index += 1) {
                 const action = actions[index];
@@ -496,10 +503,10 @@
                     const sectionHasAlert = actions.some(candidate => (
                         candidate.path.join(' \u203a ') === path && candidate.alert
                     ));
-                    appendSection(path, sectionHasAlert, dark);
+                    appendSection(path, sectionHasAlert);
                     currentPath = path;
                 }
-                appendAction(action, index, dark);
+                appendAction(action, index);
             }
 
             if (actions.length === 0) {
@@ -509,7 +516,7 @@
                 mobileHamburgerSetCss(empty, [
                     'margin:0',
                     'padding:12px',
-                    'color:' + (dark ? '#a6adc8' : '#64748b'),
+                    'color:var(--gpp-mobile-muted)',
                     'font-size:13px',
                 ]);
                 shell.menu.appendChild(empty);

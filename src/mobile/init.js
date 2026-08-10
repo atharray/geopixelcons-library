@@ -3,6 +3,7 @@
 
     async function initMobileOverhaul(bridge) {
         validateMobileOverhaulBridge(bridge);
+        installMobileTheme(bridge.env && bridge.env.document);
         if (activeController) return activeController;
         if (activeInitPromise) return activeInitPromise;
 

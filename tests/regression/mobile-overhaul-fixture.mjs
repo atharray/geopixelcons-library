@@ -869,9 +869,13 @@ function buildDriverSource(mode) {
                 });
                 assertDeepEqual(
                     Array.from(row.children).map(function(element) { return element.id; }),
-                    ['currentEnergyDisplay', 'toggleBrushModeBtn_Bottom', 'brush-swap-toggle', 'commitBtn', 'toggleEyedropper_Bottom'],
-                    'native controls must retain the specified mobile row order with Eyedropper after Paint',
+                    [
+                        'currentEnergyDisplay', 'toggleBrushModeBtn_Bottom', 'brush-swap-toggle', 'commitBtn', 'toggleEyedropper_Bottom',
+                        'gpc-mobile-ui-scale-control', 'gpc-mobile-panel-close',
+                    ],
+                    'native controls must retain the specified mobile row order with Eyedropper after Paint, followed by the UI scale control and the close button (no separate header bar)',
                 );
+                assertBrowser(!document.getElementById('gpc-mobile-panel-header'), 'the old separate title/close header bar must no longer exist');
                 assertEqual(
                     document.getElementById('commitBtn').nextElementSibling,
                     document.getElementById('toggleEyedropper_Bottom'),
@@ -1149,7 +1153,7 @@ function buildDriverSource(mode) {
                 assertEqual(Number(localStorage.getItem(storageKey)), movedHeight, 'pointerup must persist the final clamped panel height');
             });
 
-            await check('view-a-wrench-opens-view-b-and-fixed-reticle', async function() {
+            await check('view-a-wrench-opens-view-b', async function() {
                 var bridge = window.__mobileBoundary.bridge;
                 var viewA = document.getElementById('gpc-mobile-view-a');
                 var viewB = document.getElementById('gpc-mobile-view-b');
@@ -1161,64 +1165,66 @@ function buildDriverSource(mode) {
                 wrench.focus();
                 wrench.click();
                 await waitFor(function() {
-                    return effectivelyHidden(viewA)
-                        && viewB && !effectivelyHidden(viewB)
-                        && document.getElementById('gpc-mobile-template-reticle');
-                }, 'View B and its map reticle to open');
-                var reticle = document.getElementById('gpc-mobile-template-reticle');
+                    return effectivelyHidden(viewA) && viewB && !effectivelyHidden(viewB);
+                }, 'View B to open');
                 assertEqual(viewA.getAttribute('aria-hidden'), 'true', 'opening template settings must hide View A accessibly');
                 assertEqual(viewB.getAttribute('aria-hidden'), 'false', 'View B must become the visible mobile view');
-                assertBrowser(reticle && reticle.isConnected, 'View B must mount its reticle outside the panel content');
-                assertEqual(getComputedStyle(reticle).position, 'fixed', 'the map-center reticle must use fixed positioning');
-                assertBrowser(!viewB.contains(reticle), 'the fixed reticle must not consume View B panel layout space');
+                assertBrowser(!document.getElementById('gpc-mobile-template-reticle'), 'the old fixed-reticle system must no longer exist');
                 assertEqual(document.activeElement.getAttribute('aria-label'), 'Return to mobile painting', 'View A to View B must move focus into the visible settings view');
-
-                var scaleButton = document.querySelector('button[aria-label="Adjust mobile UI scale"]');
-                var scaleRange = document.querySelector('input[aria-label="Mobile UI scale"]');
-                scaleButton.click();
-                scaleRange.value = '125';
-                scaleRange.dispatchEvent(new Event('input', { bubbles: true }));
-                scaleRange.dispatchEvent(new Event('change', { bubbles: true }));
-                assertEqual(reticle.getAttribute('data-gpc-mobile-scale-applied'), '125', 'fixed View B reticle must participate in global UI scaling');
-                assertEqual(reticle.style.getPropertyValue('zoom'), '1.25', 'fixed View B reticle must receive the applied scale');
-                assertEqual(scaleButton.getAttribute('aria-expanded'), 'false', 'scale control must collapse after committing a value');
-                scaleButton.click();
-                scaleRange.value = '100';
-                scaleRange.dispatchEvent(new Event('input', { bubbles: true }));
-                scaleRange.dispatchEvent(new Event('change', { bubbles: true }));
-                assertEqual(reticle.getAttribute('data-gpc-mobile-scale-applied'), null, 'restoring 100% must remove the reticle scale marker');
             });
 
-            await check('reticle-drafts-center-before-set-location-commit', async function() {
+            await check('tap-to-place-arms-capture-and-commits-on-map-tap', async function() {
                 var bridge = window.__mobileBoundary.bridge;
                 var viewB = document.getElementById('gpc-mobile-view-b');
-                var reticle = document.getElementById('gpc-mobile-template-reticle');
+                var placeButton = document.getElementById('gpc-mobile-template-place');
                 var xInput = viewB.querySelector('#gpc-mobile-template-x');
                 var yInput = viewB.querySelector('#gpc-mobile-template-y');
-                var setLocation = viewB.querySelector('.gpc-mvb-set-location');
-                var center = await Promise.resolve(bridge.readCenterGrid());
-                var positionBefore = window.__mobileHostFixture.snapshot(hostTemplate).position;
-                assertBrowser(center && Number.isInteger(center.gridX) && Number.isInteger(center.gridY), 'the synthetic map center must resolve to integer grid coordinates');
+                var mapShell = document.getElementById('map-shell');
+                assertBrowser(placeButton && !placeButton.disabled, 'the focused, unlocked template must enable Tap map to place');
+                assertEqual(placeButton.getAttribute('aria-pressed'), 'false', 'placement must start idle');
+                assertEqual(bridge.isPlacementActive(), false, 'placement must start inactive');
 
-                reticle.click();
+                placeButton.click();
                 await waitFor(function() {
-                    return Number(xInput.value) === center.gridX && Number(yInput.value) === center.gridY;
-                }, 'the reticle to copy the map center into the X/Y draft');
-                assertBrowser(Number.isInteger(Number(xInput.value)) && Number.isInteger(Number(yInput.value)), 'reticle draft fields must remain integer-only');
-                assertDeepEqual(window.__mobileHostFixture.snapshot(hostTemplate).position, positionBefore, 'reticle tap must draft without committing template.position');
-                assertBrowser(!setLocation.disabled, 'a valid reticle draft must enable Set Location');
+                    return placeButton.getAttribute('aria-pressed') === 'true' && bridge.isPlacementActive() === true;
+                }, 'tapping Tap map to place to arm gppBeginPlacementCapture on the real map container');
+                assertEqual(placeButton.textContent, 'Tap the map…', 'the armed button must say so');
 
-                setLocation.click();
+                var localX = 250, localY = 180;
+                var rect = mapShell.getBoundingClientRect();
+                var expectedLng = (localX - 400) / 2;
+                var expectedLat = (300 - localY) / 2;
+                var expectedGridX = Math.round(expectedLng / gridSize);
+                var expectedGridY = Math.round(expectedLat / gridSize);
+                mapShell.dispatchEvent(new MouseEvent('click', {
+                    bubbles: true, cancelable: true, clientX: rect.left + localX, clientY: rect.top + localY,
+                }));
+
                 await waitFor(function() {
                     var position = window.__mobileHostFixture.snapshot(hostTemplate).position;
-                    return position && position.gridX === center.gridX && position.gridY === center.gridY
-                        && viewB.getAttribute('aria-busy') === 'false';
-                }, 'Set Location to commit the reticle draft');
-                assertDeepEqual(
-                    window.__mobileHostFixture.snapshot(hostTemplate).position,
-                    { gridX: center.gridX, gridY: center.gridY },
-                    'Set Location must commit the drafted integer center',
-                );
+                    return position && position.gridX === expectedGridX && position.gridY === expectedGridY;
+                }, 'the map tap to commit the tapped grid cell directly -- no separate Set Location step, matching desktop\'s own Place button');
+                // template.position becoming visible (polled above) and the
+                // panel's own presentation catching up to it are two
+                // separate steps -- give the UI's refresh cycle a moment
+                // rather than asserting DOM state in the same tick.
+                await waitFor(function() {
+                    return placeButton.getAttribute('aria-pressed') === 'false' && bridge.isPlacementActive() === false;
+                }, 'a successful tap to disarm placement mode and clean up the capture');
+                await waitFor(function() {
+                    return Number(xInput.value) === expectedGridX && Number(yInput.value) === expectedGridY;
+                }, 'the committed position to also update the X/Y display fields');
+            });
+
+            await check('tap-to-place-toggle-cancels-armed-capture', async function() {
+                var bridge = window.__mobileBoundary.bridge;
+                var placeButton = document.getElementById('gpc-mobile-template-place');
+                placeButton.click();
+                await waitFor(function() { return bridge.isPlacementActive() === true; }, 'placement to arm');
+                placeButton.click();
+                await waitFor(function() {
+                    return bridge.isPlacementActive() === false && placeButton.getAttribute('aria-pressed') === 'false';
+                }, 'tapping the armed button again to cancel the capture instead of committing');
             });
 
             await check('view-b-dpad-up-and-down-use-grid-y-semantics', async function() {
@@ -1357,14 +1363,14 @@ function buildDriverSource(mode) {
                 assertBrowser(viewB.querySelector('.gpc-mvb-set-location').disabled, 'ephemeral template must disable Set Location');
                 assertBrowser(viewB.querySelector('#gpc-mobile-template-x').disabled && viewB.querySelector('#gpc-mobile-template-y').disabled, 'ephemeral template must disable coordinate editing');
                 assertBrowser(Array.from(viewB.querySelectorAll('[data-mobile-nudge]')).every(function(button) { return button.disabled; }), 'ephemeral template must disable every D-pad move');
-                assertBrowser(document.getElementById('gpc-mobile-template-reticle').disabled, 'ephemeral template must disable reticle placement');
+                assertBrowser(document.getElementById('gpc-mobile-template-place').disabled, 'ephemeral template must disable tap-to-place');
                 assertEqual(bridge.canEditPosition(ephemeral), false, 'bridge must classify ephemeral position as locked');
                 assertEqual(await bridge.nudge(ephemeral, 0, 1), false, 'bridge must reject an ephemeral nudge');
                 assertEqual(await bridge.deleteTemplate(ephemeral.id), false, 'bridge must reject deleting an ephemeral history item');
                 assertDeepEqual(ephemeral.position, positionBefore, 'rejected ephemeral actions must preserve position');
             });
 
-            await check('view-b-return-restores-view-a-and-removes-reticle', async function() {
+            await check('view-b-return-restores-view-a', async function() {
                 var viewA = document.getElementById('gpc-mobile-view-a');
                 var viewB = document.getElementById('gpc-mobile-view-b');
                 var returnButton = viewB.querySelector('button[aria-label="Return to mobile painting"]');
@@ -1372,10 +1378,8 @@ function buildDriverSource(mode) {
                 returnButton.focus();
                 returnButton.click();
                 await waitFor(function() {
-                    return !effectivelyHidden(viewA)
-                        && effectivelyHidden(viewB)
-                        && !document.getElementById('gpc-mobile-template-reticle');
-                }, 'Return to restore View A and unmount the reticle');
+                    return !effectivelyHidden(viewA) && effectivelyHidden(viewB);
+                }, 'Return to restore View A');
                 assertEqual(viewA.getAttribute('aria-hidden'), 'false', 'Return must restore View A accessibly');
                 assertEqual(viewB.getAttribute('aria-hidden'), 'true', 'Return must hide View B accessibly');
                 assertBrowser(viewB.isConnected, 'hidden View B may remain mounted for later reuse');
@@ -1501,7 +1505,7 @@ function buildDriverSource(mode) {
                 var range = scaleRoot.querySelector('input[aria-label="Mobile UI scale"]');
                 var output = scaleRoot.querySelector('output');
                 // GeoPixelcons-owned surfaces: eligible for scaling.
-                var eligibleUi = document.getElementById('gpc-mobile-panel-header');
+                var eligibleUi = document.getElementById('gpc-mobile-native-controls-row');
                 var eligibleHamburger = document.getElementById('gpc-mobile-hamburger');
                 var previewCard = document.querySelector('.gpc-mobile-preview-card');
                 // Native site elements: scaling is deliberately scoped to

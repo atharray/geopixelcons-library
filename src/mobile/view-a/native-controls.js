@@ -24,20 +24,16 @@
         throw new Error('GeoPixelcons++ Mobile Overhaul requires a DOM document');
     }
 
-    function isMobileDarkTheme(documentRef) {
-        // Match the site's explicit Tailwind theme instead of the OS theme;
-        // the two can legitimately differ.
-        return !!(documentRef.body && documentRef.body.classList
-            && documentRef.body.classList.contains('dark'));
-    }
-
     function setMobileCssText(element, declarations) {
         const cssText = declarations.join(';');
         if (element.style.cssText !== cssText) element.style.cssText = cssText;
     }
 
+    // Colors come entirely from the shared var(--gpp-mobile-*) tokens
+    // (installMobileTheme(), theme.js) now -- no per-render dark-mode
+    // detection or hex-literal branching needed here at all; the cascade
+    // reacts to the site's own `body.dark` class on its own.
     function applyMobilePanelTheme(documentRef, shell) {
-        const dark = isMobileDarkTheme(documentRef);
         setMobileCssText(shell.root, [
             'position:fixed',
             'left:0',
@@ -52,35 +48,27 @@
             'width:100%',
             'min-height:96px',
             'padding:8px 10px calc(8px + env(safe-area-inset-bottom, 0px))',
-            'background:' + (dark ? '#1e1e2e' : '#ffffff'),
-            'color:' + (dark ? '#cdd6f4' : '#1e293b'),
-            'border-top:1px solid ' + (dark ? '#45475a' : '#e2e8f0'),
-            'box-shadow:0 -10px 30px ' + (dark ? 'rgba(0,0,0,0.45)' : 'rgba(15,23,42,0.18)'),
+            'background:var(--gpp-mobile-surface)',
+            'color:var(--gpp-mobile-text)',
+            'border-top:1px solid var(--gpp-mobile-border)',
+            'box-shadow:0 -10px 30px var(--gpp-mobile-shadow)',
             'pointer-events:auto',
             'touch-action:manipulation',
             'overscroll-behavior:contain',
-        ]);
-        setMobileCssText(shell.header, [
-            'display:flex',
-            'align-items:center',
-            'justify-content:space-between',
-            'gap:8px',
-            'margin-bottom:6px',
-            'font-size:12px',
-            'font-weight:700',
         ]);
         setMobileCssText(shell.closeButton, [
             'min-width:44px',
             'min-height:44px',
             'border:0',
             'border-radius:8px',
-            'background:' + (dark ? '#585b70' : '#e2e8f0'),
-            'color:' + (dark ? '#cdd6f4' : '#1e293b'),
+            'background:var(--gpp-mobile-surface-3)',
+            'color:var(--gpp-mobile-text)',
             'font:inherit',
-            'font-size:20px',
+            'font-size:16px',
             'line-height:1',
             'cursor:pointer',
             'touch-action:manipulation',
+            'flex:0 0 auto',
         ]);
         setMobileCssText(shell.row, [
             'display:flex',
@@ -146,31 +134,28 @@
             panel.setAttribute('role', 'region');
             panel.setAttribute('aria-label', 'GeoPixelcons++ mobile painting controls');
 
-            const header = documentRef.createElement('div');
-            header.id = 'gpc-mobile-panel-header';
-            header.className = 'gpc-mobile-panel-header';
-
-            const title = documentRef.createElement('span');
-            title.textContent = 'Mobile painting';
-
+            // No separate title bar -- it was just "Mobile painting" text
+            // plus this close button and nothing else. The close button now
+            // lives at the right edge of the native controls row instead,
+            // alongside everything else the user actually interacts with.
             const closeButton = documentRef.createElement('button');
             closeButton.id = 'gpc-mobile-panel-close';
             closeButton.type = 'button';
-            closeButton.textContent = '\u00d7';
+            closeButton.textContent = '\u2715';
             closeButton.setAttribute('aria-label', 'Close mobile painting controls');
 
             const row = documentRef.createElement('div');
             row.id = MOBILE_NATIVE_ROW_ID;
             row.className = 'gpc-mobile-native-controls-row';
+            // closeButton is appended in refresh(), after every other row
+            // item is placed, so it always lands rightmost regardless of
+            // what relocateNativeControls()/the UI scale control add later.
 
-            header.appendChild(title);
-            header.appendChild(closeButton);
-            panel.appendChild(header);
             panel.appendChild(row);
             root.appendChild(panel);
             mountTarget.appendChild(root);
 
-            shell = { root, panel, header, closeButton, row };
+            shell = { root, panel, closeButton, row };
             lifecycle.listen(closeButton, 'click', closePanel);
             applyMobilePanelTheme(documentRef, shell);
             syncOpenPresentation();
@@ -406,6 +391,13 @@
             ensureViewA();
             ensureViewB();
             ensureAdditions();
+            // Appended last, unconditionally, so it always ends up rightmost
+            // regardless of what relocateNativeControls()/the UI scale
+            // control just added -- appendChild on an already-connected
+            // node just moves it, so this is a cheap no-op once settled.
+            if (shell && shell.row.lastElementChild !== shell.closeButton) {
+                shell.row.appendChild(shell.closeButton);
+            }
             applyActiveView();
             syncOpenPresentation();
             return controller;

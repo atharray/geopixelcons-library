@@ -158,8 +158,8 @@
         if (!bridge || typeof bridge !== 'object') {
             throw new TypeError('View A requires the Mobile Overhaul bridge');
         }
-        if (!shell || !shell.panel || !shell.header || !shell.row) {
-            throw new TypeError('View A requires shell.panel, shell.header, and shell.row');
+        if (!shell || !shell.panel || !shell.row) {
+            throw new TypeError('View A requires shell.panel and shell.row');
         }
 
         const documentRef = (bridge.env && bridge.env.document) || shell.panel.ownerDocument;
@@ -244,6 +244,12 @@
             return node;
         }
 
+        function iconButton(className, iconName, label) {
+            const node = button(className, undefined, label);
+            node.innerHTML = mobileIconMarkup(iconName);
+            return node;
+        }
+
         function listen(target, type, listener, options) {
             if (!target || typeof target.addEventListener !== 'function') return;
             if (lifecycle && typeof lifecycle.listen === 'function') {
@@ -295,18 +301,10 @@
         const staticStyle = element('style');
         staticStyle.textContent = `
             .gpc-mobile-view-a {
-                --mva-surface: #ffffff; --mva-surface-2: #f8fafc; --mva-text: #1e293b;
-                --mva-muted: #64748b; --mva-border: #cbd5e1; --mva-button: #e2e8f0;
-                --mva-button-active: #facc15; --mva-focus: #2563eb; --mva-danger: #b91c1c;
                 box-sizing: border-box; position: relative; display: flex; flex: 1 1 auto; min-height: 0;
                 flex-direction: column; gap: 6px; overflow: hidden; padding: 4px 48px 4px 0;
-                color: var(--mva-text);
+                color: var(--gpp-mobile-text);
                 overscroll-behavior: contain;
-            }
-            body.dark .gpc-mobile-view-a {
-                --mva-surface: #1e1e2e; --mva-surface-2: #313244; --mva-text: #cdd6f4;
-                --mva-muted: #a6adc8; --mva-border: #585b70; --mva-button: #45475a;
-                --mva-button-active: #f9e2af; --mva-focus: #89b4fa; --mva-danger: #f38ba8;
             }
             .gpc-mva-resize-handle {
                 position: absolute; z-index: 4; top: 0; right: 0; width: 44px; height: 100%;
@@ -316,38 +314,38 @@
             .gpc-mva-resize-handle::after {
                 content: ''; position: absolute; top: 50%; right: 12px; width: 4px; height: 32px;
                 transform: translateY(-50%);
-                border-radius: 999px; background: var(--mva-border);
+                border-radius: 999px; background: var(--gpp-mobile-border);
             }
             .gpc-mva-toolbar { display: flex; align-items: center; gap: 6px; min-width: 0; }
             .gpc-mva-search, .gpc-mva-select, .gpc-mva-count {
-                box-sizing: border-box; min-height: 44px; border: 1px solid var(--mva-border);
-                border-radius: 8px; background: var(--mva-surface-2); color: var(--mva-text);
+                box-sizing: border-box; min-height: 44px; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 8px; background: var(--gpp-mobile-surface-2); color: var(--gpp-mobile-text);
                 font: inherit; font-size: 14px; padding: 8px;
             }
             .gpc-mva-search { flex: 1 1 110px; min-width: 88px; }
             .gpc-mva-tool-button {
                 box-sizing: border-box; min-width: 44px; min-height: 44px; padding: 6px 9px;
-                border: 1px solid var(--mva-border); border-radius: 8px;
-                background: var(--mva-button); color: var(--mva-text); font: inherit;
+                border: 1px solid var(--gpp-mobile-border); border-radius: 8px;
+                background: var(--gpp-mobile-surface-3); color: var(--gpp-mobile-text); font: inherit;
                 font-size: 18px; cursor: pointer; touch-action: manipulation;
+                display: inline-flex; align-items: center; justify-content: center;
             }
             .gpc-mva-tool-button[aria-pressed='true'] {
-                background: var(--mva-button-active); color: #422006;
-                box-shadow: 0 0 0 2px color-mix(in srgb, var(--mva-button-active) 50%, transparent);
+                background: var(--gpp-mobile-focus); color: #ffffff;
+                box-shadow: 0 0 0 2px var(--gpp-mobile-focus-wash);
             }
-            body.dark .gpc-mva-tool-button[aria-pressed='true'] { color: #422006; }
             .gpc-mva-fold-region { position: relative; }
             .gpc-mva-fold {
                 position: absolute; z-index: 8; right: 0; bottom: calc(100% + 6px); width: min(360px, 92vw);
                 box-sizing: border-box; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-                padding: 10px; border: 1px solid var(--mva-border); border-radius: 10px;
-                background: var(--mva-surface); color: var(--mva-text);
+                padding: 10px; border: 1px solid var(--gpp-mobile-border); border-radius: 10px;
+                background: var(--gpp-mobile-surface); color: var(--gpp-mobile-text);
                 box-shadow: 0 8px 24px rgba(15, 23, 42, .24); overscroll-behavior: contain;
             }
             body.dark .gpc-mva-fold { box-shadow: 0 8px 24px rgba(0, 0, 0, .45); }
             .gpc-mva-fold[hidden] { display: none; }
             .gpc-mva-field { display: flex; min-width: 0; flex-direction: column; gap: 4px;
-                color: var(--mva-muted); font-size: 12px; font-weight: 700; }
+                color: var(--gpp-mobile-muted); font-size: 12px; font-weight: 700; }
             .gpc-mva-filter { min-height: 132px; }
             .gpc-mva-count-row { grid-column: 1 / -1; display: flex; gap: 8px; }
             .gpc-mva-count { width: 50%; }
@@ -365,10 +363,10 @@
             }
             .gpc-mva-swatch {
                 box-sizing: border-box; position: relative; flex: 0 0 58px; min-width: 58px; min-height: 54px;
-                border: 2px solid var(--mva-border); border-radius: 9px; overflow: hidden;
+                border: 2px solid var(--gpp-mobile-border); border-radius: 9px; overflow: hidden;
                 cursor: pointer; scroll-snap-align: start; touch-action: manipulation;
             }
-            .gpc-mva-swatch[aria-pressed='true'] { border-color: var(--mva-focus); box-shadow: 0 0 0 2px var(--mva-focus); }
+            .gpc-mva-swatch[aria-pressed='true'] { border-color: var(--gpp-mobile-focus); box-shadow: 0 0 0 2px var(--gpp-mobile-focus); }
             .gpc-mva-swatch:disabled { cursor: progress; opacity: .65; }
             .gpc-mva-swatch-label {
                 position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 1px;
@@ -377,21 +375,21 @@
             }
             body.dark .gpc-mva-swatch-label { background: rgba(0, 0, 0, .78); color: #ffffff; }
             .gpc-mva-scrub { box-sizing: border-box; width: 100%; min-height: 24px; margin: 0; touch-action: pan-x; }
-            .gpc-mva-empty { align-self: center; padding: 8px; color: var(--mva-muted); font-size: 12px; }
+            .gpc-mva-empty { align-self: center; padding: 8px; color: var(--gpp-mobile-muted); font-size: 12px; }
             .gpc-mva-thumbnail-column { display: flex; min-width: 0; flex-direction: column; }
             .gpc-mva-thumbnail {
                 box-sizing: border-box; display: flex; flex: 1 1 auto; min-height: 64px; align-items: center;
-                justify-content: center; padding: 4px; border: 1px solid var(--mva-border);
-                border-radius: 9px; background: var(--mva-surface-2); color: var(--mva-muted);
+                justify-content: center; padding: 4px; border: 1px solid var(--gpp-mobile-border);
+                border-radius: 9px; background: var(--gpp-mobile-surface-2); color: var(--gpp-mobile-muted);
                 overflow: hidden; cursor: pointer; touch-action: manipulation;
             }
             .gpc-mva-thumbnail canvas, .gpc-mva-thumbnail img {
                 display: block; max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: pixelated;
             }
-            .gpc-mva-stats { flex: 0 0 auto; min-height: 18px; color: var(--mva-muted);
+            .gpc-mva-stats { flex: 0 0 auto; min-height: 18px; color: var(--gpp-mobile-muted);
                 font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .gpc-mva-status { min-height: 16px; color: var(--mva-danger); font-size: 11px; }
-            .gpc-mobile-view-a :focus-visible { outline: 3px solid var(--mva-focus); outline-offset: 2px; }
+            .gpc-mva-status { min-height: 16px; color: var(--gpp-mobile-danger); font-size: 11px; }
+            .gpc-mobile-view-a :focus-visible { outline: 3px solid var(--gpp-mobile-focus); outline-offset: 2px; }
             @media (orientation: landscape) and (max-height: 520px) {
                 .gpc-mobile-view-a { gap: 3px; padding-bottom: max(2px, env(safe-area-inset-bottom, 0px)); }
                 .gpc-mva-workspace { min-height: 54px; }
@@ -415,15 +413,15 @@
         searchInput.spellcheck = false;
         searchInput.setAttribute('aria-label', 'Fuzzy hex color search');
 
-        const showAllButton = button('gpc-mva-tool-button', '◉', 'Show all template colors');
+        const showAllButton = iconButton('gpc-mva-tool-button', 'showAllColors', 'Show all template colors');
         showAllButton.title = 'Show all colors';
         showAllButton.setAttribute('aria-pressed', 'false');
 
-        const thumbnailToggle = button('gpc-mva-tool-button', '▣', 'Hide template thumbnail');
+        const thumbnailToggle = iconButton('gpc-mva-tool-button', 'hideThumbnail', 'Hide template thumbnail');
         thumbnailToggle.title = 'Hide template thumbnail';
         thumbnailToggle.setAttribute('aria-pressed', 'false');
 
-        const wrenchButton = button('gpc-mva-tool-button', '⚙', 'Open template settings');
+        const wrenchButton = iconButton('gpc-mva-tool-button', 'settings', 'Open template settings');
         wrenchButton.title = 'Template settings';
 
         const foldRegion = element('div', 'gpc-mva-fold-region');
@@ -609,7 +607,12 @@
             refresh();
             let selection;
             try {
-                selection = bridge.selectColor(row.index);
+                // While "Show all colors" is on, selecting a swatch only
+                // changes the active native paint color -- it must not
+                // narrow template.mask back down to one color, or the map
+                // would stop showing the rest of the project as a guide the
+                // moment the user picks a color to actually paint with.
+                selection = bridge.selectColor(row.index, { narrowMask: !showAll });
             } catch (error) {
                 selection = Promise.reject(error);
             }

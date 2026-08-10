@@ -22,6 +22,7 @@
     let gppMobilePaintOriginalFetch = null;
     let gppMobilePaintWrappedFetch = null;
     let gppMobileLateHookRetryTimer = null;
+    let gppMobilePlacementActive = false;
 
     function gppMobileOverhaulEnsureOpen() {
         if (gppMobileOverhaulController && typeof gppMobileOverhaulController.openPanel === 'function') {
@@ -292,6 +293,60 @@
         return true;
     }
 
+    // Tap-to-place: reuses gpp-placement.js's gppBeginPlacementCapture()
+    // directly -- the exact same capture-phase, DOM-hit-tested mechanism
+    // desktop's own Place button and the E keyboard shortcut already use
+    // safely (no gesture-collision risk with the map's own pan/zoom, since
+    // this was already proven out there). Replaces the mobile-only fixed
+    // reticle system, which reinvented positioning instead of reusing this.
+    // Commits directly on the first map tap -- there is no intermediate
+    // "draft" step here, matching how the desktop Place button itself
+    // behaves (a tap IS the commit), unlike the manual X/Y input fields
+    // (template-settings.js's own separate draft-then-Set-Location flow),
+    // which are untouched by this and remain their own precise-entry path.
+    function gppMobileBeginPlacement(templateOrId, onPlaced, onStatus) {
+        const template = typeof templateOrId === 'string' ? gppMobileFindTemplate(templateOrId) : templateOrId;
+        if (!template) {
+            if (onStatus) onStatus('Focus a template first.', true);
+            return false;
+        }
+        if (gppIsPositionLocked(template)) {
+            if (onStatus) onStatus('This template’s position is locked.', true);
+            return false;
+        }
+        if (typeof gppBeginPlacementCapture !== 'function') {
+            if (onStatus) onStatus('Placement is not available yet.', true);
+            return false;
+        }
+        gppMobilePlacementActive = true;
+        gppBeginPlacementCapture(
+            template,
+            position => {
+                gppMobilePlacementActive = false;
+                gppMobileCommitPosition(template, position.gridX, position.gridY)
+                    .then(committed => { if (onPlaced) onPlaced(committed ? position : null); })
+                    .catch(error => {
+                        console.error('[GeoPixelcons++] Mobile Overhaul failed to commit a tapped position:', error);
+                        if (onStatus) onStatus('Could not set that location.', true);
+                    });
+            },
+            (message, isError) => {
+                if (isError) gppMobilePlacementActive = false;
+                if (onStatus) onStatus(message, isError);
+            }
+        );
+        return true;
+    }
+
+    function gppMobileCancelPlacement() {
+        gppMobilePlacementActive = false;
+        if (typeof gppCancelPlacementCapture === 'function') gppCancelPlacementCapture();
+    }
+
+    function gppMobileIsPlacementActive() {
+        return gppMobilePlacementActive;
+    }
+
     async function gppMobileNudge(templateOrId, deltaX, deltaY) {
         const template = typeof templateOrId === 'string' ? gppMobileFindTemplate(templateOrId) : templateOrId;
         if (!template || !template.position) return false;
@@ -439,6 +494,9 @@
             readCenterGrid: () => gppMobileReadCenterGrid(),
             canEditPosition: template => !!template && !gppIsPositionLocked(template),
             commitPosition: (template, x, y) => gppMobileCommitPosition(template, x, y),
+            beginPlacement: (template, onPlaced, onStatus) => gppMobileBeginPlacement(template, onPlaced, onStatus),
+            cancelPlacement: () => gppMobileCancelPlacement(),
+            isPlacementActive: () => gppMobileIsPlacementActive(),
             nudge: (template, dx, dy) => gppMobileNudge(template, dx, dy),
             isPreviewForced: id => gppForcedVisibleTemplateIds.has(id),
             togglePreview: template => gppMobileTogglePreview(template),

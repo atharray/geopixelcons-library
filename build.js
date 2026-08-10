@@ -17,6 +17,7 @@ const OUTPUT = path.join(ROOT, 'dist', 'geopixelcons-library.js');
 // does end up inside the brackets below.
 const LEGACY_SOURCE_ORDER = [
     'src/mobile/wrapper-open.js',
+    'src/mobile/theme.js',
     'src/mobile/contract.js',
     'src/mobile/shared/lifecycle.js',
     'src/mobile/hamburger-menu.js',
