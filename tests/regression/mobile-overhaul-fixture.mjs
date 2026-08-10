@@ -1657,6 +1657,83 @@ function buildDriverSource(mode) {
                 assertDeepEqual(after, before, 'rejected fractional coordinates must leave template.position unchanged');
             });
 
+            await check('mobile-compatibility-setting-removed', async function() {
+                // loadSettings() merges forward from whatever localStorage
+                // already has -- an old stored blob keeping the now-unused
+                // mobileCompatibility key around is harmless, inert data,
+                // not something removing it from DEFAULT_SETTINGS promises
+                // to strip. What actually matters: the feature has no UI and
+                // does nothing with the key even if it's present.
+                document.dispatchEvent(new KeyboardEvent('keydown', {
+                    key: 'P', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true,
+                }));
+                await waitFor(function() { return document.getElementById('gpc-settings-modal'); }, 'settings modal');
+                var rows = Array.from(document.querySelectorAll('#gpc-settings-modal *')).filter(function(node) {
+                    return node.textContent && node.textContent.indexOf('Mobile Compatibility') !== -1;
+                });
+                assertEqual(rows.length, 0, 'settings modal must not expose a Mobile Compatibility row');
+                document.getElementById('gpc-settings-modal').remove();
+            });
+
+            await check('close-panel-forces-native-resume-control-visible-when-natively-hidden', async function() {
+                var controller = window.__mobileBoundary.controller;
+                var resume = document.getElementById('resumePaintingControl');
+                // The fixture's plain stub button never hides itself on its
+                // own -- simulate the real native site's own paint-mode
+                // logic (setPrimaryMode()/updateInterfaceState()) leaving it
+                // hidden while painting, which is the actual condition
+                // behind the reported "closed the panel, no way back in" bug.
+                resume.hidden = true;
+                resume.setAttribute('aria-hidden', 'true');
+                resume.style.setProperty('display', 'none');
+                controller.openPanel();
+                await waitFor(function() { return controller.isOpen === true; }, 'the panel to open');
+                controller.closePanel();
+                await waitFor(function() { return controller.isOpen === false; }, 'the panel to close');
+                assertBrowser(!resume.hidden, 'closing the panel must force the native resume control visible even when native mode logic left it hidden');
+                assertBrowser(resume.getAttribute('aria-hidden') !== 'true', 'closing the panel must clear aria-hidden from the forced-visible resume control');
+                assertEqual(resume.style.getPropertyValue('display'), '', 'closing the panel must clear an inline display:none on the resume control');
+                resume.click();
+                await waitFor(function() { return controller.isOpen === true; }, 'the now-visible resume control to reopen the panel');
+                assertBrowser(resume.hidden, 'reopening the panel must let it own the reopen affordance again, suppressing the native control');
+            });
+
+            await check('reopen-via-resume-control-shows-view-a-not-stranded-view-b', async function() {
+                var controller = window.__mobileBoundary.controller;
+                var viewA = document.getElementById('gpc-mobile-view-a');
+                var viewB = document.getElementById('gpc-mobile-view-b');
+                var wrench = viewA.querySelector('button[aria-label="Open template settings"]');
+                controller.openPanel();
+                await waitFor(function() { return controller.isOpen === true && !effectivelyHidden(viewA); }, 'the panel to open showing View A');
+                wrench.click();
+                await waitFor(function() { return !effectivelyHidden(viewB); }, 'View B to open via the wrench icon');
+                controller.closePanel();
+                await waitFor(function() { return controller.isOpen === false; }, 'the panel to close while View B was still active');
+                var resume = document.getElementById('resumePaintingControl');
+                resume.click();
+                await waitFor(function() { return controller.isOpen === true; }, 'the resume control to reopen the panel');
+                assertBrowser(!effectivelyHidden(viewA), 'reopening via any path other than View B’s own Return button must show View A, the painting menu');
+                assertBrowser(effectivelyHidden(viewB), 'reopening via any path other than Return must not leave View B stranded on screen');
+                assertEqual(viewA.getAttribute('aria-hidden'), 'false', 'View A must be exposed accessibly after this reopen path');
+                assertEqual(viewB.getAttribute('aria-hidden'), 'true', 'View B must be hidden accessibly after this reopen path');
+            });
+
+            await check('close-panel-also-closes-open-preview-modal', async function() {
+                var controller = window.__mobileBoundary.controller;
+                var viewA = document.getElementById('gpc-mobile-view-a');
+                controller.openPanel();
+                await waitFor(function() { return controller.isOpen === true && !effectivelyHidden(viewA); }, 'the panel to open showing View A');
+                var thumbnail = viewA.querySelector('button[aria-label="Open focused template preview"]');
+                if (!thumbnail || thumbnail.disabled) return; // no focused template installed by this point in the sequence
+                thumbnail.click();
+                var overlay = document.getElementById('gpc-mobile-preview-dialog');
+                await waitFor(function() { return overlay && !effectivelyHidden(overlay); }, 'the preview modal to open');
+                controller.closePanel();
+                await waitFor(function() {
+                    return controller.isOpen === false && effectivelyHidden(overlay);
+                }, 'closing the panel to also close the still-open preview modal, not leave it covering the map');
+            });
+
             await check('controller-destroy-restores-host-effects', async function() {
                 var bridge = window.__mobileBoundary.bridge;
                 var controller = window.__mobileBoundary.controller;
