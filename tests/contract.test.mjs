@@ -5,42 +5,17 @@ import vm from 'node:vm';
 
 const artifact = readFileSync(new URL('../dist/geopixelcons-library.js', import.meta.url), 'utf8');
 
-function createAdapter() {
-    const fn = () => undefined;
-    return {
-        contractVersion: 1,
-        env: { window: {}, document: {} },
-        settings: { get: fn, subscribe: fn },
-        native: { clickControl: fn, changeColor: fn, activateEyedropper: fn },
-        ghost: { getTemplates: fn, focus: fn, renderPreview: fn, scan: fn },
-        map: { readCenterGrid: fn, commitPosition: fn, goTo: fn },
-        ui: { requestRefresh: fn, reportError: fn },
-    };
-}
-
-function loadLibrary() {
-    const sandbox = { Map, Object, TypeError, Error, AggregateError };
+test('loads as a side-effect-free factory before the main userscript', () => {
+    const sandbox = { Object, Error };
     vm.createContext(sandbox);
-    vm.runInContext(artifact, sandbox, { filename: 'geopixelcons-library.js' });
-    return sandbox.GeoPixelconsLibrary;
-}
-
-test('validates the explicit adapter contract', () => {
-    const library = loadLibrary();
-    assert.equal(library.contractVersion, 1);
-    assert.throws(() => library.boot({ contractVersion: 1 }), /env\.window/);
-    assert.throws(() => library.boot({ ...createAdapter(), contractVersion: 2 }), /Unsupported/);
+    assert.doesNotThrow(() => vm.runInContext(artifact, sandbox, { filename: 'geopixelcons-library.js' }));
+    assert.equal(sandbox.GeoPixelconsLibrary.version, '1.0.0');
+    assert.equal(typeof sandbox.GeoPixelconsLibrary.boot, 'function');
 });
 
-test('owns controller lifecycle without leaking main state', () => {
-    const library = loadLibrary();
-    const runtime = library.boot(createAdapter());
-    const calls = [];
-    runtime.register('first', () => ({ refresh: () => calls.push('refresh-first'), destroy: () => calls.push('destroy-first') }));
-    runtime.register('second', () => ({ refresh: () => calls.push('refresh-second'), destroy: () => calls.push('destroy-second') }));
-    runtime.refresh();
-    runtime.destroy();
-    assert.deepEqual(calls, ['refresh-first', 'refresh-second', 'destroy-second', 'destroy-first']);
-    assert.equal(runtime.destroyed, true);
-    assert.throws(() => runtime.refresh(), /destroyed/);
+test('keeps the legacy application behind the boot boundary', () => {
+    assert.match(artifact, /function boot\(\)/);
+    assert.match(artifact, /FEATURE: Mobile System Overhaul/);
+    assert.match(artifact, /const VERSION = '2\.0\.0';/);
+    assert.match(artifact, /const LIBRARY_VERSION = '1\.0\.0'; \/\/ x-release-please-version/);
 });

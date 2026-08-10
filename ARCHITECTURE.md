@@ -7,13 +7,34 @@ moving adapter-backed feature controllers into one immutable, readable library
 bundle. The browser still downloads the complete feature set; this split reduces
 the Greasyfork script artifact and makes large UI work independently testable.
 
+## Current Compatibility Cut
+
+The first complete migration uses a behavior-preserving boundary: the library
+contains the original core, every feature module, footer, and mobile UI bundle
+inside `GeoPixelconsLibrary.boot()`. The shell loads that side-effect-free
+factory through `@require` and invokes it only after the document is ready.
+This keeps `_settings`, `gppState`, and every existing lexical dependency in
+one private IIFE, without `eval`, globals, or a risky all-at-once rewrite.
+
+The shell is therefore currently about 2.3 KB. The 270-330 KB target remains a
+safe ceiling for later shell capabilities, not a requirement to pad the shell.
+Controller-level adapter extraction remains the next internal library phase.
+
+```mermaid
+flowchart LR
+  CDN["Pinned jsDelivr library"] --> Require["@require factory only"]
+  Require --> Shell["2.3 KB shell"]
+  Shell --> Boot["GeoPixelconsLibrary.boot()"]
+  Boot --> Legacy["Original private IIFE\ncore + all features + mobile UI"]
+  Legacy --> Native["GeoPixels DOM + native Paint"]
+```
+
 ## Repository Boundaries
 
 Only two public code repositories are needed:
 
-1. `geopixelcons++` / its current `scripts/geopixelcons++` source: the thin
-   Greasyfork shell, metadata, settings, bridge, native submission wrappers,
-   fallback, and release fixture.
+1. `geopixelcons-plusplus`: the thin Greasyfork shell, metadata, verified
+   library pin, fallback, and release artifact workflow.
 2. `geopixelcons-library`: all reusable feature controllers, the explicit
    adapter contract, library tests, and one readable published bundle.
 
@@ -34,12 +55,10 @@ flowchart LR
   CDN --> Require["Tampermonkey @require\nloads before main"]
   GF --> Require
   Require --> Factory["GeoPixelconsLibrary factory\nno side effects"]
-  Factory --> Shell["main private IIFE\ncreates narrow adapter"]
-  Shell --> Boot["library boot(adapter)"]
-  Boot --> Features["feature controllers\nUI, rendering, tools"]
-  Features --> Adapter["explicit callbacks only"]
-  Adapter --> Shell
-  Shell --> Native["GeoPixels native DOM + Paint"]
+  Factory --> Shell["small userscript shell"]
+  Shell --> Boot["library boot()"]
+  Boot --> Features["preserved private IIFE\ncore, UI, rendering, tools"]
+  Features --> Native["GeoPixels native DOM + Paint"]
 ```
 
 The bundle must never fetch or evaluate more executable code at runtime. It
@@ -66,9 +85,12 @@ The main metadata must use an immutable tag and Tampermonkey SRI:
 // @require https://cdn.jsdelivr.net/gh/atharray/geopixelcons-library@vX.Y.Z/dist/geopixelcons-library.js#sha256-<base64-digest>
 ```
 
-## Adapter Contract
+## Future Adapter Contract
 
-The shell passes a frozen, versioned object with only necessary operations:
+The current compatibility wrapper does **not** use this adapter yet: keeping the
+legacy IIFE whole is safer. Once a feature becomes a restartable controller,
+the shell/library boundary will pass a frozen, versioned object with only the
+operations it needs:
 
 ```js
 {
@@ -120,3 +142,23 @@ disable, and re-enable paths.
 
 Never point a Greasyfork release at a local tag, a branch, `latest`, or an
 unhashed executable URL.
+
+## Protected-Branch Release Cadence
+
+```mermaid
+flowchart LR
+  F["feature/name branch"] --> P["PR to protected main"]
+  P --> T["Immutable preview tag\nv1.0.0-feature-name-1"]
+  P --> R["Reviewed merge to main"]
+  R --> RP["Release Please PR"]
+  RP --> S["Reviewed release merge\nstable v1.0.0 or later"]
+  S --> CDN["jsDelivr exact tag + SRI"]
+  CDN --> Shell["GeoPixelcons++ shell PR"]
+```
+
+Preview tags are created only for same-repository PRs and point to that PR's
+head commit. They are immutable test candidates; they do not alter `main`, do
+not move a stable tag, and must never be copied into a Greasyfork `@require`.
+The first stable tag, `v1.0.0`, is a deliberate one-time bootstrap created from
+reviewed `main`. Future stable releases are prepared and tagged by Release
+Please from conventional `feat:` (minor) and `fix:` (patch) commits.

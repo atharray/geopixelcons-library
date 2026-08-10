@@ -1,0 +1,25 @@
+name: Create PR preview tag
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  tag-preview:
+    # Fork PRs are deliberately ignored by the trusted script as an extra
+    # safety boundary. It never checks out or executes PR-supplied code.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the trusted base revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - name: Create immutable preview tag and prerelease
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/prerelease-tag.mjs
