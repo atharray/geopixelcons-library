@@ -371,6 +371,19 @@
             }
         }
 
+        // Round 4 live-device performance investigation: this used to
+        // unconditionally call additionsController.refresh() on EVERY
+        // single call, i.e. on every one of THIS controller's own refresh()
+        // cycles -- which itself runs on every native mutation this
+        // controller's own (document-wide) MutationObserver considers
+        // relevant. additions.js already has its own independent,
+        // correctly-scoped MutationObserver providing its own reactivity
+        // to exactly the changes it cares about (the UI scale targets,
+        // toggleEyedropper_Bottom, commitBtn) -- this call added a second,
+        // redundant full re-render on top of that for every native change
+        // this (much broader) controller happened to notice, whether or
+        // not it was ever relevant to additions.js at all. Only the lazy
+        // creation below is still needed here.
         function ensureAdditions() {
             if (typeof createMobileAdditions !== 'function' || !shell) return;
             if (additionsController && additionsShell !== shell) {
@@ -381,8 +394,6 @@
             if (!additionsController || additionsController.destroyed) {
                 additionsController = createMobileAdditions(bridge, lifecycle, shell);
                 additionsShell = shell;
-            } else {
-                additionsController.refresh();
             }
         }
 
@@ -413,6 +424,15 @@
             }
         }
 
+        // Same reasoning as ensureAdditions() above: hamburger-menu.js
+        // already has its own independent, correctly-scoped
+        // MutationObserver (watching #controls-left specifically, plus
+        // document.body's own class attribute for theme reactivity) --
+        // this unconditional .refresh() call was a second, redundant full
+        // menu rebuild (clearMenu() + re-render every flattened action)
+        // on top of that, running every time THIS controller's own much
+        // broader observer fired, regardless of whether anything
+        // hamburger-menu.js actually cares about had changed.
         function ensureHamburgerMenu() {
             if (typeof createMobileHamburgerMenu !== 'function') return;
             if (!hamburgerController || hamburgerController.destroyed) {
@@ -420,8 +440,6 @@
                     openPanel,
                     showTemplateSettings,
                 });
-            } else {
-                hamburgerController.refresh();
             }
         }
 
