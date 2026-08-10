@@ -403,7 +403,10 @@ function buildFixtureHtml(includeExternal) {
             <span id="currentEnergyDisplay">123</span>
             <span id="between-energy-brush">between energy and brush</span>
             <button id="toggleBrushModeBtn_Bottom" type="button">Brush</button>
-            <button id="brush-swap-toggle" type="button">Swap</button>
+            <div id="brush-swap-wrapper" class="relative inline-block">
+                <button id="brush-swap-toggle" type="button">Swap</button>
+                <div id="brush-swap-dropdown" style="width:120px;height:80px;position:absolute;bottom:100%;right:0;"></div>
+            </div>
             <span id="between-brush-paint">between brush and paint</span>
             <button id="commitBtn" type="button">Paint (0)</button>
             <button id="toggleEyedropper_Bottom" type="button">Eyedropper</button>
@@ -599,6 +602,8 @@ window.__nativeGhostControlCalls = 0;
 window.__nativeChangeColorCalls = 0;
 window.__fixtureNativeNestedLeafCalls = 0;
 window.__nativeMapJumpCalls = 0;
+window.__nativeBrushSwapToggleCalls = 0;
+window.__nativeBrushSwapWheelCalls = 0;
 window.__lastNativeMapJump = null;
 window.__nativePlacePixelCalls = [];
 window.__nativeEyedropperArmed = false;
@@ -645,6 +650,17 @@ document.getElementById('fixtureNativeNestedLeaf').addEventListener('click', fun
 });
 document.getElementById('toggleEyedropper_Bottom').addEventListener('click', function() {
     toggleEyedropperMode();
+});
+// Mimics paint-brush-swap.js's own toggleDropdown() just closely enough to
+// verify native-controls.js's proxy forwards to the REAL button (this one,
+// left in place) instead of moving it -- toggling classList.open here is
+// exactly what the real dropdown does when shown/hidden.
+document.getElementById('brush-swap-toggle').addEventListener('click', function() {
+    window.__nativeBrushSwapToggleCalls += 1;
+    document.getElementById('brush-swap-dropdown').classList.toggle('open');
+});
+document.getElementById('brush-swap-toggle').addEventListener('wheel', function() {
+    window.__nativeBrushSwapWheelCalls += 1;
 });
 document.getElementById('resumePaintingControl').addEventListener('click', function() {
     window.__nativeResumeCalls += 1;
@@ -864,16 +880,27 @@ function buildDriverSource(mode) {
                 var row = document.getElementById('gpc-mobile-native-controls-row');
                 assertBrowser(controller.mounted, 'controller must report mounted');
                 assertBrowser(root && panel && row, 'external root, panel, and native row must mount');
-                ['currentEnergyDisplay', 'toggleBrushModeBtn_Bottom', 'brush-swap-toggle', 'commitBtn', 'toggleEyedropper_Bottom'].forEach(function(id) {
+                ['currentEnergyDisplay', 'toggleBrushModeBtn_Bottom', 'commitBtn', 'toggleEyedropper_Bottom'].forEach(function(id) {
                     assertEqual(document.getElementById(id).parentElement, row, id + ' must move into the mobile native row');
                 });
+                // brush-swap-toggle is deliberately NOT moved -- its saved-
+                // brush dropdown is a position:absolute sibling anchored to
+                // its original wrapper, so relocating the button alone would
+                // strand a now-invisible dropdown inside display:none
+                // #bottomControls. A proxy button takes its place in the
+                // row instead (see the dedicated brush-swap-proxy check).
+                assertEqual(
+                    document.getElementById('brush-swap-toggle').parentElement,
+                    document.getElementById('brush-swap-wrapper'),
+                    'the real brush-swap-toggle must stay in its original wrapper, not move into the mobile native row',
+                );
                 assertDeepEqual(
                     Array.from(row.children).map(function(element) { return element.id; }),
                     [
-                        'currentEnergyDisplay', 'toggleBrushModeBtn_Bottom', 'brush-swap-toggle', 'commitBtn', 'toggleEyedropper_Bottom',
+                        'currentEnergyDisplay', 'toggleBrushModeBtn_Bottom', 'gpc-mobile-brush-swap-proxy', 'commitBtn', 'toggleEyedropper_Bottom',
                         'gpc-mobile-ui-scale-control', 'gpc-mobile-panel-close',
                     ],
-                    'native controls must retain the specified mobile row order with Eyedropper after Paint, followed by the UI scale control and the close button (no separate header bar)',
+                    'native controls must retain the specified mobile row order with the brush-swap proxy after Brush, Eyedropper after Paint, followed by the UI scale control and the close button (no separate header bar)',
                 );
                 assertBrowser(!document.getElementById('gpc-mobile-panel-header'), 'the old separate title/close header bar must no longer exist');
                 assertEqual(
@@ -886,6 +913,81 @@ function buildDriverSource(mode) {
                     document.body,
                     'toolbar eyedropper must stay connected in its original location for native setToolMode',
                 );
+            });
+
+            await check('native-controls-row-order-stable-across-refreshes', async function() {
+                // Regression test for a real ordering bug found while
+                // building the brush-swap proxy: relocateNativeControls()'s
+                // reorder loop anchored its last element to the row's
+                // absolute end (null), which is only correct on the very
+                // first refresh -- on every later refresh it walked the
+                // whole 5-item block one position further past whatever
+                // ensureAdditions()/refresh() had already appended after it
+                // (the UI scale control, the close button), since "the
+                // row's true end" had moved past them. By the 3rd refresh
+                // the scale control had walked all the way to the front.
+                var controller = window.__mobileBoundary.controller;
+                var row = document.getElementById('gpc-mobile-native-controls-row');
+                var expectedOrder = [
+                    'currentEnergyDisplay', 'toggleBrushModeBtn_Bottom', 'gpc-mobile-brush-swap-proxy', 'commitBtn', 'toggleEyedropper_Bottom',
+                    'gpc-mobile-ui-scale-control', 'gpc-mobile-panel-close',
+                ];
+                for (var refreshCount = 0; refreshCount < 6; refreshCount += 1) {
+                    controller.refresh();
+                    assertDeepEqual(
+                        Array.from(row.children).map(function(element) { return element.id; }),
+                        expectedOrder,
+                        'row order must stay stable after refresh #' + (refreshCount + 1) + ', not walk the UI scale control/close button out of place',
+                    );
+                }
+            });
+
+            await check('brush-swap-proxy-forwards-clicks-and-repositions-dropdown', async function() {
+                var proxy = document.getElementById('gpc-mobile-brush-swap-proxy');
+                var realToggle = document.getElementById('brush-swap-toggle');
+                var dropdown = document.getElementById('brush-swap-dropdown');
+                assertBrowser(proxy, 'a brush-swap proxy button must be mounted in the mobile row');
+                assertEqual(proxy.getAttribute('aria-label'), 'Toggle saved brushes', 'the proxy must carry a descriptive label instead of the native "▲ brushes" text');
+                assertBrowser(!dropdown.classList.contains('open'), 'dropdown must start closed');
+
+                var callsBefore = window.__nativeBrushSwapToggleCalls;
+                proxy.click();
+                await waitFor(function() {
+                    return window.__nativeBrushSwapToggleCalls === callsBefore + 1
+                        && dropdown.classList.contains('open')
+                        && dropdown.parentElement === document.body
+                        && dropdown.style.position === 'fixed';
+                }, 'a proxy click to forward to the real (still in place) brush-swap-toggle, open its dropdown, and move+reposition it onto document.body');
+
+                var proxyRect = proxy.getBoundingClientRect();
+                var dropdownRect = dropdown.getBoundingClientRect();
+                assertBrowser(
+                    Math.abs(dropdownRect.left - proxyRect.left) < 2,
+                    'repositioned dropdown must align its left edge with the visible proxy button, not the hidden real button',
+                );
+                assertBrowser(
+                    dropdownRect.bottom <= proxyRect.top + 6,
+                    'repositioned dropdown must open upward, sitting just above the proxy button (the panel is permanently bottom-docked)',
+                );
+
+                // A second click must forward AND close the dropdown back
+                // down -- proving the proxy's own stopPropagation() runs on
+                // the ORIGINAL click (not just the synthetic one it
+                // forwards), so paint-brush-swap.js's document-level
+                // "click outside closes the dropdown" listener never sees
+                // this click and races the reopen shut again.
+                proxy.click();
+                await waitFor(function() {
+                    return window.__nativeBrushSwapToggleCalls === callsBefore + 2 && !dropdown.classList.contains('open');
+                }, 'a second proxy click to forward to the real toggle and close the dropdown back down');
+
+                var wheelCallsBefore = window.__nativeBrushSwapWheelCalls;
+                proxy.dispatchEvent(new WheelEvent('wheel', { deltaY: 12, bubbles: true, cancelable: true }));
+                await waitFor(function() {
+                    return window.__nativeBrushSwapWheelCalls === wheelCallsBefore + 1;
+                }, 'proxy wheel events (scroll-to-swap) to forward to the real brush-swap-toggle');
+
+                assertEqual(realToggle.parentElement, document.getElementById('brush-swap-wrapper'), 'the real brush-swap-toggle must never move, only the proxy does');
             });
 
             await check('native-bottom-controls-hidden', async function() {

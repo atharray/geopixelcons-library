@@ -87,6 +87,12 @@ var mobileOverhaulInit = (function () {
         // Ghost++'s own close glyph (U+2715), for visual consistency across
         // the desktop and mobile shells instead of two different X characters.
         close: '✕',
+        // A diagonal brush stroke ending in a paint dab -- proxy button for
+        // the relocated saved-brushes toggle (native-controls.js's
+        // ensureBrushSwapProxy()), replacing the plain "▲ brushes" text
+        // label the native button used, which didn't fit this row's other
+        // icon-only controls.
+        brushes: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6.2 11.4c-1.6.5-2.6 1.9-2.6 3.5" stroke-linecap="round"/><path d="M6.2 11.4 13.6 4c.6-.6 1.6-.6 2.2 0 .6.6.6 1.6 0 2.2L8.8 13.6c-.7.7-1.7 1-2.6.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="3.6" cy="14.9" r="1.3" fill="currentColor" stroke="none"/></svg>',
     };
 
     function mobileIconMarkup(name) {
@@ -3554,6 +3560,11 @@ var mobileOverhaulInit = (function () {
         'commitBtn',
         'toggleEyedropper_Bottom',
     ];
+    // brush-swap-toggle (paint-brush-swap.js) is special-cased in
+    // relocateNativeControls() rather than blindly relocated like the rest
+    // of MOBILE_CONTROL_IDS -- see ensureBrushSwapProxy() for why.
+    const MOBILE_BRUSH_SWAP_TOGGLE_ID = 'brush-swap-toggle';
+    const MOBILE_BRUSH_SWAP_PROXY_ID = 'gpc-mobile-brush-swap-proxy';
 
     function resolveMobileDocument(bridge) {
         if (bridge.env && bridge.env.document
@@ -3573,6 +3584,29 @@ var mobileOverhaulInit = (function () {
     function setMobileCssText(element, declarations) {
         const cssText = declarations.join(';');
         if (element.style.cssText !== cssText) element.style.cssText = cssText;
+    }
+
+    // Shared with ensureBrushSwapProxy() (styled once immediately at
+    // creation, so it never paints with default browser button styling for
+    // one refresh cycle before applyMobilePanelTheme() next runs) and
+    // applyMobilePanelTheme() (idempotent re-application on every refresh,
+    // matching every other row control here).
+    function applyBrushSwapProxyTheme(proxy) {
+        setMobileCssText(proxy, [
+            'display:inline-flex',
+            'align-items:center',
+            'justify-content:center',
+            'min-width:44px',
+            'min-height:44px',
+            'border:1px solid var(--gpp-mobile-border)',
+            'border-radius:8px',
+            'background:var(--gpp-mobile-surface-3)',
+            'color:var(--gpp-mobile-text)',
+            'font:inherit',
+            'cursor:pointer',
+            'touch-action:manipulation',
+            'flex:0 0 auto',
+        ]);
     }
 
     // Colors come entirely from the shared var(--gpp-mobile-*) tokens
@@ -3616,6 +3650,11 @@ var mobileOverhaulInit = (function () {
             'touch-action:manipulation',
             'flex:0 0 auto',
         ]);
+        // Only present once ensureBrushSwapProxy() has created it (needs
+        // the real #brush-swap-toggle to exist first) -- styled the same
+        // way as shell.closeButton, an ordinary icon-only row control.
+        const brushSwapProxy = documentRef.getElementById(MOBILE_BRUSH_SWAP_PROXY_ID);
+        if (brushSwapProxy) applyBrushSwapProxyTheme(brushSwapProxy);
         setMobileCssText(shell.row, [
             'display:flex',
             'align-items:center',
@@ -3903,17 +3942,143 @@ var mobileOverhaulInit = (function () {
             }
         }
 
+        // #brush-swap-toggle's saved-brush dropdown (paint-brush-swap.js) is
+        // a position:absolute SIBLING inside a small `wrapper` div left
+        // behind in #bottomControls -- relocateNativeControls()'s normal
+        // path only ever moves the *listed element itself*, not a sibling
+        // positioned relative to its original location. Blindly relocating
+        // the button (as every other MOBILE_CONTROL_IDS entry is) would move
+        // it into view while its dropdown stays invisible inside the now
+        // display:none #bottomControls: exactly the "Brushes button doesn't
+        // work, doesn't show anything" bug from real-device testing.
+        // hide-paint-menu.js's own compact mode already solves this identical
+        // problem for its own relocated button (compactBrushBtn): forward
+        // the click to the real, still-in-place button, then reposition the
+        // dropdown as position:fixed computed from the *visible* proxy
+        // button's own rect. Reused verbatim here instead of reinventing it.
+        function repositionBrushSwapDropdown(proxy) {
+            const dropdown = documentRef.getElementById('brush-swap-dropdown');
+            if (!dropdown || !proxy) return;
+            // Routed through lifecycle.moveElement() (not a raw appendChild)
+            // so this dropdown gets the exact same original-position capture
+            // and destroy()-time restoration every other relocated native
+            // control already gets -- otherwise it would be permanently
+            // stranded in document.body (with its position:fixed override
+            // still applied) after the mobile overhaul is torn down.
+            if (dropdown.parentElement !== documentRef.body) {
+                lifecycle.moveElement(dropdown, documentRef.body);
+            }
+            const rect = proxy.getBoundingClientRect();
+            dropdown.style.position = 'fixed';
+            dropdown.style.right = 'auto';
+            dropdown.style.margin = '0';
+            dropdown.style.left = rect.left + 'px';
+            // shell.row is permanently bottom-docked (the panel is always
+            // anchored to the bottom of the viewport), so the dropdown only
+            // ever needs to open upward from the proxy -- unlike the native
+            // paint menu's own top/bottom dock toggle (gpc-paint-is-top),
+            // which hide-paint-menu.js's compact mode has to account for and
+            // this row does not.
+            dropdown.style.top = 'auto';
+            const viewportHeight = (windowRef && windowRef.innerHeight)
+                || (documentRef.documentElement && documentRef.documentElement.clientHeight)
+                || 0;
+            dropdown.style.bottom = (viewportHeight - rect.top + 4) + 'px';
+        }
+
+        function ensureBrushSwapProxy() {
+            if (!shell) return null;
+            const realToggle = documentRef.getElementById(MOBILE_BRUSH_SWAP_TOGGLE_ID);
+            let proxy = documentRef.getElementById(MOBILE_BRUSH_SWAP_PROXY_ID);
+            if (!realToggle) {
+                // The real button isn't present (not yet loaded, or the
+                // paintBrushSwap feature is disabled) -- no proxy without it.
+                if (proxy && proxy.parentNode) proxy.parentNode.removeChild(proxy);
+                return null;
+            }
+            if (proxy) return proxy;
+
+            proxy = documentRef.createElement('button');
+            proxy.id = MOBILE_BRUSH_SWAP_PROXY_ID;
+            proxy.type = 'button';
+            proxy.setAttribute('aria-label', 'Toggle saved brushes');
+            proxy.title = 'Toggle saved brushes';
+            proxy.innerHTML = mobileIconMarkup('brushes');
+            applyBrushSwapProxyTheme(proxy);
+
+            lifecycle.listen(proxy, 'click', event => {
+                // Must run before the real button's own click listener fires
+                // (forwarded below), because that listener's own
+                // e.stopPropagation() only stops the *synthetic* click it
+                // dispatches -- this original click on the proxy is a
+                // separate event that would otherwise keep bubbling to
+                // paint-brush-swap.js's document-level "click outside
+                // closes the dropdown" listener and immediately re-close
+                // whatever the forwarded click just opened.
+                if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+                const target = documentRef.getElementById(MOBILE_BRUSH_SWAP_TOGGLE_ID);
+                if (target) target.click();
+                const scheduleReposition = windowRef && typeof windowRef.requestAnimationFrame === 'function'
+                    ? windowRef.requestAnimationFrame.bind(windowRef)
+                    : callback => (typeof setTimeout === 'function' ? setTimeout(callback, 0) : callback());
+                scheduleReposition(() => repositionBrushSwapDropdown(proxy));
+            });
+
+            // Forward scroll-to-swap (mouse wheel cycles saved brushes) from
+            // the proxy to the real button, mirroring hide-paint-menu.js's
+            // compactBrushBtn wheel forwarding.
+            lifecycle.listen(proxy, 'wheel', event => {
+                const target = documentRef.getElementById(MOBILE_BRUSH_SWAP_TOGGLE_ID);
+                const WheelEventCtor = (windowRef && windowRef.WheelEvent)
+                    || (typeof WheelEvent !== 'undefined' ? WheelEvent : null);
+                if (!target || !WheelEventCtor) return;
+                target.dispatchEvent(new WheelEventCtor('wheel', {
+                    deltaY: event.deltaY,
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                    bubbles: false,
+                }));
+                if (typeof event.preventDefault === 'function') event.preventDefault();
+            }, { passive: false });
+
+            return proxy;
+        }
+
         function relocateNativeControls() {
             if (!shell) return;
             const controls = [];
             for (const id of MOBILE_CONTROL_IDS) {
+                if (id === MOBILE_BRUSH_SWAP_TOGGLE_ID) {
+                    const proxy = ensureBrushSwapProxy();
+                    if (proxy) controls.push(proxy);
+                    continue;
+                }
                 const control = documentRef.getElementById(id);
                 if (!control) continue;
                 lifecycle.moveElement(control, shell.row);
                 controls.push(control);
             }
 
-            let next = null;
+            // Anchor the reordered block to whatever already immediately
+            // follows it in the row (the UI scale control, the close
+            // button) instead of blindly anchoring to `null` (the row's
+            // absolute end). `null` only happens to be correct on the very
+            // first refresh, when this block truly is the last thing in the
+            // row -- on every later refresh, anything appended AFTER the
+            // block by a prior pass (ensureAdditions()'s scale control,
+            // refresh()'s own trailing close-button append) means "the
+            // row's true end" has moved past them, so re-anchoring to null
+            // walks the whole block one position further past them EVERY
+            // single refresh, silently scrambling the row order over time
+            // (confirmed via a live repro: by the 3rd refresh the UI scale
+            // control had walked all the way to the front of the row).
+            const controlsSet = new Set(controls);
+            let anchor = null;
+            for (const child of Array.from(shell.row.children)) {
+                if (!controlsSet.has(child)) { anchor = child; break; }
+            }
+
+            let next = anchor;
             for (let index = controls.length - 1; index >= 0; index -= 1) {
                 const control = controls[index];
                 if (control.parentNode !== shell.row || control.nextSibling !== next) {

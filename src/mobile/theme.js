@@ -67,6 +67,12 @@
         // Ghost++'s own close glyph (U+2715), for visual consistency across
         // the desktop and mobile shells instead of two different X characters.
         close: '✕',
+        // A diagonal brush stroke ending in a paint dab -- proxy button for
+        // the relocated saved-brushes toggle (native-controls.js's
+        // ensureBrushSwapProxy()), replacing the plain "▲ brushes" text
+        // label the native button used, which didn't fit this row's other
+        // icon-only controls.
+        brushes: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6.2 11.4c-1.6.5-2.6 1.9-2.6 3.5" stroke-linecap="round"/><path d="M6.2 11.4 13.6 4c.6-.6 1.6-.6 2.2 0 .6.6.6 1.6 0 2.2L8.8 13.6c-.7.7-1.7 1-2.6.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="3.6" cy="14.9" r="1.3" fill="currentColor" stroke="none"/></svg>',
     };
 
     function mobileIconMarkup(name) {
