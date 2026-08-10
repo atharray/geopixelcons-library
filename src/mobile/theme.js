@@ -66,6 +66,14 @@
         // real-device feedback) to open template settings, replacing the
         // separate toolbar wrench button.
         edit: '<svg viewBox="0 0 18 18" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M11.9 3.9a1.6 1.6 0 0 1 2.2 2.2L6.4 13.8l-3 .8.8-3Z" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+        // Two vertical arrows (one up, one down) -- classic ascending/
+        // descending sort glyph. Round 4: replaces the combined sort+filter
+        // "up-down arrows" text glyph ('⇅') fold button, split into its
+        // own dedicated Sort button.
+        sort: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 14V4M5 4 2 7M5 4l3 3" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 4v10M13 14l3-3M13 14l-3-3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        // A funnel -- classic filter glyph. Round 4: split out of the same
+        // combined fold button into its own dedicated Filter button.
+        filter: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 3.5h13L10.5 9v5l-3-1.5V9Z" stroke-linejoin="round" stroke-linecap="round"/></svg>',
         // Ghost++'s own close glyph (U+2715), for visual consistency across
         // the desktop and mobile shells instead of two different X characters.
         close: '✕',

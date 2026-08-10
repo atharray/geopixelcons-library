@@ -1104,6 +1104,48 @@ function buildDriverSource(mode) {
                 assertBrowser(!mobileRoot.querySelector('.dropdown-menu'), 'the mobile hamburger must not reproduce desktop dropdown-menu nesting');
             });
 
+            await check('hamburger-attribute-tracking-stays-scoped-to-controls-left', async function() {
+                // Regression test for the round-4 perf refactor: hamburger-
+                // menu.js's MutationObserver used to watch attributes
+                // (style/class/disabled/...) across the ENTIRE document
+                // subtree -- the most exposed of the three mobile
+                // MutationObservers to page-wide noise (map markers
+                // repositioning during pan/zoom, etc.), since the other two
+                // never watched attributes at all. It's now split into three
+                // scoped .observe() registrations on the same observer:
+                // document-wide childList only (structural changes),
+                // document.body's own class attribute only (theme
+                // reactivity), and full attribute+childList tracking scoped
+                // to #controls-left's own subtree specifically -- the only
+                // place attribute-level detail was ever actually needed.
+                // Confirms that narrowing didn't also break the thing it
+                // still needs to do: react to a native control's own
+                // attribute changing.
+                var originalLeaf = document.getElementById('fixtureNativeNestedLeaf');
+                var menu = document.getElementById('gpc-mobile-hamburger-menu');
+                function findProxy() {
+                    return Array.from(menu.querySelectorAll('[data-gpc-mobile-action-index]')).find(function(action) {
+                        return action.textContent.trim() === 'Fixture nested action';
+                    });
+                }
+
+                // Positive case: an attribute change INSIDE #controls-left
+                // must still be detected and reflected.
+                var proxyBefore = findProxy();
+                assertBrowser(proxyBefore && !proxyBefore.disabled, 'the flat proxy must start enabled');
+                originalLeaf.disabled = true;
+                await waitFor(function() {
+                    var proxy = findProxy();
+                    return proxy && proxy.disabled === true;
+                }, 'an attribute change on the native nested leaf to flow through to the flat proxy');
+
+                originalLeaf.disabled = false;
+                await waitFor(function() {
+                    var proxy = findProxy();
+                    return proxy && proxy.disabled === false;
+                }, 'the flat proxy to re-enable once the native leaf does');
+            });
+
             await check('hamburger-opens-downward-and-proxies-clicks', async function() {
                 var button = document.getElementById('gpc-mobile-hamburger-button');
                 var menu = document.getElementById('gpc-mobile-hamburger-menu');
@@ -1255,16 +1297,70 @@ function buildDriverSource(mode) {
                 assertBrowser(sort.options.length > 1 && filter.options.length > 1, 'sort and filter selects must expose real option sets');
             });
 
+            await check('sort-and-filter-are-separate-popovers-not-clipped', async function() {
+                // Round 4 real-device feedback: the combined sort+filter
+                // fold "has issues displaying" -- root cause confirmed:
+                // position:absolute, opened upward right where the toolbar
+                // sits near .gpc-mobile-view-a's own top edge, clipped by
+                // that ancestor's own overflow:hidden. User decided: split
+                // into two separate buttons entirely, each with its own
+                // popover (position:fixed, immune to ancestor overflow).
+                var viewA = document.getElementById('gpc-mobile-view-a');
+                assertBrowser(!viewA.querySelector('button[aria-label="Open palette sort and filter controls"]'), 'the old combined sort+filter fold button must no longer exist');
+                var sortButton = viewA.querySelector('button[aria-label="Open sort options"]');
+                var filterButton = viewA.querySelector('button[aria-label="Open filter options"]');
+                var sortSelect = viewA.querySelector('select[aria-label="Sort palette colors"]');
+                var filterSelect = viewA.querySelector('select[aria-label="Filter palette colors"]');
+                assertBrowser(sortButton && filterButton, 'Sort and Filter must be two separate toolbar buttons');
+                assertBrowser(sortSelect && filterSelect, 'each popover must still expose its real native select');
+                assertEqual(sortButton.getAttribute('aria-expanded'), 'false', 'sort popover must start closed');
+                assertEqual(filterButton.getAttribute('aria-expanded'), 'false', 'filter popover must start closed');
+
+                sortButton.click();
+                await waitFor(function() { return sortButton.getAttribute('aria-expanded') === 'true'; }, 'the sort popover to open');
+                var sortPopover = sortSelect.closest('.gpc-mva-popover');
+                assertBrowser(sortPopover && !sortPopover.hidden, 'the sort popover must actually be visible once open');
+                assertEqual(getComputedStyle(sortPopover).position, 'fixed', 'the popover must be position:fixed, immune to ancestor overflow:hidden clipping');
+                var sortPopoverRect = sortPopover.getBoundingClientRect();
+                var sortButtonRect = sortButton.getBoundingClientRect();
+                assertBrowser(sortPopoverRect.width > 0 && sortPopoverRect.height > 0, 'the open sort popover must actually render with real, non-clipped dimensions');
+                assertBrowser(sortPopoverRect.top >= sortButtonRect.bottom - 1, 'the sort popover must open downward, below its trigger button');
+
+                // Opening Filter must close the still-open Sort popover --
+                // mutually exclusive, so they never visually stack.
+                filterButton.click();
+                await waitFor(function() { return filterButton.getAttribute('aria-expanded') === 'true'; }, 'the filter popover to open');
+                assertEqual(sortButton.getAttribute('aria-expanded'), 'false', 'opening the filter popover must close the sort popover');
+                assertBrowser(sortPopover.hidden, 'the sort popover must actually hide once the filter popover takes over');
+                var filterPopover = filterSelect.closest('.gpc-mva-popover');
+                assertBrowser(filterPopover && !filterPopover.hidden, 'the filter popover must be visible');
+
+                // Tapping outside either popover closes whichever is open.
+                document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+                await waitFor(function() { return filterButton.getAttribute('aria-expanded') === 'false'; }, 'tapping outside to close the open filter popover');
+                assertBrowser(filterPopover.hidden, 'the filter popover must actually hide after an outside tap');
+            });
+
             await check('panel-resize-clamps-and-persists-on-pointerup', async function() {
                 var panel = document.getElementById('gpc-mobile-panel');
                 var handle = document.querySelector('[aria-label="Resize mobile painting panel"]');
                 var closeButton = document.getElementById('gpc-mobile-panel-close');
                 var storageKey = 'gpc-mobile-overhaul-panel-height';
                 var capturedPointerId = null;
+                var panelRect = panel.getBoundingClientRect();
                 var handleRect = handle.getBoundingClientRect();
                 var closeRect = closeButton.getBoundingClientRect();
+                // Round 4 real-device feedback: redesigned from a 44px-wide
+                // vertical strip down the view's own right edge into a
+                // full-width horizontal drag bar pinned to the true top of
+                // #gpc-mobile-panel (position:fixed with a live-JS-tracked
+                // top, see applyPanelHeight()), matching a standard
+                // bottom-sheet drag handle instead of an oddly-shaped
+                // side strip for what is fundamentally a vertical gesture.
+                assertBrowser(Math.abs(handleRect.top - panelRect.top) < 2, 'the resize handle must sit at the true top of the panel');
+                assertBrowser(handleRect.left <= 1 && handleRect.right >= window.innerWidth - 1, 'the resize handle must span the full width, not a narrow side strip');
                 assertBrowser(
-                    handleRect.top >= closeRect.bottom || handleRect.right <= closeRect.left,
+                    handleRect.bottom <= closeRect.top + 1,
                     'the resize touch target must not overlap the panel close button',
                 );
                 var closeHit = document.elementFromPoint(

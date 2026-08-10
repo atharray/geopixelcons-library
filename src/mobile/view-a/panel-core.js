@@ -174,7 +174,8 @@
         let unsubscribeRefresh = null;
         let destroyed = false;
         let visible = true;
-        let foldOpen = false;
+        let sortOpen = false;
+        let filterOpen = false;
         let showAll = false;
         let search = '';
         let sort = 'default';
@@ -318,14 +319,32 @@
                were simultaneously "hidden"-but-still-laid-out). This
                higher-specificity override actually turns it off. */
             .gpc-mobile-view-a[hidden] { display: none; }
+            /* Round 4 real-device feedback: was a 44px-wide VERTICAL strip
+               down the view's own right edge -- an odd shape for a resize
+               control whose actual gesture is vertical (drag up/down to
+               change panel height), and visually buried inside the
+               palette workspace rather than reading as "the top edge of
+               this panel." Redesigned as the standard bottom-sheet drag
+               handle: a full-width horizontal bar at the true top of the
+               whole #gpc-mobile-overhaul-root, above even the native
+               controls row. position:fixed (not absolute) so it can sit
+               there regardless of DOM nesting -- it stays a child of View
+               A's own root (all the drag/resize logic and state live in
+               this closure), display:none still correctly applies via the
+               .gpc-mobile-view-a[hidden] ancestor rule above even though
+               fixed positioning escapes normal layout/containment, and
+               .gpc-mobile-view-a's own overflow:hidden never clips a fixed
+               descendant either -- only its top position needs live JS tracking
+               (applyPanelHeight() below) to stay glued to the panel's
+               actual current top edge as panelHeight changes. */
             .gpc-mva-resize-handle {
-                position: absolute; z-index: 4; top: 0; right: 0; width: 44px; height: 100%;
-                border: 0; border-radius: 10px 0 0 10px; background: transparent; cursor: ns-resize;
+                position: fixed; z-index: 99991; left: 0; right: 0; height: 22px;
+                border: 0; background: transparent; cursor: ns-resize;
                 touch-action: none; user-select: none;
             }
             .gpc-mva-resize-handle::after {
-                content: ''; position: absolute; top: 50%; right: 12px; width: 4px; height: 32px;
-                transform: translateY(-50%);
+                content: ''; position: absolute; left: 50%; top: 50%; width: 36px; height: 4px;
+                transform: translate(-50%, -50%);
                 border-radius: 999px; background: var(--gpp-mobile-border);
             }
             .gpc-mva-toolbar { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -334,7 +353,7 @@
                 border-radius: 8px; background: var(--gpp-mobile-surface-2); color: var(--gpp-mobile-text);
                 font: inherit; font-size: 14px; padding: 8px;
             }
-            .gpc-mva-search { flex: 1 1 110px; min-width: 88px; }
+            .gpc-mva-search { flex: 0 1 96px; min-width: 72px; max-width: 96px; }
             .gpc-mva-tool-button {
                 box-sizing: border-box; min-width: 44px; min-height: 44px; padding: 6px 9px;
                 border: 1px solid var(--gpp-mobile-border); border-radius: 8px;
@@ -346,20 +365,31 @@
                 background: var(--gpp-mobile-focus); color: #ffffff;
                 box-shadow: 0 0 0 2px var(--gpp-mobile-focus-wash);
             }
-            .gpc-mva-fold-region { position: relative; }
-            .gpc-mva-fold {
-                position: absolute; z-index: 8; right: 0; bottom: calc(100% + 6px); width: min(360px, 92vw);
-                box-sizing: border-box; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+            /* Round 4 real-device feedback: the combined sort+filter fold
+               had "issues displaying" -- confirmed root cause: it opened
+               UPWARD (bottom:100%) as a position:absolute child, right
+               where the toolbar sits near .gpc-mobile-view-a's own top
+               edge, with nowhere to actually render above it before
+               hitting that ancestor's own overflow:hidden, clipping it.
+               Split into two separate buttons (Sort, Filter), each with
+               its own popover -- position:fixed (not absolute) computed
+               from its trigger button's own rect at open time (same
+               pattern as native-controls.js's brush-swap dropdown fix),
+               so ancestor overflow:hidden can never clip it regardless of
+               where the toolbar sits or how tall the panel currently is. */
+            .gpc-mva-popover {
+                position: fixed; z-index: 99991; width: min(300px, 92vw); max-height: min(60vh, 420px);
+                box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;
                 padding: 10px; border: 1px solid var(--gpp-mobile-border); border-radius: 10px;
                 background: var(--gpp-mobile-surface); color: var(--gpp-mobile-text);
-                box-shadow: 0 8px 24px rgba(15, 23, 42, .24); overscroll-behavior: contain;
+                box-shadow: 0 8px 24px rgba(15, 23, 42, .24); overflow-y: auto; overscroll-behavior: contain;
             }
-            body.dark .gpc-mva-fold { box-shadow: 0 8px 24px rgba(0, 0, 0, .45); }
-            .gpc-mva-fold[hidden] { display: none; }
+            body.dark .gpc-mva-popover { box-shadow: 0 8px 24px rgba(0, 0, 0, .45); }
+            .gpc-mva-popover[hidden] { display: none; }
             .gpc-mva-field { display: flex; min-width: 0; flex-direction: column; gap: 4px;
                 color: var(--gpp-mobile-muted); font-size: 12px; font-weight: 700; }
             .gpc-mva-filter { min-height: 132px; }
-            .gpc-mva-count-row { grid-column: 1 / -1; display: flex; gap: 8px; }
+            .gpc-mva-count-row { display: flex; gap: 8px; }
             .gpc-mva-count { width: 50%; }
             .gpc-mva-workspace {
                 display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 8px;
@@ -425,7 +455,7 @@
                 .gpc-mobile-view-a { gap: 3px; padding-bottom: max(2px, env(safe-area-inset-bottom, 0px)); }
                 .gpc-mva-workspace { min-height: 54px; }
                 .gpc-mva-swatch { min-height: 48px; }
-                .gpc-mva-fold { bottom: auto; top: calc(100% + 4px); max-height: 48vh; overflow: auto; }
+                .gpc-mva-popover { max-height: min(48vh, 360px); }
             }
         `;
         const geometryStyle = element('style');
@@ -448,13 +478,15 @@
         showAllButton.title = 'Show all colors';
         showAllButton.setAttribute('aria-pressed', 'false');
 
-        const foldRegion = element('div', 'gpc-mva-fold-region');
-        const foldButton = button('gpc-mva-tool-button', '⇅', 'Open palette sort and filter controls');
-        foldButton.title = 'Sort and filter';
-        foldButton.setAttribute('aria-expanded', 'false');
+        // Round 4: separate Sort and Filter buttons, each with its own
+        // popover, instead of one combined fold hidden behind a single
+        // "⇅" button -- see the .gpc-mva-popover comment above for why.
+        const sortButton = iconButton('gpc-mva-tool-button', 'sort', 'Open sort options');
+        sortButton.title = 'Sort';
+        sortButton.setAttribute('aria-expanded', 'false');
 
-        const fold = element('div', 'gpc-mva-fold');
-        fold.hidden = true;
+        const sortPopover = element('div', 'gpc-mva-popover');
+        sortPopover.hidden = true;
         const sortLabel = element('label', 'gpc-mva-field', 'Sort by');
         const sortSelect = element('select', 'gpc-mva-select');
         sortSelect.setAttribute('aria-label', 'Sort palette colors');
@@ -464,7 +496,14 @@
             sortSelect.appendChild(option);
         }
         sortLabel.appendChild(sortSelect);
+        sortPopover.appendChild(sortLabel);
 
+        const filterButton = iconButton('gpc-mva-tool-button', 'filter', 'Open filter options');
+        filterButton.title = 'Filter';
+        filterButton.setAttribute('aria-expanded', 'false');
+
+        const filterPopover = element('div', 'gpc-mva-popover');
+        filterPopover.hidden = true;
         const filterLabel = element('label', 'gpc-mva-field', 'Filter by');
         const filterSelect = element('select', 'gpc-mva-select gpc-mva-filter');
         filterSelect.multiple = true;
@@ -492,15 +531,13 @@
         maxInput.setAttribute('aria-label', 'Maximum pixel count');
         countRow.appendChild(minInput);
         countRow.appendChild(maxInput);
-        fold.appendChild(sortLabel);
-        fold.appendChild(filterLabel);
-        fold.appendChild(countRow);
-        foldRegion.appendChild(foldButton);
-        foldRegion.appendChild(fold);
+        filterPopover.appendChild(filterLabel);
+        filterPopover.appendChild(countRow);
 
         toolbar.appendChild(searchInput);
         toolbar.appendChild(showAllButton);
-        toolbar.appendChild(foldRegion);
+        toolbar.appendChild(sortButton);
+        toolbar.appendChild(filterButton);
 
         const workspace = element('div', 'gpc-mva-workspace');
         const paletteColumn = element('div', 'gpc-mva-palette-column');
@@ -549,6 +586,11 @@
         root.appendChild(geometryStyle);
         root.appendChild(resizeHandle);
         root.appendChild(toolbar);
+        // position:fixed (see .gpc-mva-popover), so exact DOM placement
+        // doesn't affect rendering -- appended here alongside the toolbar
+        // that owns their trigger buttons, for readability.
+        root.appendChild(sortPopover);
+        root.appendChild(filterPopover);
         root.appendChild(workspace);
         root.appendChild(stats);
         root.appendChild(status);
@@ -582,18 +624,68 @@
                     padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
                     padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
                     padding-left: max(10px, env(safe-area-inset-left, 0px)) !important;
+                    /* Reserves exactly the resize handle's own height (see
+                       .gpc-mva-resize-handle above) so the handle's fixed-
+                       position touch target -- pinned to the panel's true
+                       top edge -- sits in dedicated empty space instead of
+                       overlapping the native controls row's own real
+                       buttons underneath it. View B has no resize handle
+                       and keeps the shared 8px top padding from
+                       applyMobilePanelTheme() unchanged. */
+                    padding-top: 22px !important;
                 }
             `;
             resizeHandle.setAttribute('aria-valuemin', String(Math.min(MOBILE_VIEW_A_MIN_PANEL_HEIGHT, Math.floor(viewportHeight() * 0.5))));
             resizeHandle.setAttribute('aria-valuemax', String(Math.max(96, Math.floor(viewportHeight() * 0.5))));
             resizeHandle.setAttribute('aria-valuenow', String(panelHeight));
+            // #gpc-mobile-panel is bottom-anchored (shell.root: bottom:0),
+            // so its rendered top edge sits exactly panelHeight px above
+            // the viewport's own bottom edge -- recomputed on every height
+            // change (including live during a drag, so the handle stays
+            // glued to the panel's actual current top edge the whole time,
+            // matching a real bottom-sheet drag handle's behavior).
+            resizeHandle.style.top = Math.max(0, viewportHeight() - panelHeight) + 'px';
             if (shouldPersist) persistHeight(panelHeight);
         }
 
-        function setFoldOpen(nextOpen) {
-            foldOpen = !!nextOpen;
-            fold.hidden = !foldOpen;
-            foldButton.setAttribute('aria-expanded', String(foldOpen));
+        // position:fixed popovers need their own top/right computed from
+        // the trigger button's current on-screen rect every time they
+        // open -- same pattern as native-controls.js's brush-swap dropdown
+        // fix. Anchored via `right` (not `left`) so it aligns with the
+        // trigger button's own right edge and stays on-screen regardless
+        // of how close to the panel's right edge that button sits.
+        function positionPopover(popoverEl, anchorButton) {
+            const rect = anchorButton.getBoundingClientRect();
+            const viewportWidth = windowRef && mobileViewANumber(windowRef.innerWidth, 0)
+                || mobileViewANumber(documentRef.documentElement && documentRef.documentElement.clientWidth, 0)
+                || 360;
+            popoverEl.style.left = 'auto';
+            popoverEl.style.right = Math.max(4, viewportWidth - rect.right) + 'px';
+            popoverEl.style.top = (rect.bottom + 6) + 'px';
+        }
+
+        function setSortOpen(nextOpen) {
+            sortOpen = !!nextOpen;
+            if (sortOpen && filterOpen) {
+                filterOpen = false;
+                filterPopover.hidden = true;
+                filterButton.setAttribute('aria-expanded', 'false');
+            }
+            sortPopover.hidden = !sortOpen;
+            sortButton.setAttribute('aria-expanded', String(sortOpen));
+            if (sortOpen) positionPopover(sortPopover, sortButton);
+        }
+
+        function setFilterOpen(nextOpen) {
+            filterOpen = !!nextOpen;
+            if (filterOpen && sortOpen) {
+                sortOpen = false;
+                sortPopover.hidden = true;
+                sortButton.setAttribute('aria-expanded', 'false');
+            }
+            filterPopover.hidden = !filterOpen;
+            filterButton.setAttribute('aria-expanded', String(filterOpen));
+            if (filterOpen) positionPopover(filterPopover, filterButton);
         }
 
         function readSelectedFilters() {
@@ -802,7 +894,8 @@
             visible = false;
             root.hidden = true;
             root.setAttribute('aria-hidden', 'true');
-            setFoldOpen(false);
+            setSortOpen(false);
+            setFilterOpen(false);
             return false;
         }
 
@@ -858,13 +951,21 @@
             catch (error) { reportError(error, 'getFocusedTemplate'); }
             if (template) invokeCallback('openPreview', template);
         });
-        listen(foldButton, 'click', event => {
+        listen(sortButton, 'click', event => {
             if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
-            setFoldOpen(!foldOpen);
+            setSortOpen(!sortOpen);
+        });
+        listen(filterButton, 'click', event => {
+            if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+            setFilterOpen(!filterOpen);
         });
         listen(documentRef, 'pointerdown', event => {
-            if (!foldOpen || containsNode(foldRegion, event.target)) return;
-            setFoldOpen(false);
+            if (sortOpen && !containsNode(sortButton, event.target) && !containsNode(sortPopover, event.target)) {
+                setSortOpen(false);
+            }
+            if (filterOpen && !containsNode(filterButton, event.target) && !containsNode(filterPopover, event.target)) {
+                setFilterOpen(false);
+            }
         }, true);
         listen(sortSelect, 'change', () => {
             sort = sortSelect.value;
