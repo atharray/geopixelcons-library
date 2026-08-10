@@ -1010,54 +1010,70 @@ function buildDriverSource(mode) {
                 assertDeepEqual(scanActions.map(function(action) { return action.id || action.className; }), [], 'View A must not expose a manual Scan action');
             });
 
-            await check('show-all-is-display-only-and-reveals-palette', async function() {
+            await check('palette-grid-always-shows-every-color-show-all-only-affects-the-map', async function() {
                 var bridge = window.__mobileBoundary.bridge;
                 var viewA = document.getElementById('gpc-mobile-view-a');
                 window.__fixtureSetGamePalette(['#000000', '#FF0000', '#00000000'], [0, 1, 2], '#FF0000');
                 hostTemplate = window.__mobileHostFixture.installTemplate();
                 bridge.requestRefresh();
                 await waitFor(function() {
-                    return viewA.querySelectorAll('.gpc-mva-swatch').length === 1;
-                }, 'View A to render only the selected template color');
+                    return viewA.querySelectorAll('.gpc-mva-swatch').length === 2;
+                }, 'the palette grid to show every template color from the start, regardless of Show All');
 
                 var showAll = viewA.querySelector('button[aria-label="Show all template colors"]');
-                assertBrowser(showAll, 'View A must expose the Show All display control');
+                assertBrowser(showAll, 'View A must expose the Show All control');
                 assertEqual(showAll.getAttribute('aria-pressed'), 'false', 'Show All must default off');
-                assertEqual(viewA.querySelector('.gpc-mva-swatch').getAttribute('data-mobile-color-index'), '1', 'default palette view must show only selected red');
-                var maskBefore = Array.from(hostTemplate.mask);
+                assertEqual(hostTemplate.mask[0], 2, 'template.mask must start narrowed to the one selected color (red, index 1)');
                 var colorBefore = window.__fixtureGetSelectedPaintColor();
                 var changesBefore = window.__nativeChangeColorCalls;
 
                 showAll.click();
                 await waitFor(function() {
-                    return showAll.getAttribute('aria-pressed') === 'true'
-                        && viewA.querySelectorAll('.gpc-mva-swatch').length === 2;
-                }, 'Show All to reveal both template palette choices');
-                assertDeepEqual(Array.from(hostTemplate.mask), maskBefore, 'Show All must change display only, not the template mask');
-                assertEqual(window.__fixtureGetSelectedPaintColor(), colorBefore, 'Show All must not change the native paint color');
-                assertEqual(window.__nativeChangeColorCalls, changesBefore, 'Show All must not invoke native changeColor');
+                    return showAll.getAttribute('aria-pressed') === 'true' && hostTemplate.mask[0] === 3;
+                }, 'Show All must widen template.mask to every color -- the renderer only ever draws mask-selected colors, so a display-only toggle would never change what the map shows');
+                assertEqual(window.__fixtureGetSelectedPaintColor(), colorBefore, 'Show All must not change the native paint color by itself');
+                assertEqual(window.__nativeChangeColorCalls, changesBefore, 'Show All must not invoke native changeColor by itself');
                 assertDeepEqual(
                     Array.from(viewA.querySelectorAll('.gpc-mva-swatch')).map(function(swatch) {
                         return swatch.getAttribute('data-mobile-color-index');
-                    }),
+                    }).sort(),
                     ['0', '1'],
-                    'Show All must reveal every template palette choice',
+                    'the palette grid must still show every color while Show All is on -- it never hid anything to begin with',
                 );
+
+                var black = viewA.querySelector('.gpc-mva-swatch[data-mobile-color-index="0"]');
+                black.click();
+                await waitFor(function() {
+                    return window.__fixtureGetSelectedPaintColor() === '#000000';
+                }, 'selecting a swatch while Show All is on to change the active paint color');
+                await waitFor(function() {
+                    return hostTemplate.mask[0] === 3;
+                }, 'selecting a swatch while Show All is on to keep the mask wide, not narrow it back to one color -- even through the changeColor()-triggered gpc:pixelColorChanged re-entrancy');
+
+                showAll.click();
+                await waitFor(function() {
+                    return showAll.getAttribute('aria-pressed') === 'false' && hostTemplate.mask[0] === 1;
+                }, 'turning Show All back off must narrow the mask back to exactly the active color (black, index 0)');
+                assertEqual(viewA.querySelectorAll('.gpc-mva-swatch').length, 2, 'the palette grid must still show every color after Show All turns back off');
             });
 
             await check('palette-swatch-selects-one-mask-bit-and-native-color', async function() {
+                // The previous check ends with black (index 0) already the
+                // active mask-selected color -- select red (index 1) here so
+                // this genuinely exercises a color change, not a no-op
+                // reselect of whatever's already active.
                 var viewA = document.getElementById('gpc-mobile-view-a');
-                var black = viewA.querySelector('.gpc-mva-swatch[data-mobile-color-index="0"]');
+                var red = viewA.querySelector('.gpc-mva-swatch[data-mobile-color-index="1"]');
+                assertBrowser(red, 'the red swatch must remain clickable in the grid even while it is not the mask-selected color');
                 var changesBefore = window.__nativeChangeColorCalls;
-                assertBrowser(black, 'Show All must expose a different black swatch');
-                black.click();
+                red.click();
                 await waitFor(function() {
-                    return hostTemplate.mask[0] === 1
-                        && window.__fixtureGetSelectedPaintColor() === '#000000';
-                }, 'the black swatch to synchronize the template mask and native color');
-                assertDeepEqual(Array.from(hostTemplate.mask), [1], 'selecting black must leave exactly its one mask bit set');
-                assertBrowser(window.__nativeChangeColorCalls > changesBefore, 'owned black selection must invoke native changeColor');
-                assertEqual(window.__fixtureGetSelectedPaintColor(), '#000000', 'owned black selection must change the native paint color');
+                    return hostTemplate.mask[0] === 2
+                        && window.__fixtureGetSelectedPaintColor() === '#FF0000';
+                }, 'the red swatch to synchronize the template mask and native color');
+                assertDeepEqual(Array.from(hostTemplate.mask), [2], 'selecting red must leave exactly its one mask bit set');
+                assertBrowser(window.__nativeChangeColorCalls > changesBefore, 'red selection must invoke native changeColor');
+                assertEqual(window.__fixtureGetSelectedPaintColor(), '#FF0000', 'red selection must change the native paint color');
             });
 
             await check('thumbnail-toggle-expands-palette-grid', async function() {

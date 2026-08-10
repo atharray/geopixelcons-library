@@ -107,7 +107,7 @@ var mobileOverhaulInit = (function () {
     // subscribeOptional() call for it is correctly optional, not a bug.)
     const MOBILE_OVERHAUL_BRIDGE_METHODS = [
         'isDark', 'ready', 'subscribeRefresh', 'getTemplates', 'getFocusedTemplate',
-        'focusTemplate', 'deleteTemplate', 'getPaletteRows', 'selectColor', 'renderThumbnail',
+        'focusTemplate', 'deleteTemplate', 'getPaletteRows', 'selectColor', 'setShowAllColors', 'renderThumbnail',
         'renderFullPreview', 'readCenterGrid', 'canEditPosition', 'commitPosition',
         'beginPlacement', 'cancelPlacement', 'isPlacementActive', 'nudge',
         'isPreviewForced', 'togglePreview', 'setGroupNoise', 'scanTemplate', 'getScanBusy',
@@ -1060,7 +1060,6 @@ var mobileOverhaulInit = (function () {
     function mobileViewAFilterSortRows(rows, state) {
         const options = state || Object.create(null);
         const query = options.search || '';
-        const showAll = !!options.showAll;
         const hasProgress = !!options.hasProgress;
         const rawFilters = options.filters || [];
         const filters = new Set(Array.from(rawFilters, value => String(value)));
@@ -1069,12 +1068,15 @@ var mobileOverhaulInit = (function () {
         const hasMinCount = Number.isFinite(minCount);
         const hasMaxCount = Number.isFinite(maxCount);
 
+        // The palette grid always lists every template color -- "Show all
+        // colors" only controls what the map renders (template.mask), not
+        // which swatches this grid displays. Search/owned/progress/count
+        // filters below still narrow the grid as normal.
         const filtered = Array.from(rows || []).map(row => ({
             row,
             searchScore: mobileViewAHexSearchScore(row && row.hex, query),
         })).filter(entry => {
             const row = entry.row || Object.create(null);
-            if (!showAll && !row.selected) return false;
             if (!Number.isFinite(entry.searchScore)) return false;
             if (filters.has('ownedOnly') && !row.owned) return false;
             if (filters.has('unownedOnly') && row.owned) return false;
@@ -1631,7 +1633,6 @@ var mobileOverhaulInit = (function () {
         function renderPalette(template, rows) {
             const visibleRows = mobileViewAFilterSortRows(rows, {
                 search,
-                showAll,
                 sort,
                 filters,
                 minCount: minCount === '' ? Number.NaN : Number(minCount),
@@ -1645,10 +1646,7 @@ var mobileOverhaulInit = (function () {
             } else if (!rows.length) {
                 paletteScroller.appendChild(element('div', 'gpc-mva-empty', 'This template has no palette colors.'));
             } else if (!visibleRows.length) {
-                const message = showAll
-                    ? 'No colors match the current search or filters.'
-                    : 'No single selected color is available. Turn on Show All to choose one.';
-                paletteScroller.appendChild(element('div', 'gpc-mva-empty', message));
+                paletteScroller.appendChild(element('div', 'gpc-mva-empty', 'No colors match the current search or filters.'));
             } else {
                 for (const row of visibleRows) {
                     visiblePaletteRowsByIndex.set(String(row.index), row);
@@ -1701,7 +1699,9 @@ var mobileOverhaulInit = (function () {
             root.setAttribute('aria-hidden', String(!visible));
             toggleClass(root, 'is-thumbnail-hidden', thumbnailHidden);
             showAllButton.setAttribute('aria-pressed', String(showAll));
-            showAllButton.title = showAll ? 'Show only the selected color' : 'Show all colors';
+            showAllButton.title = showAll
+                ? 'Showing the whole project on the map -- tap to show only the active color'
+                : 'Showing only the active color on the map -- tap to preview the whole project';
             thumbnailToggle.setAttribute('aria-pressed', String(thumbnailHidden));
             thumbnailToggle.setAttribute('aria-label', thumbnailHidden ? 'Show template thumbnail' : 'Hide template thumbnail');
             thumbnailToggle.title = thumbnailHidden ? 'Show template thumbnail' : 'Hide template thumbnail';
@@ -1781,6 +1781,15 @@ var mobileOverhaulInit = (function () {
         listen(showAllButton, 'click', () => {
             showAll = !showAll;
             refresh();
+            // Directly widens/narrows template.mask (the renderer only ever
+            // draws mask-selected colors) instead of being a display-only
+            // palette-grid filter -- otherwise toggling this would never
+            // have actually changed what the map shows.
+            if (typeof bridge.setShowAllColors === 'function') {
+                Promise.resolve(bridge.setShowAllColors(showAll)).catch(error => {
+                    reportError(error, 'setShowAllColors');
+                });
+            }
         });
         listen(thumbnailToggle, 'click', () => {
             thumbnailHidden = !thumbnailHidden;
@@ -34488,6 +34497,19 @@ applyLockState();
         return '#' + match[1].toUpperCase();
     }
 
+    function gppMobileMaskIsNarrow(template) {
+        if (!template || !template.palette) return true;
+        const core = gppCreateCore();
+        let count = 0;
+        for (let index = 0; index < template.palette.length; index += 1) {
+            if (core.maskHas(template.mask, index)) {
+                count += 1;
+                if (count > 1) return false;
+            }
+        }
+        return true;
+    }
+
     function gppMobileFindPaletteIndexByColor(template, value) {
         const hex = gppMobileNormalizeHex(value);
         if (!template || !hex || !template.palette) return -1;
@@ -34533,7 +34555,18 @@ applyLockState();
             return { selected: false, owned: false, reason: 'invalid-color' };
         }
         const core = gppCreateCore();
-        template.mask = core.maskOnly(template.palette.length, index);
+        // While "Show all colors" is on, selecting a swatch only changes
+        // the active native paint color -- template.mask must stay wide so
+        // the renderer keeps showing the whole project as a guide. narrowMask
+        // defaults to true (today's single-active-color behavior).
+        const shouldNarrowMask = !options || options.narrowMask !== false;
+        if (shouldNarrowMask) {
+            template.mask = core.maskOnly(template.palette.length, index);
+        } else if (!core.maskHas(template.mask, index)) {
+            // Defensive: the color being actively painted must always be
+            // selectable even if the mask was somehow narrower than expected.
+            core.maskSet(template.mask, index, true);
+        }
         await gppState.persistTemplateState(template);
 
         const hex = core.packedToHex(template.palette[index]);
@@ -34552,6 +34585,35 @@ applyLockState();
         }
         gppMobilePostlude();
         return { selected: true, owned: !!gameRow, hex, index };
+    }
+
+    // "Show all colors" directly controls what the renderer draws: on
+    // widens template.mask to every palette color (the whole project shows
+    // as a guide); off narrows it back to a single color, matching mobile's
+    // single-active-color contract. This is deliberately NOT display-only --
+    // the renderer (gpp-renderer.js) only ever draws mask-selected colors,
+    // so a display-only toggle here would never have actually changed what
+    // shows on the map.
+    async function gppMobileSetShowAllColors(showAll) {
+        const template = gppState.getFocusedTemplate();
+        if (!template || !template.palette || !template.palette.length) return false;
+        const core = gppCreateCore();
+        if (showAll) {
+            template.mask = core.makeFullMask(template.palette.length, template.counts);
+        } else {
+            const currentPaintColor = gppEvalPageExpr('(typeof pixelColor!=="undefined"?pixelColor:null)');
+            let index = gppMobileFindPaletteIndexByColor(template, currentPaintColor);
+            if (index < 0) {
+                for (let candidate = 0; candidate < template.palette.length; candidate += 1) {
+                    if (core.maskHas(template.mask, candidate)) { index = candidate; break; }
+                }
+            }
+            if (index < 0) index = 0;
+            template.mask = core.maskOnly(template.palette.length, index);
+        }
+        await gppState.persistTemplateState(template);
+        gppMobilePostlude();
+        return true;
     }
 
     async function gppMobileNormalizeFocusedSelection() {
@@ -34596,7 +34658,18 @@ applyLockState();
             // A picked map color that is absent from this template must leave
             // its existing one-bit selection intact, not clear the mask.
             if (index < 0) return;
-            gppMobileSelectColor(index, { changeNative: false }).catch(err => {
+            // This same event also fires from gppMobileSelectColor's OWN
+            // native changeColor() call (the page-realm patch above dispatches
+            // it for every changeColor, not just genuine eyedropper picks) --
+            // so a swatch tapped while "Show all colors" is on re-enters here
+            // via that patched changeColor, with no way to directly know
+            // whether narrowing is wanted. Infer it from the mask's current
+            // breadth instead: a still-narrow (single-color) mask means this
+            // is a genuine eyedropper pick in the normal single-active-color
+            // mode, so narrow as usual; an already-wide mask means Show All
+            // is active, so stay wide and just ensure the picked color's bit
+            // is included.
+            gppMobileSelectColor(index, { changeNative: false, narrowMask: gppMobileMaskIsNarrow(template) }).catch(err => {
                 console.error('[GeoPixelcons++] Mobile Overhaul failed to sync the picked color:', err);
             });
         };
@@ -34918,6 +34991,7 @@ applyLockState();
             },
             getPaletteRows: template => gppMobileReadPaletteRows(template),
             selectColor: (index, options) => gppMobileSelectColor(index, options),
+            setShowAllColors: showAll => gppMobileSetShowAllColors(showAll),
             renderThumbnail: (template, size) => gppLibraryRenderThumbCanvas(template, size || 96),
             renderFullPreview: template => gppLibraryRenderFullCanvas(template),
             readCenterGrid: () => gppMobileReadCenterGrid(),

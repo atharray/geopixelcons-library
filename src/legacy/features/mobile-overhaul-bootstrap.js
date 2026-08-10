@@ -59,6 +59,19 @@
         return '#' + match[1].toUpperCase();
     }
 
+    function gppMobileMaskIsNarrow(template) {
+        if (!template || !template.palette) return true;
+        const core = gppCreateCore();
+        let count = 0;
+        for (let index = 0; index < template.palette.length; index += 1) {
+            if (core.maskHas(template.mask, index)) {
+                count += 1;
+                if (count > 1) return false;
+            }
+        }
+        return true;
+    }
+
     function gppMobileFindPaletteIndexByColor(template, value) {
         const hex = gppMobileNormalizeHex(value);
         if (!template || !hex || !template.palette) return -1;
@@ -104,7 +117,18 @@
             return { selected: false, owned: false, reason: 'invalid-color' };
         }
         const core = gppCreateCore();
-        template.mask = core.maskOnly(template.palette.length, index);
+        // While "Show all colors" is on, selecting a swatch only changes
+        // the active native paint color -- template.mask must stay wide so
+        // the renderer keeps showing the whole project as a guide. narrowMask
+        // defaults to true (today's single-active-color behavior).
+        const shouldNarrowMask = !options || options.narrowMask !== false;
+        if (shouldNarrowMask) {
+            template.mask = core.maskOnly(template.palette.length, index);
+        } else if (!core.maskHas(template.mask, index)) {
+            // Defensive: the color being actively painted must always be
+            // selectable even if the mask was somehow narrower than expected.
+            core.maskSet(template.mask, index, true);
+        }
         await gppState.persistTemplateState(template);
 
         const hex = core.packedToHex(template.palette[index]);
@@ -123,6 +147,35 @@
         }
         gppMobilePostlude();
         return { selected: true, owned: !!gameRow, hex, index };
+    }
+
+    // "Show all colors" directly controls what the renderer draws: on
+    // widens template.mask to every palette color (the whole project shows
+    // as a guide); off narrows it back to a single color, matching mobile's
+    // single-active-color contract. This is deliberately NOT display-only --
+    // the renderer (gpp-renderer.js) only ever draws mask-selected colors,
+    // so a display-only toggle here would never have actually changed what
+    // shows on the map.
+    async function gppMobileSetShowAllColors(showAll) {
+        const template = gppState.getFocusedTemplate();
+        if (!template || !template.palette || !template.palette.length) return false;
+        const core = gppCreateCore();
+        if (showAll) {
+            template.mask = core.makeFullMask(template.palette.length, template.counts);
+        } else {
+            const currentPaintColor = gppEvalPageExpr('(typeof pixelColor!=="undefined"?pixelColor:null)');
+            let index = gppMobileFindPaletteIndexByColor(template, currentPaintColor);
+            if (index < 0) {
+                for (let candidate = 0; candidate < template.palette.length; candidate += 1) {
+                    if (core.maskHas(template.mask, candidate)) { index = candidate; break; }
+                }
+            }
+            if (index < 0) index = 0;
+            template.mask = core.maskOnly(template.palette.length, index);
+        }
+        await gppState.persistTemplateState(template);
+        gppMobilePostlude();
+        return true;
     }
 
     async function gppMobileNormalizeFocusedSelection() {
@@ -167,7 +220,18 @@
             // A picked map color that is absent from this template must leave
             // its existing one-bit selection intact, not clear the mask.
             if (index < 0) return;
-            gppMobileSelectColor(index, { changeNative: false }).catch(err => {
+            // This same event also fires from gppMobileSelectColor's OWN
+            // native changeColor() call (the page-realm patch above dispatches
+            // it for every changeColor, not just genuine eyedropper picks) --
+            // so a swatch tapped while "Show all colors" is on re-enters here
+            // via that patched changeColor, with no way to directly know
+            // whether narrowing is wanted. Infer it from the mask's current
+            // breadth instead: a still-narrow (single-color) mask means this
+            // is a genuine eyedropper pick in the normal single-active-color
+            // mode, so narrow as usual; an already-wide mask means Show All
+            // is active, so stay wide and just ensure the picked color's bit
+            // is included.
+            gppMobileSelectColor(index, { changeNative: false, narrowMask: gppMobileMaskIsNarrow(template) }).catch(err => {
                 console.error('[GeoPixelcons++] Mobile Overhaul failed to sync the picked color:', err);
             });
         };
@@ -489,6 +553,7 @@
             },
             getPaletteRows: template => gppMobileReadPaletteRows(template),
             selectColor: (index, options) => gppMobileSelectColor(index, options),
+            setShowAllColors: showAll => gppMobileSetShowAllColors(showAll),
             renderThumbnail: (template, size) => gppLibraryRenderThumbCanvas(template, size || 96),
             renderFullPreview: template => gppLibraryRenderFullCanvas(template),
             readCenterGrid: () => gppMobileReadCenterGrid(),

@@ -65,7 +65,6 @@
     function mobileViewAFilterSortRows(rows, state) {
         const options = state || Object.create(null);
         const query = options.search || '';
-        const showAll = !!options.showAll;
         const hasProgress = !!options.hasProgress;
         const rawFilters = options.filters || [];
         const filters = new Set(Array.from(rawFilters, value => String(value)));
@@ -74,12 +73,15 @@
         const hasMinCount = Number.isFinite(minCount);
         const hasMaxCount = Number.isFinite(maxCount);
 
+        // The palette grid always lists every template color -- "Show all
+        // colors" only controls what the map renders (template.mask), not
+        // which swatches this grid displays. Search/owned/progress/count
+        // filters below still narrow the grid as normal.
         const filtered = Array.from(rows || []).map(row => ({
             row,
             searchScore: mobileViewAHexSearchScore(row && row.hex, query),
         })).filter(entry => {
             const row = entry.row || Object.create(null);
-            if (!showAll && !row.selected) return false;
             if (!Number.isFinite(entry.searchScore)) return false;
             if (filters.has('ownedOnly') && !row.owned) return false;
             if (filters.has('unownedOnly') && row.owned) return false;
@@ -636,7 +638,6 @@
         function renderPalette(template, rows) {
             const visibleRows = mobileViewAFilterSortRows(rows, {
                 search,
-                showAll,
                 sort,
                 filters,
                 minCount: minCount === '' ? Number.NaN : Number(minCount),
@@ -650,10 +651,7 @@
             } else if (!rows.length) {
                 paletteScroller.appendChild(element('div', 'gpc-mva-empty', 'This template has no palette colors.'));
             } else if (!visibleRows.length) {
-                const message = showAll
-                    ? 'No colors match the current search or filters.'
-                    : 'No single selected color is available. Turn on Show All to choose one.';
-                paletteScroller.appendChild(element('div', 'gpc-mva-empty', message));
+                paletteScroller.appendChild(element('div', 'gpc-mva-empty', 'No colors match the current search or filters.'));
             } else {
                 for (const row of visibleRows) {
                     visiblePaletteRowsByIndex.set(String(row.index), row);
@@ -706,7 +704,9 @@
             root.setAttribute('aria-hidden', String(!visible));
             toggleClass(root, 'is-thumbnail-hidden', thumbnailHidden);
             showAllButton.setAttribute('aria-pressed', String(showAll));
-            showAllButton.title = showAll ? 'Show only the selected color' : 'Show all colors';
+            showAllButton.title = showAll
+                ? 'Showing the whole project on the map -- tap to show only the active color'
+                : 'Showing only the active color on the map -- tap to preview the whole project';
             thumbnailToggle.setAttribute('aria-pressed', String(thumbnailHidden));
             thumbnailToggle.setAttribute('aria-label', thumbnailHidden ? 'Show template thumbnail' : 'Hide template thumbnail');
             thumbnailToggle.title = thumbnailHidden ? 'Show template thumbnail' : 'Hide template thumbnail';
@@ -786,6 +786,15 @@
         listen(showAllButton, 'click', () => {
             showAll = !showAll;
             refresh();
+            // Directly widens/narrows template.mask (the renderer only ever
+            // draws mask-selected colors) instead of being a display-only
+            // palette-grid filter -- otherwise toggling this would never
+            // have actually changed what the map shows.
+            if (typeof bridge.setShowAllColors === 'function') {
+                Promise.resolve(bridge.setShowAllColors(showAll)).catch(error => {
+                    reportError(error, 'setShowAllColors');
+                });
+            }
         });
         listen(thumbnailToggle, 'click', () => {
             thumbnailHidden = !thumbnailHidden;

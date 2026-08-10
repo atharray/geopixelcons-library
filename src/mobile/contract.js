@@ -11,7 +11,7 @@
     // subscribeOptional() call for it is correctly optional, not a bug.)
     const MOBILE_OVERHAUL_BRIDGE_METHODS = [
         'isDark', 'ready', 'subscribeRefresh', 'getTemplates', 'getFocusedTemplate',
-        'focusTemplate', 'deleteTemplate', 'getPaletteRows', 'selectColor', 'renderThumbnail',
+        'focusTemplate', 'deleteTemplate', 'getPaletteRows', 'selectColor', 'setShowAllColors', 'renderThumbnail',
         'renderFullPreview', 'readCenterGrid', 'canEditPosition', 'commitPosition',
         'beginPlacement', 'cancelPlacement', 'isPlacementActive', 'nudge',
         'isPreviewForced', 'togglePreview', 'setGroupNoise', 'scanTemplate', 'getScanBusy',
