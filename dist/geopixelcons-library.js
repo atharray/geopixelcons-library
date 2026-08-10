@@ -15,7 +15,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 var mobileOverhaulInit = (function () {
     'use strict';
 
-    const GPP_MOBILE_UI_VERSION = '0.1.0';
+    const GPP_MOBILE_UI_VERSION = '1.0.0';
+
 
     const MOBILE_OVERHAUL_API_VERSION = 1;
 
@@ -34,6 +35,7 @@ var mobileOverhaulInit = (function () {
         }
         return bridge;
     }
+
 
     const MOBILE_RESTORED_ATTRIBUTES = ['style', 'class', 'hidden', 'aria-hidden'];
 
@@ -145,6 +147,7 @@ var mobileOverhaulInit = (function () {
             destroy,
         });
     }
+
 
     const MOBILE_HAMBURGER_ROOT_ID = 'gpc-mobile-hamburger';
     const MOBILE_HAMBURGER_BUTTON_ID = 'gpc-mobile-hamburger-button';
@@ -865,6 +868,7 @@ var mobileOverhaulInit = (function () {
         refresh();
         return api;
     }
+
 
     const MOBILE_VIEW_A_PANEL_HEIGHT_KEY = 'gpc-mobile-overhaul-panel-height';
     const MOBILE_VIEW_A_MIN_PANEL_HEIGHT = 168;
@@ -1758,6 +1762,7 @@ var mobileOverhaulInit = (function () {
         return controller;
     }
 
+
     const MOBILE_VIEW_B_THUMBNAIL_SIZE = 72;
     const MOBILE_VIEW_B_COMPACT_THUMBNAIL_SIZE = 48;
 
@@ -2507,6 +2512,7 @@ var mobileOverhaulInit = (function () {
         refresh();
         return controller;
     }
+
 
     const MOBILE_UI_SCALE_STORAGE_KEY = 'gpc-mobile-overhaul-ui-scale';
     const MOBILE_UI_SCALE_MIN = 75;
@@ -3449,6 +3455,7 @@ var mobileOverhaulInit = (function () {
         return controller;
     }
 
+
     const MOBILE_ROOT_ID = 'gpc-mobile-overhaul-root';
     const MOBILE_PANEL_ID = 'gpc-mobile-panel';
     const MOBILE_NATIVE_ROW_ID = 'gpc-mobile-native-controls-row';
@@ -3972,6 +3979,7 @@ var mobileOverhaulInit = (function () {
         }
     }
 
+
     let activeController = null;
     let activeInitPromise = null;
 
@@ -3996,6 +4004,7 @@ var mobileOverhaulInit = (function () {
             if (activeInitPromise === pending) activeInitPromise = null;
         }
     }
+
 
     Object.defineProperties(initMobileOverhaul, {
         apiVersion: {

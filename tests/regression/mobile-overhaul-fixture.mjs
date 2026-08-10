@@ -33,7 +33,7 @@ const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_DIR = resolve(TEST_DIR, '..', '..');
 const BUILD_PATH = join(SCRIPT_DIR, 'build.js');
 const CORE_PATH = join(SCRIPT_DIR, 'src', 'legacy', 'core.js');
-const EXTERNAL_BUNDLE_PATH = join(SCRIPT_DIR, 'src', 'mobile', 'gpp-mobile-ui.js');
+const MOBILE_UI_VERSION_TOKEN = '__GPP_MOBILE_UI_VERSION__';
 const VIEWPORT_TEXT = process.env.GPP_MOBILE_FIXTURE_VIEWPORT || '390x844';
 const VIEWPORT_MATCH = /^(\d{3,4})x(\d{3,4})$/u.exec(VIEWPORT_TEXT);
 assert(VIEWPORT_MATCH, `Invalid GPP_MOBILE_FIXTURE_VIEWPORT: ${VIEWPORT_TEXT}`);
@@ -176,15 +176,25 @@ function readProductionAssembly() {
     const sourceOrder = [...orderMatch[1].matchAll(/['"]([^'"]+)['"]/g)]
         .map(match => match[1]);
     assert(sourceOrder.length > 3, 'build.js LEGACY_SOURCE_ORDER unexpectedly contained too few files');
-    assert.equal(sourceOrder[0], 'src/mobile/gpp-mobile-ui.js', 'mobile bundle must remain first in LEGACY_SOURCE_ORDER');
     assert.equal(sourceOrder.at(-1), 'src/legacy/footer.js', 'legacy footer must remain last in LEGACY_SOURCE_ORDER');
+
+    // The mobile UI module is modular source (multiple files), not a single
+    // pre-flattened bundle, but it must still be an unbroken run of
+    // src/mobile/... entries at the very front, before src/legacy/core.js.
+    const coreIndex = sourceOrder.indexOf('src/legacy/core.js');
+    assert(coreIndex > 0, 'LEGACY_SOURCE_ORDER must list src/legacy/core.js after the mobile module files');
+    const mobileOrder = sourceOrder.slice(0, coreIndex);
+    assert(
+        mobileOrder.length > 0 && mobileOrder.every(entry => entry.startsWith('src/mobile/')),
+        'every entry before src/legacy/core.js in LEGACY_SOURCE_ORDER must be a src/mobile/ file',
+    );
 
     const gppInitIndex = sourceOrder.indexOf('src/legacy/features/ghost-plus-plus/gpp-init.js');
     const mobileBootstrapIndex = sourceOrder.indexOf('src/legacy/features/mobile-overhaul-bootstrap.js');
     assert(gppInitIndex >= 0, 'LEGACY_SOURCE_ORDER is missing Ghost++ initialization');
     assert(mobileBootstrapIndex > gppInitIndex, 'mobile bootstrap must run after Ghost++ declarations');
 
-    const bodyOrder = sourceOrder.slice(1);
+    const bodyOrder = sourceOrder.slice(coreIndex);
     const sourceByPath = new Map();
     const bodySource = bodyOrder.map(relativePath => {
         const source = readUtf8WithoutBom(join(SCRIPT_DIR, relativePath));
@@ -245,15 +255,28 @@ function readProductionAssembly() {
         },
     });
 
-    return { sourceOrder, bodySource, settings };
+    return { sourceOrder, mobileOrder, bodySource, settings };
 }
 
-function readExternalBundle() {
-    assert(
-        existsSync(EXTERNAL_BUNDLE_PATH),
-        `external Mobile Overhaul bundle is missing: ${EXTERNAL_BUNDLE_PATH}`,
-    );
-    const source = readUtf8WithoutBom(EXTERNAL_BUNDLE_PATH);
+// Assembles the mobile UI module's own multi-file source exactly as build.js
+// does (same file order, same version-token substitution), independently of
+// the main production body. This mirrors an @require boundary: the mobile
+// module is a self-contained classic script that executes before the main
+// IIFE, so the fixture keeps it as its own separately-parseable string.
+function readExternalBundle(mobileOrder) {
+    assert(mobileOrder.length > 0, 'mobile module file list must not be empty');
+    for (const relativePath of mobileOrder) {
+        assert(
+            existsSync(join(SCRIPT_DIR, relativePath)),
+            `mobile module source file is missing: ${relativePath}`,
+        );
+    }
+    let source = mobileOrder
+        .map(relativePath => readUtf8WithoutBom(join(SCRIPT_DIR, relativePath)))
+        .join('\n\n');
+    const tokenCount = source.split(MOBILE_UI_VERSION_TOKEN).length - 1;
+    assert.equal(tokenCount, 1, `expected exactly one ${MOBILE_UI_VERSION_TOKEN} token, found ${tokenCount}`);
+    source = source.replace(MOBILE_UI_VERSION_TOKEN, 'fixture-test-version');
     assert.match(
         source,
         /\bvar\s+mobileOverhaulInit\s*=/,
@@ -2004,12 +2027,12 @@ function printScenario(outcome) {
 
 async function main() {
     const assembly = readProductionAssembly();
-    const externalSource = readExternalBundle();
+    const externalSource = readExternalBundle(assembly.mobileOrder);
     assert.doesNotThrow(() => new Function(assembly.bodySource), 'assembled production IIFE must parse');
     assert.doesNotThrow(() => new Function(externalSource), 'external bundle must parse');
     assert.doesNotThrow(() => new Function(buildPreludeSource(assembly.settings)), 'fixture prelude must parse');
     console.log(`Production assembly: ${assembly.sourceOrder.length} files from build.js LEGACY_SOURCE_ORDER.`);
-    console.log(`External bundle: ${EXTERNAL_BUNDLE_PATH}`);
+    console.log(`External bundle: ${assembly.mobileOrder.length} mobile module files under src/mobile/.`);
     console.log(`Requested viewport: ${FIXTURE_VIEWPORT.width}x${FIXTURE_VIEWPORT.height}`);
 
     const allScenarios = [
