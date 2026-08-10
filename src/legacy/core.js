@@ -33,7 +33,7 @@
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
     ];
 
-    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: false, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, mobileCompatibility: false, mobileOverhaul: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
+    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: false, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, mobileOverhaul: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
     FEATURE_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = true);
     // Ghost++ deliberately opts out of the blanket "every feature defaults on" rule above:
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
@@ -72,15 +72,6 @@
     }
 
     const _settings = loadSettings();
-
-    function gpcMobileCompatibilityActive() {
-        if (!_settings.mobileCompatibility) return false;
-        try {
-            return window.matchMedia('(max-width: 768px)').matches || window.matchMedia('(pointer: coarse)').matches;
-        } catch (_) {
-            return window.innerWidth <= 768;
-        }
-    }
 
     function gpcMobileOverhaulAvailable() {
         // A missing @require must degrade to the existing desktop/native UI,
@@ -922,62 +913,10 @@
         smoothZoomRow.appendChild(smoothZoomToggle);
         settingsPanel.appendChild(smoothZoomRow);
 
-        // Mobile Compatibility toggle
-        const mobileCompatRow = document.createElement('div');
-        mobileCompatRow.style.cssText = `
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
-            margin-top: 4px;
-        `;
-        const mobileCompatLabel = document.createElement('div');
-        mobileCompatLabel.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;';
-        mobileCompatLabel.innerHTML = '<span>📱</span><span>Mobile Compatibility</span>';
-        const mobileCompatHelp = document.createElement('span');
-        mobileCompatHelp.textContent = '❓';
-        mobileCompatHelp.style.cssText = 'cursor:help;font-size:12px;flex-shrink:0;margin-left:4px;opacity:0.6;';
-        mobileCompatHelp.addEventListener('mouseenter', (ev) => showSimpleTooltip(ev, 'Mobile-focused fixes for small or touch screens. Currently disables draggable guild/ghost modals on mobile and makes the ghost menu overhaul switch between controls and preview using the preview collapse button. Refresh the page after toggling.'));
-        mobileCompatHelp.addEventListener('mouseleave', removeTooltip);
-        mobileCompatLabel.appendChild(mobileCompatHelp);
-
-        const mobileCompatToggle = document.createElement('label');
-        mobileCompatToggle.style.cssText = 'position:relative; width:44px; height:24px; cursor:pointer; flex-shrink:0;';
-        const mobileCompatInput = document.createElement('input');
-        mobileCompatInput.type = 'checkbox';
-        mobileCompatInput.checked = !!_settings.mobileCompatibility;
-        mobileCompatInput.style.cssText = 'opacity:0;width:0;height:0;';
-        const mobileCompatSlider = document.createElement('span');
-        mobileCompatSlider.style.cssText = `
-            position:absolute; inset:0; border-radius:12px; transition:0.2s;
-            background: ${_settings.mobileCompatibility ? '#22c55e' : (dark ? '#585b70' : '#cbd5e1')};
-        `;
-        const mobileCompatKnob = document.createElement('span');
-        mobileCompatKnob.style.cssText = `
-            position:absolute; top:2px; left:${_settings.mobileCompatibility ? '22px' : '2px'};
-            width:20px; height:20px; border-radius:50%; transition:0.2s;
-            background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-        `;
-        mobileCompatSlider.appendChild(mobileCompatKnob);
-
-        mobileCompatInput.addEventListener('change', () => {
-            _settings.mobileCompatibility = mobileCompatInput.checked;
-            saveSettings(_settings);
-            mobileCompatSlider.style.background = mobileCompatInput.checked ? '#22c55e' : (dark ? '#585b70' : '#cbd5e1');
-            mobileCompatKnob.style.left = mobileCompatInput.checked ? '22px' : '2px';
-            banner.style.display = 'block';
-        });
-
-        mobileCompatToggle.appendChild(mobileCompatInput);
-        mobileCompatToggle.appendChild(mobileCompatSlider);
-        mobileCompatRow.appendChild(mobileCompatLabel);
-        mobileCompatRow.appendChild(mobileCompatToggle);
-        settingsPanel.appendChild(mobileCompatRow);
-
-        // Mobile System Overhaul toggle. Unlike Mobile Compatibility, this is
-        // a deliberate full takeover and is never gated by viewport/pointer
-        // media queries. Reload is required so native controls can be moved
-        // transactionally from a clean page state.
+        // Mobile System Overhaul toggle. A deliberate full takeover, never
+        // gated by viewport/pointer media queries -- it's a manual opt-in on
+        // any screen size. Reload is required so native controls can be
+        // moved transactionally from a clean page state.
         const mobileOverhaulRow = document.createElement('div');
         mobileOverhaulRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;

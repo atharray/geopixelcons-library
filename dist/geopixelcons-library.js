@@ -4183,7 +4183,7 @@ var mobileOverhaulInit = (function () {
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
     ];
 
-    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: false, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, mobileCompatibility: false, mobileOverhaul: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
+    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: false, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, mobileOverhaul: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
     FEATURE_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = true);
     // Ghost++ deliberately opts out of the blanket "every feature defaults on" rule above:
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
@@ -4222,15 +4222,6 @@ var mobileOverhaulInit = (function () {
     }
 
     const _settings = loadSettings();
-
-    function gpcMobileCompatibilityActive() {
-        if (!_settings.mobileCompatibility) return false;
-        try {
-            return window.matchMedia('(max-width: 768px)').matches || window.matchMedia('(pointer: coarse)').matches;
-        } catch (_) {
-            return window.innerWidth <= 768;
-        }
-    }
 
     function gpcMobileOverhaulAvailable() {
         // A missing @require must degrade to the existing desktop/native UI,
@@ -5072,62 +5063,10 @@ var mobileOverhaulInit = (function () {
         smoothZoomRow.appendChild(smoothZoomToggle);
         settingsPanel.appendChild(smoothZoomRow);
 
-        // Mobile Compatibility toggle
-        const mobileCompatRow = document.createElement('div');
-        mobileCompatRow.style.cssText = `
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
-            margin-top: 4px;
-        `;
-        const mobileCompatLabel = document.createElement('div');
-        mobileCompatLabel.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;';
-        mobileCompatLabel.innerHTML = '<span>📱</span><span>Mobile Compatibility</span>';
-        const mobileCompatHelp = document.createElement('span');
-        mobileCompatHelp.textContent = '❓';
-        mobileCompatHelp.style.cssText = 'cursor:help;font-size:12px;flex-shrink:0;margin-left:4px;opacity:0.6;';
-        mobileCompatHelp.addEventListener('mouseenter', (ev) => showSimpleTooltip(ev, 'Mobile-focused fixes for small or touch screens. Currently disables draggable guild/ghost modals on mobile and makes the ghost menu overhaul switch between controls and preview using the preview collapse button. Refresh the page after toggling.'));
-        mobileCompatHelp.addEventListener('mouseleave', removeTooltip);
-        mobileCompatLabel.appendChild(mobileCompatHelp);
-
-        const mobileCompatToggle = document.createElement('label');
-        mobileCompatToggle.style.cssText = 'position:relative; width:44px; height:24px; cursor:pointer; flex-shrink:0;';
-        const mobileCompatInput = document.createElement('input');
-        mobileCompatInput.type = 'checkbox';
-        mobileCompatInput.checked = !!_settings.mobileCompatibility;
-        mobileCompatInput.style.cssText = 'opacity:0;width:0;height:0;';
-        const mobileCompatSlider = document.createElement('span');
-        mobileCompatSlider.style.cssText = `
-            position:absolute; inset:0; border-radius:12px; transition:0.2s;
-            background: ${_settings.mobileCompatibility ? '#22c55e' : (dark ? '#585b70' : '#cbd5e1')};
-        `;
-        const mobileCompatKnob = document.createElement('span');
-        mobileCompatKnob.style.cssText = `
-            position:absolute; top:2px; left:${_settings.mobileCompatibility ? '22px' : '2px'};
-            width:20px; height:20px; border-radius:50%; transition:0.2s;
-            background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-        `;
-        mobileCompatSlider.appendChild(mobileCompatKnob);
-
-        mobileCompatInput.addEventListener('change', () => {
-            _settings.mobileCompatibility = mobileCompatInput.checked;
-            saveSettings(_settings);
-            mobileCompatSlider.style.background = mobileCompatInput.checked ? '#22c55e' : (dark ? '#585b70' : '#cbd5e1');
-            mobileCompatKnob.style.left = mobileCompatInput.checked ? '22px' : '2px';
-            banner.style.display = 'block';
-        });
-
-        mobileCompatToggle.appendChild(mobileCompatInput);
-        mobileCompatToggle.appendChild(mobileCompatSlider);
-        mobileCompatRow.appendChild(mobileCompatLabel);
-        mobileCompatRow.appendChild(mobileCompatToggle);
-        settingsPanel.appendChild(mobileCompatRow);
-
-        // Mobile System Overhaul toggle. Unlike Mobile Compatibility, this is
-        // a deliberate full takeover and is never gated by viewport/pointer
-        // media queries. Reload is required so native controls can be moved
-        // transactionally from a clean page state.
+        // Mobile System Overhaul toggle. A deliberate full takeover, never
+        // gated by viewport/pointer media queries -- it's a manual opt-in on
+        // any screen size. Reload is required so native controls can be
+        // moved transactionally from a clean page state.
         const mobileOverhaulRow = document.createElement('div');
         mobileOverhaulRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
@@ -21017,7 +20956,6 @@ patch();
         modal.dataset.gpcModernModal = '1';
 
         const dark = () => document.body.classList.contains('dark');
-        const mobileCompat = typeof gpcMobileCompatibilityActive === 'function' && gpcMobileCompatibilityActive();
 
         // ── CSS for children only — no width/height rules on the modal itself here.
         //   The modal's own dimensions are set via inline styles below (after stripping
@@ -21171,46 +21109,6 @@ patch();
                     transition: opacity 0.15s;
                 }
                 .gpc-resize-se:hover { opacity: 1; }
-                #ghostImageModal.gpc-mobile-compat {
-                    width: calc(100vw - 12px) !important;
-                    height: calc(100dvh - 12px) !important;
-                    min-width: 0 !important;
-                    min-height: 0 !important;
-                    max-width: none !important;
-                    max-height: none !important;
-                    left: 6px !important;
-                    top: 6px !important;
-                    transform: none !important;
-                }
-                #ghostImageModal.gpc-mobile-compat #gpc-modal-left {
-                    flex: 1 1 auto;
-                    width: calc(100% - 34px);
-                    min-width: 0;
-                }
-                #ghostImageModal.gpc-mobile-compat #gpc-modal-right {
-                    width: 34px !important;
-                    flex: 0 0 34px;
-                }
-                #ghostImageModal.gpc-mobile-compat.gpc-mobile-preview-open #gpc-modal-left {
-                    display: none !important;
-                }
-                #ghostImageModal.gpc-mobile-compat.gpc-mobile-preview-open #gpc-modal-right {
-                    width: 100% !important;
-                    flex: 1 1 auto;
-                }
-                #ghostImageModal.gpc-mobile-compat.gpc-mobile-preview-open #gpc-modal-right-content {
-                    opacity: 1;
-                    pointer-events: auto;
-                }
-                #ghostImageModal.gpc-mobile-compat .gpc-edge-drag,
-                #ghostImageModal.gpc-mobile-compat .gpc-panel-splitter,
-                #ghostImageModal.gpc-mobile-compat .gpc-preview-hresize,
-                #ghostImageModal.gpc-mobile-compat .gpc-resize-se {
-                    display: none !important;
-                }
-                #ghostImageModal.gpc-mobile-compat #gpc-modern-gp-grid {
-                    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-                }
             `;
             document.head.appendChild(s);
         }
@@ -21230,19 +21128,6 @@ patch();
             padding:      '0',
             alignItems:   'stretch',
         });
-        if (mobileCompat) {
-            modal.classList.add('gpc-mobile-compat', 'gpc-mobile-controls-open');
-            Object.assign(modal.style, {
-                width:     'calc(100vw - 12px)',
-                height:    'calc(100dvh - 12px)',
-                minWidth:  '0',
-                minHeight: '0',
-                left:      '6px',
-                top:       '6px',
-                transform: 'none',
-            });
-        }
-
         // ── Locate existing DOM nodes ─────────────────────────────
         const closeBtn   = modal.querySelector('button[onclick*="toggleGhostModal"]');
         const h2         = modal.querySelector('h2');
@@ -21284,7 +21169,6 @@ patch();
         const leftHeader = document.createElement('div');
         leftHeader.id = 'gpc-modal-left-header';
         leftHeader.className = 'flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700 cursor-move select-none flex-shrink-0 bg-white dark:bg-gray-800';
-        if (mobileCompat) leftHeader.classList.remove('cursor-move');
 
         const leftTitleWrap = document.createElement('div');
         leftTitleWrap.className = 'flex items-center gap-2 min-w-0';
@@ -21329,8 +21213,8 @@ patch();
             document.addEventListener('mousemove', onMove, true);
             document.addEventListener('mouseup',   onUp,   true);
         }
-        leftHeader.style.cursor = mobileCompat ? 'default' : 'grab';
-        if (!mobileCompat) leftHeader.addEventListener('mousedown', _startDrag);
+        leftHeader.style.cursor = 'grab';
+        leftHeader.addEventListener('mousedown', _startDrag);
 
         if (scrollArea) {
             scrollArea.id = 'gpc-modal-left-scroll';
@@ -21380,36 +21264,34 @@ patch();
             if (pTxt) { pTxt.className = 'text-gray-400 dark:text-gray-500 text-xs text-center'; pTxt.style.cssText = 'position:relative;z-index:1;padding:8px;'; }
             rightContent.appendChild(previewContainer);
 
-            if (!mobileCompat) {
-                // Horizontal resize strip — drag to set preview height freely
-                const previewHResize = document.createElement('div');
-                previewHResize.className = 'gpc-preview-hresize';
-                previewHResize.title = 'Drag to resize preview height';
-                previewHResize.addEventListener('mousedown', e => {
-                    if (e.button !== 0) return;
-                    e.preventDefault(); e.stopPropagation();
-                    const startY = e.clientY;
-                    const startH = previewContainer.getBoundingClientRect().height;
-                    // Switch to explicit height so the user can go above the aspect-ratio default
-                    previewContainer.style.height = startH + 'px';
-                    previewContainer.style.maxHeight = 'none';
-                    previewHResize.classList.add('gpc-ps-dragging');
-                    document.body.style.cursor = 'ns-resize';
-                    const onMove = ev => {
-                        const newH = Math.max(60, startH + ev.clientY - startY);
-                        previewContainer.style.height = newH + 'px';
-                    };
-                    const onUp = () => {
-                        previewHResize.classList.remove('gpc-ps-dragging');
-                        document.body.style.cursor = '';
-                        document.removeEventListener('mousemove', onMove, true);
-                        document.removeEventListener('mouseup',   onUp,   true);
-                    };
-                    document.addEventListener('mousemove', onMove, true);
-                    document.addEventListener('mouseup',   onUp,   true);
-                });
-                rightContent.appendChild(previewHResize);
-            }
+            // Horizontal resize strip — drag to set preview height freely
+            const previewHResize = document.createElement('div');
+            previewHResize.className = 'gpc-preview-hresize';
+            previewHResize.title = 'Drag to resize preview height';
+            previewHResize.addEventListener('mousedown', e => {
+                if (e.button !== 0) return;
+                e.preventDefault(); e.stopPropagation();
+                const startY = e.clientY;
+                const startH = previewContainer.getBoundingClientRect().height;
+                // Switch to explicit height so the user can go above the aspect-ratio default
+                previewContainer.style.height = startH + 'px';
+                previewContainer.style.maxHeight = 'none';
+                previewHResize.classList.add('gpc-ps-dragging');
+                document.body.style.cursor = 'ns-resize';
+                const onMove = ev => {
+                    const newH = Math.max(60, startH + ev.clientY - startY);
+                    previewContainer.style.height = newH + 'px';
+                };
+                const onUp = () => {
+                    previewHResize.classList.remove('gpc-ps-dragging');
+                    document.body.style.cursor = '';
+                    document.removeEventListener('mousemove', onMove, true);
+                    document.removeEventListener('mouseup',   onUp,   true);
+                };
+                document.addEventListener('mousemove', onMove, true);
+                document.addEventListener('mouseup',   onUp,   true);
+            });
+            rightContent.appendChild(previewHResize);
         }
 
         // Buttons row (URL, File, History, Save Pos, Place on Map, Clear Image …)
@@ -21481,25 +21363,12 @@ patch();
         rightPanel.appendChild(rightContent);
 
         // Collapse toggle
-        let rightCollapsed = mobileCompat;
+        let rightCollapsed = false;
         let _previewRightW = 280;  // remembered expanded width of the preview (right) panel
-        if (mobileCompat) {
-            rightPanel.classList.add('gpc-collapsed');
-            collapseBtn.textContent = '▶';
-            collapseBtn.title = 'Show preview';
-        }
 
         collapseBtn.addEventListener('click', e => {
             e.stopPropagation();
             rightCollapsed = !rightCollapsed;
-            if (mobileCompat) {
-                rightPanel.classList.toggle('gpc-collapsed', rightCollapsed);
-                modal.classList.toggle('gpc-mobile-controls-open', rightCollapsed);
-                modal.classList.toggle('gpc-mobile-preview-open', !rightCollapsed);
-                collapseBtn.textContent = rightCollapsed ? '▶' : '◀';
-                collapseBtn.title = rightCollapsed ? 'Show preview' : 'Show controls';
-                return;
-            }
             // Anchor on the live left/controls width plus a remembered preview width, so
             // collapse/expand only removes or re-adds the preview on the right — the total
             // modal width is never reset to a stale or default value.
@@ -21549,7 +21418,7 @@ patch();
         resizeHandle.className = 'gpc-resize-se';
 
         let _rs = null;
-        if (!mobileCompat) resizeHandle.addEventListener('mousedown', e => {
+        resizeHandle.addEventListener('mousedown', e => {
             e.preventDefault(); e.stopPropagation();
             const r = modal.getBoundingClientRect();
             const rightRect = rightPanel.getBoundingClientRect();
@@ -21602,57 +21471,55 @@ patch();
         while (modal.firstChild) modal.removeChild(modal.firstChild);
         modal.appendChild(leftPanel);
         modal.appendChild(rightPanel);
-        if (!mobileCompat) {
-            // Top / bottom / left edge strips are children of modal (absolute vs modal)
-            ['top', 'bottom', 'left'].forEach(side => {
-                const strip = document.createElement('div');
-                strip.className = `gpc-edge-drag ${side}`;
-                strip.style.cursor = 'grab';  // inline beats CSS class specificity
-                strip.addEventListener('mousedown', _startDrag);
-                modal.appendChild(strip);
-            });
-            // Right edge strip must be a child of rightPanel to beat its stacking context
-            const rightStrip = document.createElement('div');
-            rightStrip.className = 'gpc-edge-drag right';
-            rightStrip.style.cursor = 'grab';
-            rightStrip.addEventListener('mousedown', _startDrag);
-            rightPanel.appendChild(rightStrip);
+        // Top / bottom / left edge strips are children of modal (absolute vs modal)
+        ['top', 'bottom', 'left'].forEach(side => {
+            const strip = document.createElement('div');
+            strip.className = `gpc-edge-drag ${side}`;
+            strip.style.cursor = 'grab';  // inline beats CSS class specificity
+            strip.addEventListener('mousedown', _startDrag);
+            modal.appendChild(strip);
+        });
+        // Right edge strip must be a child of rightPanel to beat its stacking context
+        const rightStrip = document.createElement('div');
+        rightStrip.className = 'gpc-edge-drag right';
+        rightStrip.style.cursor = 'grab';
+        rightStrip.addEventListener('mousedown', _startDrag);
+        rightPanel.appendChild(rightStrip);
 
-            // ── Panel splitter (left edge of rightPanel — drag to resize split ratio) ──
-            const panelSplitter = document.createElement('div');
-            panelSplitter.className = 'gpc-panel-splitter';
-            panelSplitter.title = 'Drag to resize preview panel';
-            panelSplitter.addEventListener('mousedown', e => {
-                if (e.button !== 0 || rightCollapsed) return;
-                e.preventDefault(); e.stopPropagation();
-                const startX = e.clientX;
-                const startW = rightPanel.getBoundingClientRect().width;
-                rightPanel.style.transition = 'none';
-                panelSplitter.classList.add('gpc-ps-dragging');
-                document.body.style.cursor = 'ew-resize';
-                const onMove = ev => {
-                    const delta = startX - ev.clientX; // drag left → wider right panel
-                    const modalW = modal.getBoundingClientRect().width;
-                    const minW = Math.max(34, Math.floor(modalW * 0.05));
-                    const maxW = Math.max(minW, Math.floor(modalW * 0.95));
-                    const newW = Math.min(Math.max(minW, startW + delta), maxW);
-                    rightPanel.style.width = newW + 'px';
-                    _previewRightW = newW;   // remember split width for collapse/expand
-                };
-                const onUp = () => {
-                    panelSplitter.classList.remove('gpc-ps-dragging');
-                    document.body.style.cursor = '';
-                    rightPanel.style.transition = '';
-                    document.removeEventListener('mousemove', onMove, true);
-                    document.removeEventListener('mouseup',   onUp,   true);
-                };
-                document.addEventListener('mousemove', onMove, true);
-                document.addEventListener('mouseup',   onUp,   true);
-            });
-            rightPanel.appendChild(panelSplitter);
+        // ── Panel splitter (left edge of rightPanel — drag to resize split ratio) ──
+        const panelSplitter = document.createElement('div');
+        panelSplitter.className = 'gpc-panel-splitter';
+        panelSplitter.title = 'Drag to resize preview panel';
+        panelSplitter.addEventListener('mousedown', e => {
+            if (e.button !== 0 || rightCollapsed) return;
+            e.preventDefault(); e.stopPropagation();
+            const startX = e.clientX;
+            const startW = rightPanel.getBoundingClientRect().width;
+            rightPanel.style.transition = 'none';
+            panelSplitter.classList.add('gpc-ps-dragging');
+            document.body.style.cursor = 'ew-resize';
+            const onMove = ev => {
+                const delta = startX - ev.clientX; // drag left → wider right panel
+                const modalW = modal.getBoundingClientRect().width;
+                const minW = Math.max(34, Math.floor(modalW * 0.05));
+                const maxW = Math.max(minW, Math.floor(modalW * 0.95));
+                const newW = Math.min(Math.max(minW, startW + delta), maxW);
+                rightPanel.style.width = newW + 'px';
+                _previewRightW = newW;   // remember split width for collapse/expand
+            };
+            const onUp = () => {
+                panelSplitter.classList.remove('gpc-ps-dragging');
+                document.body.style.cursor = '';
+                rightPanel.style.transition = '';
+                document.removeEventListener('mousemove', onMove, true);
+                document.removeEventListener('mouseup',   onUp,   true);
+            };
+            document.addEventListener('mousemove', onMove, true);
+            document.addEventListener('mouseup',   onUp,   true);
+        });
+        rightPanel.appendChild(panelSplitter);
 
-            modal.appendChild(resizeHandle);
-        }
+        modal.appendChild(resizeHandle);
 
         loadRecentImages();
         setupGhostModalPlacementMemory(modal);
@@ -22255,12 +22122,6 @@ patch();
         
         .draggable-panel {
             touch-action: none !important;
-        }
-
-        .draggable-panel.gpc-mobile-compat,
-        .draggable-panel.gpc-mobile-compat .guild-modal-header,
-        .draggable-panel.gpc-mobile-compat .guild-modal-header span {
-            touch-action: auto !important;
         }
 
         /* Use Tailwind CSS variables for dark mode compatibility */
@@ -26164,8 +26025,6 @@ patch();
 
             if (panel.classList.contains('draggable-panel')) return;
 
-            const mobileCompat = typeof gpcMobileCompatibilityActive === 'function' && gpcMobileCompatibilityActive();
-
             modal.style.position = 'fixed';
             modal.style.inset = 'auto';
             modal.style.backgroundColor = 'transparent';
@@ -26181,23 +26040,13 @@ patch();
             panel.style.scale = '1';
             panel.style.pointerEvents = 'auto';
             panel.classList.add('draggable-panel');
-            panel.classList.toggle('gpc-mobile-compat', mobileCompat);
 
-            if (mobileCompat) {
-                panel.style.top = '8px';
-                panel.style.left = '8px';
-                panel.style.width = 'calc(100vw - 16px)';
-                panel.style.maxWidth = 'calc(100vw - 16px)';
-                panel.style.maxHeight = 'calc(100dvh - 16px)';
-                panel.style.overflowY = 'auto';
-            } else {
-                panel.style.top = '100px';
-                panel.style.left = 'calc(50% - 25rem)';
-                panel.style.width = '50rem';
-                panel.style.maxWidth = '90vw';
-                panel.style.maxHeight = '85vh';
-                panel.style.overflowY = '';
-            }
+            panel.style.top = '100px';
+            panel.style.left = 'calc(50% - 25rem)';
+            panel.style.width = '50rem';
+            panel.style.maxWidth = '90vw';
+            panel.style.maxHeight = '85vh';
+            panel.style.overflowY = '';
 
             const existingHeader = panel.querySelector('.guild-modal-header');
             if (existingHeader) existingHeader.remove();
@@ -26207,7 +26056,7 @@ patch();
             headerBar.style.cssText = `
                 position: absolute; top: 0; left: 0; right: 0; height: 40px;
                 background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-                cursor: ${mobileCompat ? 'default' : 'move'}; border-radius: 0.75rem 0.75rem 0 0;
+                cursor: move; border-radius: 0.75rem 0.75rem 0 0;
                 display: flex; align-items: center; justify-content: space-between;
                 padding: 0 16px; color: white; font-weight: 600;
                 user-select: none; z-index: 50; pointer-events: auto;
@@ -26215,7 +26064,7 @@ patch();
             
             const titleSpan = document.createElement('span');
             titleSpan.textContent = 'Guild Panel';
-            titleSpan.style.cursor = mobileCompat ? 'default' : 'move';
+            titleSpan.style.cursor = 'move';
             
             const closeBtn = document.createElement('button');
             closeBtn.textContent = '✕';
@@ -26254,11 +26103,9 @@ patch();
             if (panel.firstChild) panel.insertBefore(headerBar, panel.firstChild);
             else panel.appendChild(headerBar);
 
-            if (!mobileCompat) {
-                panel.appendChild(resizeHandle);
-                setupDragHandling(panel, titleSpan);
-                setupResizeHandling(panel, resizeHandle);
-            }
+            panel.appendChild(resizeHandle);
+            setupDragHandling(panel, titleSpan);
+            setupResizeHandling(panel, resizeHandle);
             setupMessageCollapsible();
             setupContentTracking();
 
@@ -26273,16 +26120,8 @@ patch();
 
             // Reset panel to center every time the modal is opened (fixes off-screen lock after dragging outside window)
             const _centerPanel = () => {
-                if (mobileCompat) {
-                    panel.style.top = '8px';
-                    panel.style.left = '8px';
-                    panel.style.width = 'calc(100vw - 16px)';
-                    panel.style.maxWidth = 'calc(100vw - 16px)';
-                    panel.style.maxHeight = 'calc(100dvh - 16px)';
-                } else {
-                    panel.style.top = '100px';
-                    panel.style.left = 'calc(50% - 25rem)';
-                }
+                panel.style.top = '100px';
+                panel.style.left = 'calc(50% - 25rem)';
             };
             const _visibilityObserver = new MutationObserver(() => {
                 if (!modal.classList.contains('hidden')) _centerPanel();
