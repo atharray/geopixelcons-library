@@ -1741,6 +1741,27 @@ function buildDriverSource(mode) {
                 assertEqual(eligibleUi.getAttribute('data-gpc-mobile-scale-applied'), '125', 'range change must mark eligible GeoPixelcons-owned UI roots');
                 assertEqual(eligibleUi.style.getPropertyValue('zoom'), '1.25', 'range change must apply the chosen UI zoom');
                 assertEqual(eligibleHamburger.getAttribute('data-gpc-mobile-scale-applied'), '125', 'the hamburger menu root must participate in UI scaling');
+                assertEqual(eligibleHamburger.style.getPropertyValue('zoom'), '1.25', 'the hamburger menu root must actually carry the applied zoom');
+
+                // Regression check: hamburger-menu.js's applyTheme() used
+                // to overwrite shell.root.style.cssText wholesale on every
+                // refresh() -- including the standalone refresh() that
+                // openMenu() calls, which runs OUTSIDE native-controls.js's
+                // own refresh cycle that would otherwise immediately
+                // reapply the scale afterward -- silently wiping this
+                // externally-applied zoom the instant the hamburger opened.
+                var hamburgerButton = document.getElementById('gpc-mobile-hamburger-button');
+                hamburgerButton.click();
+                await waitFor(function() {
+                    return hamburgerButton.getAttribute('aria-expanded') === 'true';
+                }, 'the hamburger menu to open');
+                assertEqual(eligibleHamburger.style.getPropertyValue('zoom'), '1.25', 'opening the hamburger menu must not reset its applied UI scale');
+                hamburgerButton.click();
+                await waitFor(function() {
+                    return hamburgerButton.getAttribute('aria-expanded') === 'false';
+                }, 'the hamburger menu to close');
+                assertEqual(eligibleHamburger.style.getPropertyValue('zoom'), '1.25', 'closing the hamburger menu must not reset its applied UI scale');
+
                 assertEqual(previewCard.getAttribute('data-gpc-mobile-scale-applied'), '125', 'bounded modal content must participate in UI scaling');
                 assertEqual(nativeUi.getAttribute('data-gpc-mobile-scale-applied'), null, 'native site UI must never be scaled -- scope is GeoPixelcons-owned elements only');
                 assertEqual(nativeUi.getAttribute('style'), nativeStyleBefore, 'native site UI geometry must remain untouched by mobile UI scale');
