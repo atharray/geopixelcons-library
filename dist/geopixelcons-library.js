@@ -20,6 +20,25 @@ var mobileOverhaulInit = (function () {
 
     const MOBILE_OVERHAUL_API_VERSION = 1;
 
+    // Every function-typed member gppBuildMobileOverhaulBridge() (the main
+    // script's bootstrap) actually publishes. Kept as one explicit list so
+    // a missing or renamed bridge method fails loudly and specifically, once,
+    // at startup -- instead of each call site's own typeof-guard letting a
+    // broken bridge degrade into "this one feature quietly does nothing,"
+    // which is much harder to notice or diagnose.
+    // (bridge.subscribeEnsureOpen is deliberately NOT listed: it's not part
+    // of the published bridge shape, and native-controls.js's own guarded
+    // subscribeOptional() call for it is correctly optional, not a bug.)
+    const MOBILE_OVERHAUL_BRIDGE_METHODS = [
+        'isDark', 'ready', 'subscribeRefresh', 'getTemplates', 'getFocusedTemplate',
+        'focusTemplate', 'deleteTemplate', 'getPaletteRows', 'selectColor', 'renderThumbnail',
+        'renderFullPreview', 'readCenterGrid', 'canEditPosition', 'commitPosition', 'nudge',
+        'isPreviewForced', 'togglePreview', 'setGroupNoise', 'scanTemplate', 'getScanBusy',
+        'buyUnownedColors', 'getHexValues', 'copyHexValues', 'goTo', 'activateEyedropper',
+        'getSelectedPaintColor', 'ensureRuntimeHooks', 'disposeHostEffects',
+        'onControllerDestroyed', 'requestRefresh', 'log',
+    ];
+
     function validateMobileOverhaulBridge(bridge) {
         if (!bridge || typeof bridge !== 'object') {
             throw new TypeError('GeoPixelcons++ Mobile Overhaul requires a bridge object');
@@ -30,8 +49,21 @@ var mobileOverhaulInit = (function () {
                 + MOBILE_OVERHAUL_API_VERSION + ', received ' + String(bridge.apiVersion)
             );
         }
-        if (typeof bridge.ready !== 'function') {
-            throw new TypeError('GeoPixelcons++ Mobile Overhaul bridge.ready must be a function');
+        if (typeof bridge.hostVersion !== 'string' || !bridge.hostVersion) {
+            throw new TypeError('GeoPixelcons++ Mobile Overhaul bridge.hostVersion must be a non-empty string');
+        }
+        if (!bridge.env || typeof bridge.env !== 'object'
+            || !bridge.env.window || !bridge.env.document
+            || typeof bridge.env.document.createElement !== 'function') {
+            throw new TypeError('GeoPixelcons++ Mobile Overhaul bridge.env must expose window and document');
+        }
+        const missing = MOBILE_OVERHAUL_BRIDGE_METHODS.filter(
+            name => typeof bridge[name] !== 'function'
+        );
+        if (missing.length) {
+            throw new TypeError(
+                'GeoPixelcons++ Mobile Overhaul bridge is missing required method(s): ' + missing.join(', ')
+            );
         }
         return bridge;
     }
@@ -241,9 +273,12 @@ var mobileOverhaulInit = (function () {
 
     function mobileHamburgerIsUnavailable(button) {
         if (!button) return true;
-        if (button.disabled || button.getAttribute && button.getAttribute('aria-disabled') === 'true') {
-            return false;
-        }
+        // Hidden always excludes, regardless of disabled state -- a control
+        // that is both disabled AND hidden must not slip through just
+        // because the disabled check used to run (and return) first. A
+        // disabled-but-VISIBLE control is intentionally still included (see
+        // mobileHamburgerIsDisabled(), which renders it as a grayed-out
+        // row) rather than excluded, so users can see the action exists.
         if (button.hidden || mobileHamburgerHasClass(button, 'hidden')) return true;
         const style = button.style;
         if (style && (style.getPropertyValue('display') === 'none'
@@ -465,7 +500,6 @@ var mobileOverhaulInit = (function () {
 
             root.appendChild(button);
             root.appendChild(menu);
-            mountTarget.appendChild(root);
             shell = { root, button, buttonAlert, menu };
 
             listen(button, 'click', toggleMenu);
@@ -473,6 +507,11 @@ var mobileOverhaulInit = (function () {
             listen(documentRef, 'pointerdown', onOutsidePointer, true);
             listen(documentRef, 'keydown', onKeyDown, true);
             syncOpenPresentation();
+            // Appended last, once every listener is wired and nothing else
+            // here can throw -- appending first and then failing partway
+            // through wiring would orphan a live, visible menu with nothing
+            // left holding a reference to destroy it.
+            mountTarget.appendChild(root);
             return shell;
         }
 
@@ -2820,8 +2859,12 @@ var mobileOverhaulInit = (function () {
         scaleRoot.appendChild(scaleSurface);
 
         scaleRoot.appendChild(style);
-        mountTarget.appendChild(overlay);
-        mountTarget.appendChild(scaleRoot);
+        // overlay/scaleRoot are appended at the very end of this function
+        // (right before `return controller`), once every listener/observer
+        // is wired and nothing else here can throw -- appending this early
+        // and then failing partway through the rest of construction would
+        // orphan live, visible DOM nodes with nothing left holding a
+        // reference to destroy them.
 
         function clampScale(value) {
             const numeric = Number(value);
@@ -3452,6 +3495,9 @@ var mobileOverhaulInit = (function () {
             mutationObserver.observe(observeTarget, { childList: true, subtree: true });
         }
 
+        mountTarget.appendChild(overlay);
+        mountTarget.appendChild(scaleRoot);
+
         return controller;
     }
 
@@ -3570,6 +3616,13 @@ var mobileOverhaulInit = (function () {
         let shell = null;
         let destroyed = false;
         let open = true;
+        // Single source of truth for which screen is showing. Every entry
+        // point that changes the panel's open/view state goes through
+        // refresh() -> applyActiveView(), instead of each caller separately
+        // remembering to pair the right show()/hide() calls -- that's what
+        // previously let openPanel()/togglePanel() leave View B on screen
+        // after being reopened via a path other than the Return button.
+        let activeView = 'a';
         let refreshScheduled = false;
         let controller = null;
         const nativeMutationRelevantIds = new Set([
@@ -3674,6 +3727,33 @@ var mobileOverhaulInit = (function () {
             lifecycle.listen(resume, 'click', interceptResumePainting, true);
         }
 
+        // The panel closing must always leave the user exactly one visible,
+        // tappable way back in. The native #resumePaintingControl's own
+        // hidden/visible state is driven by the site's paint/inspect mode
+        // logic, which has no reason to run just because this panel closed --
+        // in ordinary paint mode it can stay hidden forever, stranding the
+        // user with #bottomControls also suppressed and nothing on screen.
+        // Force it visible while the panel is closed (its click listener is
+        // already bound above), and keep it out of the way while the panel
+        // owns the screen.
+        function syncResumeControlVisibility() {
+            const resume = documentRef.getElementById('resumePaintingControl');
+            if (!resume) return;
+            lifecycle.capturePresentation(resume);
+            if (open) {
+                if (!resume.hidden) resume.hidden = true;
+                if (resume.getAttribute('aria-hidden') !== 'true') {
+                    resume.setAttribute('aria-hidden', 'true');
+                }
+                return;
+            }
+            if (resume.hidden) resume.hidden = false;
+            if (resume.getAttribute('aria-hidden') === 'true') resume.removeAttribute('aria-hidden');
+            if (resume.style.getPropertyValue('display') === 'none') {
+                resume.style.removeProperty('display');
+            }
+        }
+
         function focusMobileTarget(target) {
             if (!target || target.disabled || target.isConnected === false
                 || typeof target.focus !== 'function') return false;
@@ -3685,34 +3765,43 @@ var mobileOverhaulInit = (function () {
             }
         }
 
+        // showTemplateSettings/showPaintingView are the two callers that need
+        // a SPECIFIC view, as opposed to openPanel()'s "just get me back to
+        // the default painting screen" contract -- so they set open+
+        // activeView directly and refresh once, rather than calling
+        // openPanel() (which would force activeView back to 'a').
         function showTemplateSettings() {
-            openPanel();
-            ensureViewA();
-            ensureViewB();
-            if (viewAController) viewAController.hide();
-            const shown = viewBController ? viewBController.show() : false;
+            if (destroyed) return false;
+            open = true;
+            activeView = 'b';
+            refresh();
             const viewBRoot = documentRef.getElementById('gpc-mobile-view-b');
-            if (shown && viewBRoot && typeof viewBRoot.querySelector === 'function') {
+            if (viewBRoot && typeof viewBRoot.querySelector === 'function') {
                 focusMobileTarget(viewBRoot.querySelector('button[aria-label="Return to mobile painting"]'));
             }
-            return shown;
+            return activeView === 'b';
         }
 
         function showPaintingView() {
-            openPanel();
-            ensureViewA();
-            ensureViewB();
-            if (viewBController) viewBController.hide();
-            const shown = viewAController ? viewAController.show() : false;
+            if (destroyed) return false;
+            open = true;
+            activeView = 'a';
+            refresh();
             const viewARoot = documentRef.getElementById('gpc-mobile-view-a');
-            if (shown && viewARoot && typeof viewARoot.querySelector === 'function') {
+            if (viewARoot && typeof viewARoot.querySelector === 'function') {
                 focusMobileTarget(viewARoot.querySelector('button[aria-label="Open template settings"]'));
             }
-            return shown;
+            return activeView === 'a';
         }
 
+        // Opening a template preview is an overlay on top of whichever view
+        // is already showing (View A's thumbnail button, or a row in View
+        // B's template list) -- it must not reset activeView the way the
+        // public openPanel() does, or closing the preview would strand the
+        // user back on View A regardless of where they opened it from.
         function openTemplatePreview(template) {
-            openPanel();
+            if (destroyed) return false;
+            ensureOpen();
             ensureAdditions();
             return additionsController ? additionsController.openPreview(template) : false;
         }
@@ -3761,6 +3850,20 @@ var mobileOverhaulInit = (function () {
             }
         }
 
+        // Applies `activeView` to both view controllers every refresh, so
+        // every entry point that opens the panel is correct by construction
+        // instead of depending on each caller remembering the right pair of
+        // show()/hide() calls. show()/hide() are both idempotent.
+        function applyActiveView() {
+            if (activeView === 'b') {
+                if (viewAController) viewAController.hide();
+                if (viewBController) viewBController.show();
+            } else {
+                if (viewBController) viewBController.hide();
+                if (viewAController) viewAController.show();
+            }
+        }
+
         function ensureHamburgerMenu() {
             if (typeof createMobileHamburgerMenu !== 'function') return;
             if (!hamburgerController || hamburgerController.destroyed) {
@@ -3802,10 +3905,12 @@ var mobileOverhaulInit = (function () {
             suppressSurface(documentRef.getElementById('gpp-modal'));
             relocateNativeControls();
             bindResumeControl();
+            syncResumeControlVisibility();
             ensureHamburgerMenu();
             ensureViewA();
             ensureViewB();
             ensureAdditions();
+            applyActiveView();
             syncOpenPresentation();
             return controller;
         }
@@ -3868,7 +3973,21 @@ var mobileOverhaulInit = (function () {
             if (nativeMutationsAffectController(records)) scheduleRefresh();
         }
 
+        // The public "just open the panel" entry point (native ghost/paint
+        // opener, hamburger, guild "Set as Ghost", the resume-control
+        // intercept). Always lands on View A -- View A is the painting menu
+        // now; View B is a deliberate excursion only showTemplateSettings()
+        // enters. Use ensureOpen() instead when the current view must be
+        // preserved (e.g. opening a template preview from View B).
         function openPanel() {
+            if (destroyed) return false;
+            open = true;
+            activeView = 'a';
+            refresh();
+            return true;
+        }
+
+        function ensureOpen() {
             if (destroyed) return false;
             open = true;
             refresh();
@@ -3882,8 +4001,16 @@ var mobileOverhaulInit = (function () {
                 && (activeElement === shell.root
                     || (typeof shell.root.contains === 'function' && shell.root.contains(activeElement))));
             open = false;
+            // Deliberately lighter than refresh(): closing must never leave
+            // anything else on screen, so it always closes the preview
+            // modal and forces the one guaranteed reopen affordance visible,
+            // but it doesn't need to re-run shell/native-control mounting.
+            if (additionsController) additionsController.closePreview();
             syncOpenPresentation();
+            syncResumeControlVisibility();
             if (moveFocus) {
+                // Guaranteed visible now, unlike the old fallback which could
+                // try to focus a still natively-hidden element.
                 focusMobileTarget(documentRef.getElementById('resumePaintingControl'));
             }
             return false;
@@ -18277,7 +18404,16 @@ window.changeColor=function(color){
     // ============================================================
     //  FEATURE: Paint Menu Controls [hidePaintMenu]
     // ============================================================
-    if (_settings.hidePaintMenu && !gpcMobileOverhaulAvailable()) {
+    // gpcMobileOverhaulAvailable() is read once here at script-boot time,
+    // before Mobile Overhaul's own async init has had a chance to settle --
+    // if it later fails, this boot-time skip must not be permanent. Wrapped
+    // as a retryable function so mobile-overhaul-bootstrap.js's failure path
+    // can call it again once the real outcome is known.
+    let gppHidePaintMenuInitialized = false;
+    function gppRetryHidePaintMenuInit() {
+        if (gppHidePaintMenuInitialized) return;
+        if (!_settings.hidePaintMenu || gpcMobileOverhaulAvailable()) return;
+        gppHidePaintMenuInitialized = true;
         try {
             (function _init_hidePaintMenu() {
 
@@ -18788,6 +18924,7 @@ window.changeColor=function(color){
             console.error('[GeoPixelcons++] ❌ Paint Menu Controls failed:', err);
         }
     }
+    gppRetryHidePaintMenuInit();
 
 
 
@@ -31862,7 +31999,13 @@ patch();
     // ============================================================
     //  EXTENSION: Auto-open Menus on Hover [extAutoHoverMenus]
     // ============================================================
-    if (_settings.extAutoHoverMenus && !gpcMobileOverhaulAvailable()) {
+    // See the identical comment in hide-paint-menu.js: gpcMobileOverhaulAvailable()
+    // is read once at boot, before Mobile Overhaul's async init has settled.
+    let gppExtAutoHoverMenusInitialized = false;
+    function gppRetryExtAutoHoverMenusInit() {
+        if (gppExtAutoHoverMenusInitialized) return;
+        if (!_settings.extAutoHoverMenus || gpcMobileOverhaulAvailable()) return;
+        gppExtAutoHoverMenusInitialized = true;
         try {
             (function _ext_autoHoverMenus() {
 
@@ -32040,6 +32183,7 @@ patch();
             console.error('[GeoPixelcons++] ❌ Auto-open Menus on Hover failed:', err);
         }
     }
+    gppRetryExtAutoHoverMenusInit();
 
 
 
@@ -32118,7 +32262,13 @@ patch();
     // ============================================================
     //  EXTENSION: Pill Hover Labels [extPillHoverLabels]
     // ============================================================
-    if (_settings.extPillHoverLabels && !gpcMobileOverhaulAvailable()) {
+    // See the identical comment in hide-paint-menu.js: gpcMobileOverhaulAvailable()
+    // is read once at boot, before Mobile Overhaul's async init has settled.
+    let gppExtPillHoverLabelsInitialized = false;
+    function gppRetryExtPillHoverLabelsInit() {
+        if (gppExtPillHoverLabelsInitialized) return;
+        if (!_settings.extPillHoverLabels || gpcMobileOverhaulAvailable()) return;
+        gppExtPillHoverLabelsInitialized = true;
         try {
             (function _ext_pillHoverLabels() {
 
@@ -32291,6 +32441,7 @@ patch();
             console.error('[GeoPixelcons++] ❌ Pill Hover Labels failed:', err);
         }
     }
+    gppRetryExtPillHoverLabelsInit();
 
 
 
@@ -34662,6 +34813,10 @@ applyLockState();
         gppMobileOverhaulController = null;
         gppMobileDisposeHostEffects();
         gppMobileOverhaulPhase = 'destroyed';
+        // Without this, a debug snapshot taken after a mid-session
+        // controller-destroyed event still reports 'ok' from the original
+        // successful init, misleadingly implying the feature is still alive.
+        _featureStatus.mobileOverhaul = 'destroyed';
         gppMobileRestoreDesktopFallback();
     }
 
@@ -34773,6 +34928,14 @@ applyLockState();
         if (!document.getElementById('toggleEyedropper') || !document.getElementById('toggleEyedropper_Bottom')) {
             return false;
         }
+        // Confirm the native function actually exists before reporting
+        // success -- both toolbar buttons can be present in the DOM while
+        // the page's own toggleEyedropperMode has been renamed/removed, in
+        // which case the injected script's own internal `typeof` guard
+        // would otherwise silently no-op with no feedback to the caller.
+        if (gppEvalPageExpr('typeof toggleEyedropperMode') !== 'function') {
+            return false;
+        }
         gppRunInPageRealm('if(typeof toggleEyedropperMode==="function")toggleEyedropperMode();');
         return true;
     }
@@ -34781,6 +34944,16 @@ applyLockState();
         return Object.freeze({
             apiVersion: 1,
             hostVersion: VERSION,
+            // Object.freeze() here only prevents reassigning env.window/
+            // env.document to something else -- it does NOT sandbox window
+            // or document themselves; the mobile module can still reach any
+            // global or DOM node through them. That's expected, not a
+            // regression: the mobile module already runs as a trusted
+            // @require with full page-realm privileges before this bridge
+            // is ever built. The rest of this bridge (every method below)
+            // is what keeps day-to-day mobile UI code from reaching for raw
+            // internals like gppState directly -- env exists for the few
+            // cases (DOM mounting, localStorage) that genuinely need it.
             env: Object.freeze({ window, document }),
             isDark: () => isDarkMode(),
             ready: async () => {
@@ -34844,6 +35017,17 @@ applyLockState();
         });
     }
 
+    // hidePaintMenu/ext-auto-hover-menus/ext-pill-hover-labels each read
+    // gpcMobileOverhaulAvailable() once, synchronously, at script-boot time
+    // -- before this async function has had any chance to succeed or fail.
+    // If mobileOverhaul turns out unavailable, they were wrongly skipped and
+    // need a second chance; each exposes its own idempotent retry function.
+    function gppMobileRetryGatedFeatures() {
+        if (typeof gppRetryHidePaintMenuInit === 'function') gppRetryHidePaintMenuInit();
+        if (typeof gppRetryExtAutoHoverMenusInit === 'function') gppRetryExtAutoHoverMenusInit();
+        if (typeof gppRetryExtPillHoverLabelsInit === 'function') gppRetryExtPillHoverLabelsInit();
+    }
+
     async function gppStartMobileOverhaul() {
         if (!_settings.mobileOverhaul) return;
         const externalInit = (typeof mobileOverhaulInit === 'function') ? mobileOverhaulInit : null;
@@ -34851,6 +35035,7 @@ applyLockState();
             gppMobileOverhaulPhase = 'failed';
             _featureStatus.mobileOverhaul = 'unavailable';
             console.error('[GeoPixelcons++] Mobile System Overhaul is enabled, but its external module did not load. Other features will continue normally.');
+            gppMobileRetryGatedFeatures();
             return;
         }
         gppMobileOverhaulPhase = 'starting';
@@ -34883,6 +35068,7 @@ applyLockState();
             _featureStatus.mobileOverhaul = 'error';
             dbgPush(`Mobile System Overhaul init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Mobile System Overhaul' });
             console.error('[GeoPixelcons++] ❌ Mobile System Overhaul failed:', err);
+            gppMobileRetryGatedFeatures();
         }
     }
 

@@ -304,8 +304,12 @@
         scaleRoot.appendChild(scaleSurface);
 
         scaleRoot.appendChild(style);
-        mountTarget.appendChild(overlay);
-        mountTarget.appendChild(scaleRoot);
+        // overlay/scaleRoot are appended at the very end of this function
+        // (right before `return controller`), once every listener/observer
+        // is wired and nothing else here can throw -- appending this early
+        // and then failing partway through the rest of construction would
+        // orphan live, visible DOM nodes with nothing left holding a
+        // reference to destroy them.
 
         function clampScale(value) {
             const numeric = Number(value);
@@ -935,6 +939,9 @@
             mutationObserver = new MutationObserverCtor(onMutations);
             mutationObserver.observe(observeTarget, { childList: true, subtree: true });
         }
+
+        mountTarget.appendChild(overlay);
+        mountTarget.appendChild(scaleRoot);
 
         return controller;
     }

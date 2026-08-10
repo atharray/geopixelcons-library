@@ -90,9 +90,12 @@
 
     function mobileHamburgerIsUnavailable(button) {
         if (!button) return true;
-        if (button.disabled || button.getAttribute && button.getAttribute('aria-disabled') === 'true') {
-            return false;
-        }
+        // Hidden always excludes, regardless of disabled state -- a control
+        // that is both disabled AND hidden must not slip through just
+        // because the disabled check used to run (and return) first. A
+        // disabled-but-VISIBLE control is intentionally still included (see
+        // mobileHamburgerIsDisabled(), which renders it as a grayed-out
+        // row) rather than excluded, so users can see the action exists.
         if (button.hidden || mobileHamburgerHasClass(button, 'hidden')) return true;
         const style = button.style;
         if (style && (style.getPropertyValue('display') === 'none'
@@ -314,7 +317,6 @@
 
             root.appendChild(button);
             root.appendChild(menu);
-            mountTarget.appendChild(root);
             shell = { root, button, buttonAlert, menu };
 
             listen(button, 'click', toggleMenu);
@@ -322,6 +324,11 @@
             listen(documentRef, 'pointerdown', onOutsidePointer, true);
             listen(documentRef, 'keydown', onKeyDown, true);
             syncOpenPresentation();
+            // Appended last, once every listener is wired and nothing else
+            // here can throw -- appending first and then failing partway
+            // through wiring would orphan a live, visible menu with nothing
+            // left holding a reference to destroy it.
+            mountTarget.appendChild(root);
             return shell;
         }
 

@@ -2,7 +2,16 @@
     // ============================================================
     //  FEATURE: Paint Menu Controls [hidePaintMenu]
     // ============================================================
-    if (_settings.hidePaintMenu && !gpcMobileOverhaulAvailable()) {
+    // gpcMobileOverhaulAvailable() is read once here at script-boot time,
+    // before Mobile Overhaul's own async init has had a chance to settle --
+    // if it later fails, this boot-time skip must not be permanent. Wrapped
+    // as a retryable function so mobile-overhaul-bootstrap.js's failure path
+    // can call it again once the real outcome is known.
+    let gppHidePaintMenuInitialized = false;
+    function gppRetryHidePaintMenuInit() {
+        if (gppHidePaintMenuInitialized) return;
+        if (!_settings.hidePaintMenu || gpcMobileOverhaulAvailable()) return;
+        gppHidePaintMenuInitialized = true;
         try {
             (function _init_hidePaintMenu() {
 
@@ -513,3 +522,4 @@
             console.error('[GeoPixelcons++] ❌ Paint Menu Controls failed:', err);
         }
     }
+    gppRetryHidePaintMenuInit();

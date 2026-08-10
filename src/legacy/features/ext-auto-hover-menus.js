@@ -2,7 +2,13 @@
     // ============================================================
     //  EXTENSION: Auto-open Menus on Hover [extAutoHoverMenus]
     // ============================================================
-    if (_settings.extAutoHoverMenus && !gpcMobileOverhaulAvailable()) {
+    // See the identical comment in hide-paint-menu.js: gpcMobileOverhaulAvailable()
+    // is read once at boot, before Mobile Overhaul's async init has settled.
+    let gppExtAutoHoverMenusInitialized = false;
+    function gppRetryExtAutoHoverMenusInit() {
+        if (gppExtAutoHoverMenusInitialized) return;
+        if (!_settings.extAutoHoverMenus || gpcMobileOverhaulAvailable()) return;
+        gppExtAutoHoverMenusInitialized = true;
         try {
             (function _ext_autoHoverMenus() {
 
@@ -180,3 +186,4 @@
             console.error('[GeoPixelcons++] ❌ Auto-open Menus on Hover failed:', err);
         }
     }
+    gppRetryExtAutoHoverMenusInit();

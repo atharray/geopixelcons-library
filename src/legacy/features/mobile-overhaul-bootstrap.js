@@ -258,6 +258,10 @@
         gppMobileOverhaulController = null;
         gppMobileDisposeHostEffects();
         gppMobileOverhaulPhase = 'destroyed';
+        // Without this, a debug snapshot taken after a mid-session
+        // controller-destroyed event still reports 'ok' from the original
+        // successful init, misleadingly implying the feature is still alive.
+        _featureStatus.mobileOverhaul = 'destroyed';
         gppMobileRestoreDesktopFallback();
     }
 
@@ -369,6 +373,14 @@
         if (!document.getElementById('toggleEyedropper') || !document.getElementById('toggleEyedropper_Bottom')) {
             return false;
         }
+        // Confirm the native function actually exists before reporting
+        // success -- both toolbar buttons can be present in the DOM while
+        // the page's own toggleEyedropperMode has been renamed/removed, in
+        // which case the injected script's own internal `typeof` guard
+        // would otherwise silently no-op with no feedback to the caller.
+        if (gppEvalPageExpr('typeof toggleEyedropperMode') !== 'function') {
+            return false;
+        }
         gppRunInPageRealm('if(typeof toggleEyedropperMode==="function")toggleEyedropperMode();');
         return true;
     }
@@ -377,6 +389,16 @@
         return Object.freeze({
             apiVersion: 1,
             hostVersion: VERSION,
+            // Object.freeze() here only prevents reassigning env.window/
+            // env.document to something else -- it does NOT sandbox window
+            // or document themselves; the mobile module can still reach any
+            // global or DOM node through them. That's expected, not a
+            // regression: the mobile module already runs as a trusted
+            // @require with full page-realm privileges before this bridge
+            // is ever built. The rest of this bridge (every method below)
+            // is what keeps day-to-day mobile UI code from reaching for raw
+            // internals like gppState directly -- env exists for the few
+            // cases (DOM mounting, localStorage) that genuinely need it.
             env: Object.freeze({ window, document }),
             isDark: () => isDarkMode(),
             ready: async () => {
@@ -440,6 +462,17 @@
         });
     }
 
+    // hidePaintMenu/ext-auto-hover-menus/ext-pill-hover-labels each read
+    // gpcMobileOverhaulAvailable() once, synchronously, at script-boot time
+    // -- before this async function has had any chance to succeed or fail.
+    // If mobileOverhaul turns out unavailable, they were wrongly skipped and
+    // need a second chance; each exposes its own idempotent retry function.
+    function gppMobileRetryGatedFeatures() {
+        if (typeof gppRetryHidePaintMenuInit === 'function') gppRetryHidePaintMenuInit();
+        if (typeof gppRetryExtAutoHoverMenusInit === 'function') gppRetryExtAutoHoverMenusInit();
+        if (typeof gppRetryExtPillHoverLabelsInit === 'function') gppRetryExtPillHoverLabelsInit();
+    }
+
     async function gppStartMobileOverhaul() {
         if (!_settings.mobileOverhaul) return;
         const externalInit = (typeof mobileOverhaulInit === 'function') ? mobileOverhaulInit : null;
@@ -447,6 +480,7 @@
             gppMobileOverhaulPhase = 'failed';
             _featureStatus.mobileOverhaul = 'unavailable';
             console.error('[GeoPixelcons++] Mobile System Overhaul is enabled, but its external module did not load. Other features will continue normally.');
+            gppMobileRetryGatedFeatures();
             return;
         }
         gppMobileOverhaulPhase = 'starting';
@@ -479,6 +513,7 @@
             _featureStatus.mobileOverhaul = 'error';
             dbgPush(`Mobile System Overhaul init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Mobile System Overhaul' });
             console.error('[GeoPixelcons++] ❌ Mobile System Overhaul failed:', err);
+            gppMobileRetryGatedFeatures();
         }
     }
 

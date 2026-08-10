@@ -2,7 +2,13 @@
     // ============================================================
     //  EXTENSION: Pill Hover Labels [extPillHoverLabels]
     // ============================================================
-    if (_settings.extPillHoverLabels && !gpcMobileOverhaulAvailable()) {
+    // See the identical comment in hide-paint-menu.js: gpcMobileOverhaulAvailable()
+    // is read once at boot, before Mobile Overhaul's async init has settled.
+    let gppExtPillHoverLabelsInitialized = false;
+    function gppRetryExtPillHoverLabelsInit() {
+        if (gppExtPillHoverLabelsInitialized) return;
+        if (!_settings.extPillHoverLabels || gpcMobileOverhaulAvailable()) return;
+        gppExtPillHoverLabelsInitialized = true;
         try {
             (function _ext_pillHoverLabels() {
 
@@ -175,3 +181,4 @@
             console.error('[GeoPixelcons++] ❌ Pill Hover Labels failed:', err);
         }
     }
+    gppRetryExtPillHoverLabelsInit();

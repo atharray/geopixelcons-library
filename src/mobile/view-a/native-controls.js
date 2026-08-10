@@ -112,6 +112,13 @@
         let shell = null;
         let destroyed = false;
         let open = true;
+        // Single source of truth for which screen is showing. Every entry
+        // point that changes the panel's open/view state goes through
+        // refresh() -> applyActiveView(), instead of each caller separately
+        // remembering to pair the right show()/hide() calls -- that's what
+        // previously let openPanel()/togglePanel() leave View B on screen
+        // after being reopened via a path other than the Return button.
+        let activeView = 'a';
         let refreshScheduled = false;
         let controller = null;
         const nativeMutationRelevantIds = new Set([
@@ -216,6 +223,33 @@
             lifecycle.listen(resume, 'click', interceptResumePainting, true);
         }
 
+        // The panel closing must always leave the user exactly one visible,
+        // tappable way back in. The native #resumePaintingControl's own
+        // hidden/visible state is driven by the site's paint/inspect mode
+        // logic, which has no reason to run just because this panel closed --
+        // in ordinary paint mode it can stay hidden forever, stranding the
+        // user with #bottomControls also suppressed and nothing on screen.
+        // Force it visible while the panel is closed (its click listener is
+        // already bound above), and keep it out of the way while the panel
+        // owns the screen.
+        function syncResumeControlVisibility() {
+            const resume = documentRef.getElementById('resumePaintingControl');
+            if (!resume) return;
+            lifecycle.capturePresentation(resume);
+            if (open) {
+                if (!resume.hidden) resume.hidden = true;
+                if (resume.getAttribute('aria-hidden') !== 'true') {
+                    resume.setAttribute('aria-hidden', 'true');
+                }
+                return;
+            }
+            if (resume.hidden) resume.hidden = false;
+            if (resume.getAttribute('aria-hidden') === 'true') resume.removeAttribute('aria-hidden');
+            if (resume.style.getPropertyValue('display') === 'none') {
+                resume.style.removeProperty('display');
+            }
+        }
+
         function focusMobileTarget(target) {
             if (!target || target.disabled || target.isConnected === false
                 || typeof target.focus !== 'function') return false;
@@ -227,34 +261,43 @@
             }
         }
 
+        // showTemplateSettings/showPaintingView are the two callers that need
+        // a SPECIFIC view, as opposed to openPanel()'s "just get me back to
+        // the default painting screen" contract -- so they set open+
+        // activeView directly and refresh once, rather than calling
+        // openPanel() (which would force activeView back to 'a').
         function showTemplateSettings() {
-            openPanel();
-            ensureViewA();
-            ensureViewB();
-            if (viewAController) viewAController.hide();
-            const shown = viewBController ? viewBController.show() : false;
+            if (destroyed) return false;
+            open = true;
+            activeView = 'b';
+            refresh();
             const viewBRoot = documentRef.getElementById('gpc-mobile-view-b');
-            if (shown && viewBRoot && typeof viewBRoot.querySelector === 'function') {
+            if (viewBRoot && typeof viewBRoot.querySelector === 'function') {
                 focusMobileTarget(viewBRoot.querySelector('button[aria-label="Return to mobile painting"]'));
             }
-            return shown;
+            return activeView === 'b';
         }
 
         function showPaintingView() {
-            openPanel();
-            ensureViewA();
-            ensureViewB();
-            if (viewBController) viewBController.hide();
-            const shown = viewAController ? viewAController.show() : false;
+            if (destroyed) return false;
+            open = true;
+            activeView = 'a';
+            refresh();
             const viewARoot = documentRef.getElementById('gpc-mobile-view-a');
-            if (shown && viewARoot && typeof viewARoot.querySelector === 'function') {
+            if (viewARoot && typeof viewARoot.querySelector === 'function') {
                 focusMobileTarget(viewARoot.querySelector('button[aria-label="Open template settings"]'));
             }
-            return shown;
+            return activeView === 'a';
         }
 
+        // Opening a template preview is an overlay on top of whichever view
+        // is already showing (View A's thumbnail button, or a row in View
+        // B's template list) -- it must not reset activeView the way the
+        // public openPanel() does, or closing the preview would strand the
+        // user back on View A regardless of where they opened it from.
         function openTemplatePreview(template) {
-            openPanel();
+            if (destroyed) return false;
+            ensureOpen();
             ensureAdditions();
             return additionsController ? additionsController.openPreview(template) : false;
         }
@@ -303,6 +346,20 @@
             }
         }
 
+        // Applies `activeView` to both view controllers every refresh, so
+        // every entry point that opens the panel is correct by construction
+        // instead of depending on each caller remembering the right pair of
+        // show()/hide() calls. show()/hide() are both idempotent.
+        function applyActiveView() {
+            if (activeView === 'b') {
+                if (viewAController) viewAController.hide();
+                if (viewBController) viewBController.show();
+            } else {
+                if (viewBController) viewBController.hide();
+                if (viewAController) viewAController.show();
+            }
+        }
+
         function ensureHamburgerMenu() {
             if (typeof createMobileHamburgerMenu !== 'function') return;
             if (!hamburgerController || hamburgerController.destroyed) {
@@ -344,10 +401,12 @@
             suppressSurface(documentRef.getElementById('gpp-modal'));
             relocateNativeControls();
             bindResumeControl();
+            syncResumeControlVisibility();
             ensureHamburgerMenu();
             ensureViewA();
             ensureViewB();
             ensureAdditions();
+            applyActiveView();
             syncOpenPresentation();
             return controller;
         }
@@ -410,7 +469,21 @@
             if (nativeMutationsAffectController(records)) scheduleRefresh();
         }
 
+        // The public "just open the panel" entry point (native ghost/paint
+        // opener, hamburger, guild "Set as Ghost", the resume-control
+        // intercept). Always lands on View A -- View A is the painting menu
+        // now; View B is a deliberate excursion only showTemplateSettings()
+        // enters. Use ensureOpen() instead when the current view must be
+        // preserved (e.g. opening a template preview from View B).
         function openPanel() {
+            if (destroyed) return false;
+            open = true;
+            activeView = 'a';
+            refresh();
+            return true;
+        }
+
+        function ensureOpen() {
             if (destroyed) return false;
             open = true;
             refresh();
@@ -424,8 +497,16 @@
                 && (activeElement === shell.root
                     || (typeof shell.root.contains === 'function' && shell.root.contains(activeElement))));
             open = false;
+            // Deliberately lighter than refresh(): closing must never leave
+            // anything else on screen, so it always closes the preview
+            // modal and forces the one guaranteed reopen affordance visible,
+            // but it doesn't need to re-run shell/native-control mounting.
+            if (additionsController) additionsController.closePreview();
             syncOpenPresentation();
+            syncResumeControlVisibility();
             if (moveFocus) {
+                // Guaranteed visible now, unlike the old fallback which could
+                // try to focus a still natively-hidden element.
                 focusMobileTarget(documentRef.getElementById('resumePaintingControl'));
             }
             return false;
