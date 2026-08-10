@@ -149,16 +149,19 @@ unhashed executable URL.
 flowchart LR
   F["feature/name branch"] --> P["PR to protected main"]
   P --> T["Immutable preview tag\nv1.0.0-feature-name-1"]
-  P --> R["Reviewed merge to main"]
+  P --> U["User tests immutable preview\nin local Tampermonkey"]
+  U --> R["Explicit release authorization\nagent merges PR to main"]
   R --> RP["Release Please PR"]
-  RP --> S["Reviewed release merge\nstable v1.0.0 or later"]
+  RP --> S["Agent verifies and merges\nRelease Please PR\nstable v1.0.0 or later"]
   S --> CDN["jsDelivr exact tag + SRI"]
   CDN --> Shell["GeoPixelcons++ shell PR"]
 ```
 
 Preview tags are created only for same-repository PRs and point to that PR's
-head commit. They are immutable test candidates; they do not alter `main`, do
-not move a stable tag, and must never be copied into a Greasyfork `@require`.
-The first stable tag, `v1.0.0`, is a deliberate one-time bootstrap created from
-reviewed `main`. Future stable releases are prepared and tagged by Release
-Please from conventional `feat:` (minor) and `fix:` (patch) commits.
+head commit. They are immutable local-test candidates: the agent supplies the
+exact SRI-pinned jsDelivr `@require` line, the user tests it in Tampermonkey,
+and then explicitly authorizes release. They do not alter `main`, do not move a
+stable tag, and must never be copied into a Greasyfork `@require`. After that
+authorization, the agent merges through branch protection and Release Please
+prepares the stable version from conventional `feat:` (minor) and `fix:`
+(patch) commits. Greasyfork upload remains manual.

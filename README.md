@@ -24,13 +24,16 @@ build`.
 
 1. Work on an internal `feature/<name>` branch and open a PR to `main`.
 2. The PR workflow creates immutable preview tags such as
-   `v1.0.0-feature-library-migration-1`. They are test candidates, never the
-   URL published to Greasyfork.
-3. For the one-time `v1.0.0` baseline, merge the reviewed PR and manually run
-   **Bootstrap stable release** from GitHub Actions. That creates the first
-   stable GitHub Release and tag without changing `main`.
-4. Later, Release Please opens a separate, reviewable release PR after merged
-   `feat:` or `fix:` work. Merging that PR creates the stable tag and release.
+   `v1.0.0-feature-library-migration-1`. Give the user the exact SRI-pinned
+   jsDelivr `@require` line for temporary local Tampermonkey testing; previews
+   are never the URL published to Greasyfork.
+3. When the user reports a successful test and explicitly authorizes release,
+   the agent merges the PR through normal branch protection. For the one-time
+   `v1.0.0` baseline, it then runs **Bootstrap stable release** from GitHub
+   Actions.
+4. Later, Release Please opens a release PR after merged `feat:` or `fix:`
+   work. With the same release authorization, the agent verifies and merges it
+   to create the stable tag and release.
 5. Verify the jsDelivr bytes and SRI before updating the shell repository.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md), [AGENTS.md](AGENTS.md), and
