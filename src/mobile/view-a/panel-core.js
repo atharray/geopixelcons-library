@@ -308,6 +308,17 @@
                 color: var(--gpp-mobile-text);
                 overscroll-behavior: contain;
             }
+            /* The UA stylesheet's [hidden] { display: none } rule is
+               "normal" importance, and ANY author rule of equal-or-lower
+               specificity always wins over a UA rule regardless of
+               selector specificity -- so the plain .gpc-mobile-view-a
+               display:flex rule above silently beat it, meaning hide()
+               setting root.hidden = true never actually stopped this view
+               from rendering (or from occupying real flex height inside
+               #gpc-mobile-panel, splitting space with View B when both
+               were simultaneously "hidden"-but-still-laid-out). This
+               higher-specificity override actually turns it off. */
+            .gpc-mobile-view-a[hidden] { display: none; }
             .gpc-mva-resize-handle {
                 position: absolute; z-index: 4; top: 0; right: 0; width: 44px; height: 100%;
                 border: 0; border-radius: 10px 0 0 10px; background: transparent; cursor: ns-resize;
@@ -519,12 +530,29 @@
 
         function applyPanelHeight(nextHeight, shouldPersist) {
             panelHeight = mobileViewAClampPanelHeight(nextHeight, viewportHeight());
+            // Scoped to .gpc-view-a-active (native-controls.js's
+            // applyActiveView()) instead of the bare #gpc-mobile-panel id --
+            // this rule must NOT apply while View B owns the panel, or
+            // View A's user-resized height (draggable as low as
+            // MOBILE_VIEW_A_MIN_PANEL_HEIGHT = 168px) leaks into View B and
+            // clips its taller content underneath it. See
+            // template-settings.js's own applyPanelGeometry() for View B's
+            // equivalent, unconditional-of-View-A's-drag-state rule.
+            // The duplicated min-height/max-height declarations are a
+            // progressive-enhancement dvh fallback: browsers without `dvh`
+            // support treat the second (dvh) declaration as invalid and
+            // keep the first (vh) one; browsers that support it apply both,
+            // with the later, more accurate dvh value winning -- guards
+            // against mobile browsers' collapsing-toolbar viewport quirks,
+            // where 100vh includes space the user can't actually see.
             geometryStyle.textContent = `
-                #gpc-mobile-panel {
+                #gpc-mobile-panel.gpc-view-a-active {
                     box-sizing: border-box !important; display: flex !important; flex-direction: column !important;
                     position: relative !important; overflow: hidden !important; height: ${panelHeight}px !important;
                     min-height: min(${MOBILE_VIEW_A_MIN_PANEL_HEIGHT}px, 50vh) !important;
+                    min-height: min(${MOBILE_VIEW_A_MIN_PANEL_HEIGHT}px, 50dvh) !important;
                     max-height: 50vh !important;
+                    max-height: 50dvh !important;
                     padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
                     padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
                     padding-left: max(10px, env(safe-area-inset-left, 0px)) !important;

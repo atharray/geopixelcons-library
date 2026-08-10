@@ -1271,6 +1271,92 @@ function buildDriverSource(mode) {
                 assertEqual(Number(localStorage.getItem(storageKey)), movedHeight, 'pointerup must persist the final clamped panel height');
             });
 
+            await check('view-b-height-independent-of-view-a-drag-state', async function() {
+                // Regression test: View B must never inherit View A's own
+                // user-resized panel height. Before this fix, View A's
+                // height rule (panel-core.js's applyPanelHeight()) targeted
+                // a bare #gpc-mobile-panel id selector unconditionally --
+                // dragging View A's panel down to its minimum (168px) and
+                // then opening View B left View B's own taller content
+                // (topbar + list + position controls + status) clipped
+                // underneath that same tiny height with no way to reach it
+                // ("ALL controls are cut off at the bottom" from real-device
+                // testing; "You have to set UI scale to 75% to view all
+                // controls").
+                var panel = document.getElementById('gpc-mobile-panel');
+                var handle = document.querySelector('[aria-label="Resize mobile painting panel"]');
+                var storageKey = 'gpc-mobile-overhaul-panel-height';
+                var capturedPointerId = null;
+                handle.setPointerCapture = function(pointerId) { capturedPointerId = pointerId; };
+                handle.hasPointerCapture = function(pointerId) { return capturedPointerId === pointerId; };
+                handle.releasePointerCapture = function(pointerId) {
+                    if (capturedPointerId === pointerId) capturedPointerId = null;
+                };
+
+                // Drag View A's panel all the way down to its minimum height.
+                handle.dispatchEvent(new PointerEvent('pointerdown', {
+                    bubbles: true, cancelable: true, pointerId: 91, pointerType: 'touch',
+                    isPrimary: true, button: 0, buttons: 1, clientY: 0,
+                }));
+                handle.dispatchEvent(new PointerEvent('pointermove', {
+                    bubbles: true, cancelable: true, pointerId: 91, pointerType: 'touch',
+                    isPrimary: true, buttons: 1, clientY: 5000,
+                }));
+                handle.dispatchEvent(new PointerEvent('pointerup', {
+                    bubbles: true, cancelable: true, pointerId: 91, pointerType: 'touch',
+                    isPrimary: true, button: 0, buttons: 0, clientY: 5000,
+                }));
+                var shrunkHeight = Number(localStorage.getItem(storageKey));
+                assertEqual(shrunkHeight, 168, 'the drag must clamp View A down to its minimum height');
+                assertBrowser(panel.classList.contains('gpc-view-a-active'), 'panel must carry the View A geometry class while View A is showing');
+                assertBrowser(!panel.classList.contains('gpc-view-b-active'), 'panel must not carry the View B geometry class while View A is showing');
+
+                var bridge = window.__mobileBoundary.bridge;
+                var viewA = document.getElementById('gpc-mobile-view-a');
+                var viewB = document.getElementById('gpc-mobile-view-b');
+                var wrench = viewA.querySelector('button[aria-label="Open template settings"]');
+                if (!historyFixtures) historyFixtures = window.__mobileHostFixture.installHistoryFixtures();
+                bridge.requestRefresh();
+                await waitFor(function() { return !wrench.disabled; }, 'the View A wrench to enable once a template is focused');
+                wrench.click();
+                await waitFor(function() {
+                    return effectivelyHidden(viewA) && viewB && !effectivelyHidden(viewB);
+                }, 'View B to open after shrinking View A');
+
+                assertBrowser(panel.classList.contains('gpc-view-b-active'), 'panel must carry the View B geometry class while View B is showing');
+                assertBrowser(!panel.classList.contains('gpc-view-a-active'), 'panel must not carry the View A geometry class while View B is showing');
+                var computedHeight = parseFloat(getComputedStyle(panel).height);
+                assertBrowser(
+                    computedHeight > shrunkHeight + 40,
+                    'View B must render taller than View A’s dragged-down minimum (168px), not inherit it -- got ' + computedHeight + 'px',
+                );
+
+                // The Set Location button must be genuinely reachable
+                // (hit-testable at its own rendered position), not just
+                // present somewhere off-screen underneath the panel.
+                var setLocationButton = viewB.querySelector('.gpc-mvb-set-location');
+                var setRect = setLocationButton.getBoundingClientRect();
+                assertBrowser(setRect.height > 0, 'the Set Location button must have a real rendered height');
+                var setHit = document.elementFromPoint(setRect.left + setRect.width / 2, setRect.top + setRect.height / 2);
+                assertBrowser(
+                    setHit === setLocationButton || setLocationButton.contains(setHit),
+                    'the Set Location button must be genuinely reachable (hit-testable), not clipped off underneath the panel',
+                );
+
+                // Returning to View A must reapply its own geometry class
+                // and previously-dragged height.
+                var returnButton = viewB.querySelector('button[aria-label="Return to mobile painting"]');
+                returnButton.click();
+                await waitFor(function() {
+                    return effectivelyHidden(viewB) && viewA && !effectivelyHidden(viewA);
+                }, 'returning to View A');
+                assertBrowser(panel.classList.contains('gpc-view-a-active'), 'panel must carry the View A geometry class again after returning');
+                assertBrowser(!panel.classList.contains('gpc-view-b-active'), 'panel must not carry the View B geometry class after returning to View A');
+                await waitFor(function() {
+                    return Math.round(parseFloat(getComputedStyle(panel).height)) === shrunkHeight;
+                }, 'View A’s previously-dragged height to reapply after returning from View B');
+            });
+
             await check('view-a-wrench-opens-view-b', async function() {
                 var bridge = window.__mobileBoundary.bridge;
                 var viewA = document.getElementById('gpc-mobile-view-a');

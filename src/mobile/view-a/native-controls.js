@@ -368,7 +368,20 @@
         // every entry point that opens the panel is correct by construction
         // instead of depending on each caller remembering the right pair of
         // show()/hide() calls. show()/hide() are both idempotent.
+        //
+        // The gpc-view-a-active/gpc-view-b-active classes let each view own
+        // its own #gpc-mobile-panel geometry rule (panel-core.js's
+        // applyPanelHeight(), template-settings.js's applyPanelGeometry())
+        // scoped to only apply while that view is actually showing -- View A
+        // stays mounted-but-hidden while View B is active, so without this
+        // scoping its user-resized (and possibly quite small, down to 168px)
+        // panelHeight would otherwise apply unconditionally, clipping View
+        // B's own taller content underneath it.
         function applyActiveView() {
+            if (shell && shell.panel) {
+                shell.panel.classList.toggle('gpc-view-a-active', activeView !== 'b');
+                shell.panel.classList.toggle('gpc-view-b-active', activeView === 'b');
+            }
             if (activeView === 'b') {
                 if (viewAController) viewAController.hide();
                 if (viewBController) viewBController.show();

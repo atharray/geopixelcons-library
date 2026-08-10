@@ -149,20 +149,63 @@
             return gridX === null || gridY === null ? null : { gridX, gridY };
         }
 
+        // View B has no user-resizable height of its own (no resize
+        // handle, unlike View A) -- it must never inherit View A's
+        // #gpc-mobile-panel height rule (panel-core.js's
+        // applyPanelHeight(), user-draggable down to
+        // MOBILE_VIEW_A_MIN_PANEL_HEIGHT = 168px, plenty small enough to
+        // clip View B's taller topbar+list+position-controls+status
+        // content underneath it -- "ALL controls are cut off at the
+        // bottom" from real-device testing). That rule is now scoped to
+        // .gpc-view-a-active; this is View B's own equivalent, scoped to
+        // .gpc-view-b-active, computed the same live-JS-pixel way instead
+        // of a bare vh unit so it's immune to mobile browsers' collapsing-
+        // toolbar viewport quirks without needing a dvh fallback.
+        function viewportHeight() {
+            return (windowRef && mobileViewANumber(windowRef.innerHeight, 0))
+                || mobileViewANumber(documentRef.documentElement && documentRef.documentElement.clientHeight, 0)
+                || 672;
+        }
+
+        function applyPanelGeometry() {
+            const maxHeight = Math.max(96, Math.floor(viewportHeight() * MOBILE_VIEW_A_MAX_PANEL_FRACTION));
+            geometryStyle.textContent = `
+                #gpc-mobile-panel.gpc-view-b-active {
+                    box-sizing: border-box !important; display: flex !important; flex-direction: column !important;
+                    position: relative !important; overflow: hidden !important;
+                    height: auto !important; max-height: ${maxHeight}px !important;
+                    padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
+                    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+                    padding-left: max(10px, env(safe-area-inset-left, 0px)) !important;
+                }
+            `;
+        }
+
         const root = element('section', 'gpc-mobile-view-b');
         root.id = 'gpc-mobile-view-b';
         root.hidden = true;
         root.setAttribute('aria-hidden', 'true');
         root.setAttribute('aria-label', 'Template settings');
 
+        const geometryStyle = element('style');
         const staticStyle = element('style');
         staticStyle.textContent = `
             .gpc-mobile-view-b {
                 box-sizing: border-box; display: flex; flex: 1 1 auto;
-                min-height: 0; flex-direction: column; gap: 7px; overflow: hidden; color: var(--gpp-mobile-text);
+                min-height: 0; flex-direction: column; gap: 7px; overflow-x: hidden; overflow-y: auto;
+                color: var(--gpp-mobile-text);
                 padding: 3px 0 max(4px, env(safe-area-inset-bottom, 0px));
                 overscroll-behavior: contain;
             }
+            /* Same fix as panel-core.js's .gpc-mobile-view-a[hidden] --
+               without this, the UA stylesheet's [hidden] rule (normal
+               importance) loses to the plain .gpc-mobile-view-b
+               display:flex rule above (also normal importance, author
+               always wins over UA regardless of specificity), so hide()
+               setting root.hidden = true never actually stopped View B
+               from occupying real flex height inside #gpc-mobile-panel
+               while View A was showing. */
+            .gpc-mobile-view-b[hidden] { display: none; }
             .gpc-mvb-topbar { display: flex; align-items: center; gap: 7px; min-width: 0; }
             .gpc-mvb-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 15px; line-height: 1.2; }
             .gpc-mvb-button, .gpc-mvb-input {
@@ -316,6 +359,7 @@
         positionControls.appendChild(setLocationButton);
         positionControls.appendChild(coordinates);
         positionControls.appendChild(dpad);
+        root.appendChild(geometryStyle);
         root.appendChild(staticStyle);
         root.appendChild(topbar);
         root.appendChild(list);
@@ -472,6 +516,7 @@
         function refresh() {
             if (destroyed) return controller;
             const version = ++refreshVersion;
+            applyPanelGeometry();
             root.hidden = !visible;
             root.setAttribute('aria-hidden', String(!visible));
 
@@ -740,6 +785,7 @@
         listen(xInput, 'input', updateDraftFromInputs);
         listen(yInput, 'input', updateDraftFromInputs);
         listen(dpad, 'click', handleNudge);
+        listen(windowRef, 'resize', applyPanelGeometry, { passive: true });
 
         if (typeof bridge.subscribeRefresh === 'function') {
             try {

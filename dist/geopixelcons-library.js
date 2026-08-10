@@ -1309,6 +1309,17 @@ var mobileOverhaulInit = (function () {
                 color: var(--gpp-mobile-text);
                 overscroll-behavior: contain;
             }
+            /* The UA stylesheet's [hidden] { display: none } rule is
+               "normal" importance, and ANY author rule of equal-or-lower
+               specificity always wins over a UA rule regardless of
+               selector specificity -- so the plain .gpc-mobile-view-a
+               display:flex rule above silently beat it, meaning hide()
+               setting root.hidden = true never actually stopped this view
+               from rendering (or from occupying real flex height inside
+               #gpc-mobile-panel, splitting space with View B when both
+               were simultaneously "hidden"-but-still-laid-out). This
+               higher-specificity override actually turns it off. */
+            .gpc-mobile-view-a[hidden] { display: none; }
             .gpc-mva-resize-handle {
                 position: absolute; z-index: 4; top: 0; right: 0; width: 44px; height: 100%;
                 border: 0; border-radius: 10px 0 0 10px; background: transparent; cursor: ns-resize;
@@ -1520,12 +1531,29 @@ var mobileOverhaulInit = (function () {
 
         function applyPanelHeight(nextHeight, shouldPersist) {
             panelHeight = mobileViewAClampPanelHeight(nextHeight, viewportHeight());
+            // Scoped to .gpc-view-a-active (native-controls.js's
+            // applyActiveView()) instead of the bare #gpc-mobile-panel id --
+            // this rule must NOT apply while View B owns the panel, or
+            // View A's user-resized height (draggable as low as
+            // MOBILE_VIEW_A_MIN_PANEL_HEIGHT = 168px) leaks into View B and
+            // clips its taller content underneath it. See
+            // template-settings.js's own applyPanelGeometry() for View B's
+            // equivalent, unconditional-of-View-A's-drag-state rule.
+            // The duplicated min-height/max-height declarations are a
+            // progressive-enhancement dvh fallback: browsers without `dvh`
+            // support treat the second (dvh) declaration as invalid and
+            // keep the first (vh) one; browsers that support it apply both,
+            // with the later, more accurate dvh value winning -- guards
+            // against mobile browsers' collapsing-toolbar viewport quirks,
+            // where 100vh includes space the user can't actually see.
             geometryStyle.textContent = `
-                #gpc-mobile-panel {
+                #gpc-mobile-panel.gpc-view-a-active {
                     box-sizing: border-box !important; display: flex !important; flex-direction: column !important;
                     position: relative !important; overflow: hidden !important; height: ${panelHeight}px !important;
                     min-height: min(${MOBILE_VIEW_A_MIN_PANEL_HEIGHT}px, 50vh) !important;
+                    min-height: min(${MOBILE_VIEW_A_MIN_PANEL_HEIGHT}px, 50dvh) !important;
                     max-height: 50vh !important;
+                    max-height: 50dvh !important;
                     padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
                     padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
                     padding-left: max(10px, env(safe-area-inset-left, 0px)) !important;
@@ -2055,20 +2083,63 @@ var mobileOverhaulInit = (function () {
             return gridX === null || gridY === null ? null : { gridX, gridY };
         }
 
+        // View B has no user-resizable height of its own (no resize
+        // handle, unlike View A) -- it must never inherit View A's
+        // #gpc-mobile-panel height rule (panel-core.js's
+        // applyPanelHeight(), user-draggable down to
+        // MOBILE_VIEW_A_MIN_PANEL_HEIGHT = 168px, plenty small enough to
+        // clip View B's taller topbar+list+position-controls+status
+        // content underneath it -- "ALL controls are cut off at the
+        // bottom" from real-device testing). That rule is now scoped to
+        // .gpc-view-a-active; this is View B's own equivalent, scoped to
+        // .gpc-view-b-active, computed the same live-JS-pixel way instead
+        // of a bare vh unit so it's immune to mobile browsers' collapsing-
+        // toolbar viewport quirks without needing a dvh fallback.
+        function viewportHeight() {
+            return (windowRef && mobileViewANumber(windowRef.innerHeight, 0))
+                || mobileViewANumber(documentRef.documentElement && documentRef.documentElement.clientHeight, 0)
+                || 672;
+        }
+
+        function applyPanelGeometry() {
+            const maxHeight = Math.max(96, Math.floor(viewportHeight() * MOBILE_VIEW_A_MAX_PANEL_FRACTION));
+            geometryStyle.textContent = `
+                #gpc-mobile-panel.gpc-view-b-active {
+                    box-sizing: border-box !important; display: flex !important; flex-direction: column !important;
+                    position: relative !important; overflow: hidden !important;
+                    height: auto !important; max-height: ${maxHeight}px !important;
+                    padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
+                    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+                    padding-left: max(10px, env(safe-area-inset-left, 0px)) !important;
+                }
+            `;
+        }
+
         const root = element('section', 'gpc-mobile-view-b');
         root.id = 'gpc-mobile-view-b';
         root.hidden = true;
         root.setAttribute('aria-hidden', 'true');
         root.setAttribute('aria-label', 'Template settings');
 
+        const geometryStyle = element('style');
         const staticStyle = element('style');
         staticStyle.textContent = `
             .gpc-mobile-view-b {
                 box-sizing: border-box; display: flex; flex: 1 1 auto;
-                min-height: 0; flex-direction: column; gap: 7px; overflow: hidden; color: var(--gpp-mobile-text);
+                min-height: 0; flex-direction: column; gap: 7px; overflow-x: hidden; overflow-y: auto;
+                color: var(--gpp-mobile-text);
                 padding: 3px 0 max(4px, env(safe-area-inset-bottom, 0px));
                 overscroll-behavior: contain;
             }
+            /* Same fix as panel-core.js's .gpc-mobile-view-a[hidden] --
+               without this, the UA stylesheet's [hidden] rule (normal
+               importance) loses to the plain .gpc-mobile-view-b
+               display:flex rule above (also normal importance, author
+               always wins over UA regardless of specificity), so hide()
+               setting root.hidden = true never actually stopped View B
+               from occupying real flex height inside #gpc-mobile-panel
+               while View A was showing. */
+            .gpc-mobile-view-b[hidden] { display: none; }
             .gpc-mvb-topbar { display: flex; align-items: center; gap: 7px; min-width: 0; }
             .gpc-mvb-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 15px; line-height: 1.2; }
             .gpc-mvb-button, .gpc-mvb-input {
@@ -2222,6 +2293,7 @@ var mobileOverhaulInit = (function () {
         positionControls.appendChild(setLocationButton);
         positionControls.appendChild(coordinates);
         positionControls.appendChild(dpad);
+        root.appendChild(geometryStyle);
         root.appendChild(staticStyle);
         root.appendChild(topbar);
         root.appendChild(list);
@@ -2378,6 +2450,7 @@ var mobileOverhaulInit = (function () {
         function refresh() {
             if (destroyed) return controller;
             const version = ++refreshVersion;
+            applyPanelGeometry();
             root.hidden = !visible;
             root.setAttribute('aria-hidden', String(!visible));
 
@@ -2646,6 +2719,7 @@ var mobileOverhaulInit = (function () {
         listen(xInput, 'input', updateDraftFromInputs);
         listen(yInput, 'input', updateDraftFromInputs);
         listen(dpad, 'click', handleNudge);
+        listen(windowRef, 'resize', applyPanelGeometry, { passive: true });
 
         if (typeof bridge.subscribeRefresh === 'function') {
             try {
@@ -3920,7 +3994,20 @@ var mobileOverhaulInit = (function () {
         // every entry point that opens the panel is correct by construction
         // instead of depending on each caller remembering the right pair of
         // show()/hide() calls. show()/hide() are both idempotent.
+        //
+        // The gpc-view-a-active/gpc-view-b-active classes let each view own
+        // its own #gpc-mobile-panel geometry rule (panel-core.js's
+        // applyPanelHeight(), template-settings.js's applyPanelGeometry())
+        // scoped to only apply while that view is actually showing -- View A
+        // stays mounted-but-hidden while View B is active, so without this
+        // scoping its user-resized (and possibly quite small, down to 168px)
+        // panelHeight would otherwise apply unconditionally, clipping View
+        // B's own taller content underneath it.
         function applyActiveView() {
+            if (shell && shell.panel) {
+                shell.panel.classList.toggle('gpc-view-a-active', activeView !== 'b');
+                shell.panel.classList.toggle('gpc-view-b-active', activeView === 'b');
+            }
             if (activeView === 'b') {
                 if (viewAController) viewAController.hide();
                 if (viewBController) viewBController.show();
