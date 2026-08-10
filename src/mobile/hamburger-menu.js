@@ -607,9 +607,21 @@
             return found;
         }
 
+        // Cheap early-bail before any of subtreeContainsControlsLeft()'s
+        // manual tree-walk work: pan/zoom on the map is by far the
+        // highest-volume mutation source on this page (markers/overlays
+        // repositioning every frame), and #controls-left never lives inside
+        // the map/renderer container, so a mutation whose target sits
+        // inside it can never affect this menu.
+        function mutationTargetInMapContainer(target) {
+            return !!(target && typeof target.closest === 'function'
+                && target.closest('#map, .maplibregl-canvas-container, #gpp-renderer-root'));
+        }
+
         function mutationsAffectMenu(records) {
             const controlsLeft = documentRef.getElementById('controls-left');
             for (const record of records || []) {
+                if (mutationTargetInMapContainer(record.target)) continue;
                 if (record.type === 'attributes') {
                     if (record.target === documentRef.body && record.attributeName === 'class') {
                         return true;

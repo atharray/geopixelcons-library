@@ -703,9 +703,22 @@
             }, 32);
         }
 
+        // Cheap early-bail before any of nodeCanAffectAdditions()'s
+        // querySelector work: pan/zoom on the map is by far the
+        // highest-volume mutation source on this page (markers/overlays
+        // repositioning every frame), and nothing this controller cares
+        // about (the UI scale targets, toggleEyedropper_Bottom, commitBtn)
+        // ever lives inside the map/renderer container, so a mutation whose
+        // target sits inside it can never affect this controller.
+        function mutationTargetInMapContainer(target) {
+            return !!(target && typeof target.closest === 'function'
+                && target.closest('#map, .maplibregl-canvas-container, #gpp-renderer-root'));
+        }
+
         function onMutations(records) {
             for (const record of records || []) {
                 if (record.type !== 'childList') continue;
+                if (mutationTargetInMapContainer(record.target)) continue;
                 for (const node of Array.from(record.addedNodes || [])) {
                     if (nodeCanAffectAdditions(node)) {
                         scheduleSurfaceRefresh();

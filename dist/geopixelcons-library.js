@@ -873,9 +873,21 @@ var mobileOverhaulInit = (function () {
             return found;
         }
 
+        // Cheap early-bail before any of subtreeContainsControlsLeft()'s
+        // manual tree-walk work: pan/zoom on the map is by far the
+        // highest-volume mutation source on this page (markers/overlays
+        // repositioning every frame), and #controls-left never lives inside
+        // the map/renderer container, so a mutation whose target sits
+        // inside it can never affect this menu.
+        function mutationTargetInMapContainer(target) {
+            return !!(target && typeof target.closest === 'function'
+                && target.closest('#map, .maplibregl-canvas-container, #gpp-renderer-root'));
+        }
+
         function mutationsAffectMenu(records) {
             const controlsLeft = documentRef.getElementById('controls-left');
             for (const record of records || []) {
+                if (mutationTargetInMapContainer(record.target)) continue;
                 if (record.type === 'attributes') {
                     if (record.target === documentRef.body && record.attributeName === 'class') {
                         return true;
@@ -3439,9 +3451,22 @@ var mobileOverhaulInit = (function () {
             }, 32);
         }
 
+        // Cheap early-bail before any of nodeCanAffectAdditions()'s
+        // querySelector work: pan/zoom on the map is by far the
+        // highest-volume mutation source on this page (markers/overlays
+        // repositioning every frame), and nothing this controller cares
+        // about (the UI scale targets, toggleEyedropper_Bottom, commitBtn)
+        // ever lives inside the map/renderer container, so a mutation whose
+        // target sits inside it can never affect this controller.
+        function mutationTargetInMapContainer(target) {
+            return !!(target && typeof target.closest === 'function'
+                && target.closest('#map, .maplibregl-canvas-container, #gpp-renderer-root'));
+        }
+
         function onMutations(records) {
             for (const record of records || []) {
                 if (record.type !== 'childList') continue;
+                if (mutationTargetInMapContainer(record.target)) continue;
                 for (const node of Array.from(record.addedNodes || [])) {
                     if (nodeCanAffectAdditions(node)) {
                         scheduleSurfaceRefresh();
@@ -4215,22 +4240,41 @@ var mobileOverhaulInit = (function () {
             });
         }
 
+        // A single node.querySelector('#' + id) call already searches that
+        // node's ENTIRE subtree in one pass -- the previous version of this
+        // function additionally recursed into every child and re-ran the
+        // whole querySelector loop again on each one, redoing (worst case,
+        // for a deep subtree) close to the same search near-quadratically
+        // for no benefit: nothing a child's own recursive pass could find
+        // was ever missed by the parent's querySelector call. Deleted
+        // entirely; the top-level check alone is both correct and cheap.
         function nativeMutationNodeIsRelevant(node) {
             if (!node) return false;
             if (nativeMutationRelevantIds.has(String(node.id || ''))) return true;
-            if (typeof node.querySelector === 'function') {
-                for (const id of nativeMutationRelevantIds) {
-                    try {
-                        if (node.querySelector('#' + id)) return true;
-                    } catch (_) { /* malformed third-party IDs are not used here */ }
-                }
+            if (typeof node.querySelector !== 'function') return false;
+            for (const id of nativeMutationRelevantIds) {
+                try {
+                    if (node.querySelector('#' + id)) return true;
+                } catch (_) { /* malformed third-party IDs are not used here */ }
             }
-            const children = node.childNodes ? Array.from(node.childNodes) : [];
-            return children.some(nativeMutationNodeIsRelevant);
+            return false;
+        }
+
+        // Cheap early-bail before any of the (still real, if smaller now)
+        // querySelector work above: pan/zoom on the map is by far the
+        // highest-volume mutation source on this page (markers/overlays
+        // repositioning every frame), and none of the ids/selectors this
+        // controller ever cares about live inside the map/renderer
+        // container -- so a mutation whose target sits inside it can never
+        // affect this controller and is safe to discard immediately.
+        function nativeMutationTargetInMapContainer(target) {
+            return !!(target && typeof target.closest === 'function'
+                && target.closest('#map, .maplibregl-canvas-container, #gpp-renderer-root'));
         }
 
         function nativeMutationsAffectController(records) {
             for (const record of records || []) {
+                if (nativeMutationTargetInMapContainer(record.target)) continue;
                 if (record.type === 'attributes') {
                     if (record.target === documentRef.body && record.attributeName === 'class') return true;
                     if (observedSuppressedSurfaces.has(record.target)) return true;
