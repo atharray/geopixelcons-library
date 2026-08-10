@@ -1500,13 +1500,20 @@ function buildDriverSource(mode) {
                 var scaleButton = scaleRoot.querySelector('button[aria-label="Adjust mobile UI scale"]');
                 var range = scaleRoot.querySelector('input[aria-label="Mobile UI scale"]');
                 var output = scaleRoot.querySelector('output');
-                var eligibleUi = document.getElementById('controls-right');
+                // GeoPixelcons-owned surfaces: eligible for scaling.
+                var eligibleUi = document.getElementById('gpc-mobile-panel-header');
+                var eligibleHamburger = document.getElementById('gpc-mobile-hamburger');
+                var previewCard = document.querySelector('.gpc-mobile-preview-card');
+                // Native site elements: scaling is deliberately scoped to
+                // GeoPixelcons' own UI only, not a guess at native-site DOM
+                // structure -- these must never be touched.
+                var nativeUi = document.getElementById('controls-right');
                 var panel = document.getElementById('gpc-mobile-panel');
                 var mobileRoot = document.getElementById('gpc-mobile-overhaul-root');
                 var mapShell = document.getElementById('map-shell');
                 var pixelCanvas = document.getElementById('pixel-canvas');
-                var previewCard = document.querySelector('.gpc-mobile-preview-card');
                 var eligibleStyleBefore = eligibleUi.getAttribute('style');
+                var nativeStyleBefore = nativeUi.getAttribute('style');
                 localStorage.removeItem(storageKey);
                 scaleButton.click();
                 assertEqual(scaleButton.getAttribute('aria-expanded'), 'true', 'scale button must expand its range control');
@@ -1523,9 +1530,12 @@ function buildDriverSource(mode) {
                 assertEqual(localStorage.getItem(storageKey), '125', 'range change must persist the applied scale');
                 assertEqual(scaleButton.getAttribute('aria-expanded'), 'false', 'range change must collapse the scale control');
                 assertBrowser(range.parentElement.hidden, 'committed scale slider must be hidden until reopened');
-                assertEqual(eligibleUi.getAttribute('data-gpc-mobile-scale-applied'), '125', 'range change must mark eligible UI roots');
+                assertEqual(eligibleUi.getAttribute('data-gpc-mobile-scale-applied'), '125', 'range change must mark eligible GeoPixelcons-owned UI roots');
                 assertEqual(eligibleUi.style.getPropertyValue('zoom'), '1.25', 'range change must apply the chosen UI zoom');
+                assertEqual(eligibleHamburger.getAttribute('data-gpc-mobile-scale-applied'), '125', 'the hamburger menu root must participate in UI scaling');
                 assertEqual(previewCard.getAttribute('data-gpc-mobile-scale-applied'), '125', 'bounded modal content must participate in UI scaling');
+                assertEqual(nativeUi.getAttribute('data-gpc-mobile-scale-applied'), null, 'native site UI must never be scaled -- scope is GeoPixelcons-owned elements only');
+                assertEqual(nativeUi.getAttribute('style'), nativeStyleBefore, 'native site UI geometry must remain untouched by mobile UI scale');
                 [panel, mobileRoot, mapShell, pixelCanvas].forEach(function(exempt) {
                     assertEqual(exempt.getAttribute('data-gpc-mobile-scale-applied'), null, exempt.id + ' must remain scale-exempt');
                     assertEqual(exempt.style.getPropertyValue('zoom'), '', exempt.id + ' must retain full-width/map geometry');

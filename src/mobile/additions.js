@@ -2,20 +2,16 @@
     const MOBILE_UI_SCALE_MIN = 75;
     const MOBILE_UI_SCALE_MAX = 150;
     const MOBILE_UI_SCALE_STEP = 5;
+    // Deliberately scoped to elements GeoPixelcons++ itself owns and
+    // controls, not a guess at native-site DOM structure (no #controls-left,
+    // .leaflet-control-container, [role="dialog"], etc.) -- those selectors
+    // used to double as a second, less risky path into the same territory
+    // collectGlobalUiRoots() used to walk more broadly. Scaling anything the
+    // native site owns is exactly the kind of guess that breaks silently the
+    // next time that site's own markup changes.
     const MOBILE_UI_SCALE_TARGET_SELECTOR = [
         '[data-gpc-mobile-scale-surface]',
-        '#controls-left',
-        '#controls-right',
-        '#topControls',
-        '#coordinateDisplay',
-        '#resumePaintingControl',
-        '.leaflet-control-container',
-        '.maplibregl-control-container',
-        '[role="dialog"]',
-        'dialog',
-        '.modal',
-        '.popover',
-        '.toast-container',
+        '#gpc-mobile-hamburger',
         '.gpc-mobile-panel-header',
         '.gpc-mobile-native-controls-row',
         '.gpc-mobile-view-a',
@@ -351,57 +347,8 @@
             return className.includes('gpp-renderer') || className.includes('map-canvas');
         }
 
-        function containsMapSurface(elementRef) {
-            if (!elementRef || typeof elementRef.querySelector !== 'function') return false;
-            try {
-                return !!elementRef.querySelector(
-                    '#map, #mapContainer, #pixel-canvas, #gpp-overlay-canvas, #gpp-renderer-root'
-                );
-            } catch (_) {
-                return false;
-            }
-        }
-
-        function isFullscreenUiOverlay(elementRef) {
-            const className = String(elementRef && elementRef.className || '').toLowerCase();
-            const inlineStyle = String(elementRef && elementRef.getAttribute
-                ? elementRef.getAttribute('style') || ''
-                : '').toLowerCase();
-            return ((className.split(/\s+/u).includes('fixed')
-                    || className.split(/\s+/u).includes('absolute'))
-                    && (className.split(/\s+/u).includes('inset-0') || className.includes('inset-[0')))
-                || (/position\s*:\s*(?:fixed|absolute)/u.test(inlineStyle)
-                    && /inset\s*:\s*0/u.test(inlineStyle));
-        }
-
-        function collectGlobalUiRoots() {
-            const roots = [];
-            const bodyChildren = documentRef.body && documentRef.body.children
-                ? Array.from(documentRef.body.children)
-                : Array.from(documentRef.body && documentRef.body.childNodes || []);
-            for (const child of bodyChildren) {
-                if (!child || !child.tagName || isScaleExempt(child)) continue;
-                // A map wrapper can also contain top-level controls. Never zoom
-                // the wrapper itself: the renderer must retain exact geometry,
-                // while the explicit UI-surface query below still finds its UI.
-                if (containsMapSurface(child)) continue;
-                if (isFullscreenUiOverlay(child)) {
-                    const contentChildren = child.children
-                        ? Array.from(child.children)
-                        : Array.from(child.childNodes || []).filter(node => node && node.tagName);
-                    for (const content of contentChildren) {
-                        if (!isScaleExempt(content)) roots.push(content);
-                    }
-                    continue;
-                }
-                roots.push(child);
-            }
-            return roots;
-        }
-
         function collectScaleTargets() {
             const candidates = [
-                ...collectGlobalUiRoots(),
                 shell.header,
                 shell.row,
                 previewCard,
