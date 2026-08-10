@@ -176,7 +176,6 @@
         let visible = true;
         let foldOpen = false;
         let showAll = false;
-        let thumbnailHidden = false;
         let search = '';
         let sort = 'default';
         let filters = [];
@@ -366,8 +365,6 @@
                 display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 8px;
                 flex: 1 1 auto; min-height: 64px; overflow: hidden;
             }
-            .gpc-mobile-view-a.is-thumbnail-hidden .gpc-mva-workspace { grid-template-columns: minmax(0, 1fr); }
-            .gpc-mobile-view-a.is-thumbnail-hidden .gpc-mva-thumbnail-column { display: none; }
             .gpc-mva-palette-column { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 4px; }
             .gpc-mva-palette {
                 display: flex; flex: 1 1 auto; align-items: stretch; gap: 6px; min-height: 58px;
@@ -391,14 +388,35 @@
             .gpc-mva-empty { align-self: center; padding: 8px; color: var(--gpp-mobile-muted); font-size: 12px; }
             .gpc-mva-thumbnail-column { display: flex; min-width: 0; flex-direction: column; }
             .gpc-mva-thumbnail {
-                box-sizing: border-box; display: flex; flex: 1 1 auto; min-height: 64px; align-items: center;
-                justify-content: center; padding: 4px; border: 1px solid var(--gpp-mobile-border);
+                box-sizing: border-box; position: relative; display: flex; flex: 1 1 auto; min-height: 64px;
+                align-items: center; justify-content: center; padding: 4px; border: 1px solid var(--gpp-mobile-border);
                 border-radius: 9px; background: var(--gpp-mobile-surface-2); color: var(--gpp-mobile-muted);
-                overflow: hidden; cursor: pointer; touch-action: manipulation;
+                overflow: hidden;
             }
-            .gpc-mva-thumbnail canvas, .gpc-mva-thumbnail img {
+            .gpc-mva-thumbnail-content {
+                display: flex; width: 100%; height: 100%; align-items: center; justify-content: center;
+            }
+            .gpc-mva-thumbnail-content canvas, .gpc-mva-thumbnail-content img {
                 display: block; max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: pixelated;
             }
+            /* Round 3: two small overlay actions replace the separate
+               toolbar wrench button and the thumbnail's own former
+               whole-tile "open preview" click -- pencil = template
+               settings (View B), gear = preview dialog. Positioned in the
+               thumbnail's own corner instead of the toolbar, so both
+               actions travel with the template they act on. */
+            .gpc-mva-thumbnail-actions {
+                position: absolute; right: 3px; bottom: 3px; z-index: 2;
+                display: flex; flex-direction: column; gap: 4px;
+            }
+            .gpc-mva-thumb-action {
+                box-sizing: border-box; width: 24px; height: 24px; padding: 0;
+                display: inline-flex; align-items: center; justify-content: center;
+                border: 1px solid var(--gpp-mobile-border); border-radius: 6px;
+                background: var(--gpp-mobile-surface); color: var(--gpp-mobile-text);
+                cursor: pointer; touch-action: manipulation; box-shadow: 0 1px 3px var(--gpp-mobile-shadow);
+            }
+            .gpc-mva-thumb-action:disabled { opacity: .45; cursor: not-allowed; }
             .gpc-mva-stats { flex: 0 0 auto; min-height: 18px; color: var(--gpp-mobile-muted);
                 font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
             .gpc-mva-status { min-height: 16px; color: var(--gpp-mobile-danger); font-size: 11px; }
@@ -429,13 +447,6 @@
         const showAllButton = iconButton('gpc-mva-tool-button', 'showAllColors', 'Show all template colors');
         showAllButton.title = 'Show all colors';
         showAllButton.setAttribute('aria-pressed', 'false');
-
-        const thumbnailToggle = iconButton('gpc-mva-tool-button', 'hideThumbnail', 'Hide template thumbnail');
-        thumbnailToggle.title = 'Hide template thumbnail';
-        thumbnailToggle.setAttribute('aria-pressed', 'false');
-
-        const wrenchButton = iconButton('gpc-mva-tool-button', 'settings', 'Open template settings');
-        wrenchButton.title = 'Template settings';
 
         const foldRegion = element('div', 'gpc-mva-fold-region');
         const foldButton = button('gpc-mva-tool-button', '⇅', 'Open palette sort and filter controls');
@@ -489,9 +500,7 @@
 
         toolbar.appendChild(searchInput);
         toolbar.appendChild(showAllButton);
-        toolbar.appendChild(thumbnailToggle);
         toolbar.appendChild(foldRegion);
-        toolbar.appendChild(wrenchButton);
 
         const workspace = element('div', 'gpc-mva-workspace');
         const paletteColumn = element('div', 'gpc-mva-palette-column');
@@ -508,9 +517,26 @@
         paletteColumn.appendChild(paletteScroller);
         paletteColumn.appendChild(scrub);
 
+        // The thumbnail is a plain (non-interactive) preview frame now --
+        // its former single "tap anywhere to preview" behavior and the
+        // toolbar's separate wrench button are both replaced by two small
+        // overlay actions in its own corner (round 3 real-device feedback):
+        // pencil = template settings (was the wrench), gear = preview
+        // dialog (was the whole-tile tap).
         const thumbnailColumn = element('div', 'gpc-mva-thumbnail-column');
-        const thumbnailButton = button('gpc-mva-thumbnail', 'No template', 'Open focused template preview');
-        thumbnailColumn.appendChild(thumbnailButton);
+        const thumbnailFrame = element('div', 'gpc-mva-thumbnail');
+        thumbnailFrame.setAttribute('aria-label', 'Focused template preview');
+        const thumbnailContent = element('div', 'gpc-mva-thumbnail-content', 'No template');
+        const thumbnailActions = element('div', 'gpc-mva-thumbnail-actions');
+        const thumbnailEditButton = iconButton('gpc-mva-thumb-action', 'edit', 'Open template settings');
+        thumbnailEditButton.title = 'Edit template';
+        const thumbnailPreviewButton = iconButton('gpc-mva-thumb-action', 'settings', 'Open template preview');
+        thumbnailPreviewButton.title = 'Template preview';
+        thumbnailActions.appendChild(thumbnailEditButton);
+        thumbnailActions.appendChild(thumbnailPreviewButton);
+        thumbnailFrame.appendChild(thumbnailContent);
+        thumbnailFrame.appendChild(thumbnailActions);
+        thumbnailColumn.appendChild(thumbnailFrame);
         workspace.appendChild(paletteColumn);
         workspace.appendChild(thumbnailColumn);
 
@@ -703,8 +729,7 @@
         }
 
         function renderThumbnail(template, version) {
-            replaceChildren(thumbnailButton, element('span', 'gpc-mva-empty', template ? 'Loading preview…' : 'No template'));
-            thumbnailButton.disabled = !template;
+            replaceChildren(thumbnailContent, element('span', 'gpc-mva-empty', template ? 'Loading preview…' : 'No template'));
             if (!template || typeof bridge.renderThumbnail !== 'function') return;
 
             let rendered;
@@ -715,11 +740,11 @@
             }
             Promise.resolve(rendered).then(preview => {
                 if (destroyed || version !== refreshVersion || !preview) return;
-                replaceChildren(thumbnailButton, preview);
+                replaceChildren(thumbnailContent, preview);
                 preview.setAttribute && preview.setAttribute('aria-hidden', 'true');
             }).catch(error => {
                 if (destroyed || version !== refreshVersion) return;
-                replaceChildren(thumbnailButton, element('span', 'gpc-mva-empty', 'Preview unavailable'));
+                replaceChildren(thumbnailContent, element('span', 'gpc-mva-empty', 'Preview unavailable'));
                 reportError(error, 'renderThumbnail');
             });
         }
@@ -730,14 +755,10 @@
             applyPanelHeight(panelHeight, false);
             root.hidden = !visible;
             root.setAttribute('aria-hidden', String(!visible));
-            toggleClass(root, 'is-thumbnail-hidden', thumbnailHidden);
             showAllButton.setAttribute('aria-pressed', String(showAll));
             showAllButton.title = showAll
                 ? 'Showing the whole project on the map -- tap to show only the active color'
                 : 'Showing only the active color on the map -- tap to preview the whole project';
-            thumbnailToggle.setAttribute('aria-pressed', String(thumbnailHidden));
-            thumbnailToggle.setAttribute('aria-label', thumbnailHidden ? 'Show template thumbnail' : 'Hide template thumbnail');
-            thumbnailToggle.title = thumbnailHidden ? 'Show template thumbnail' : 'Hide template thumbnail';
 
             let template = null;
             let rows = [];
@@ -764,7 +785,8 @@
             }
             stats.textContent = mobileViewAFormatScanStats(template, scanBusy);
             stats.setAttribute('aria-busy', String(scanBusy));
-            wrenchButton.disabled = !template;
+            thumbnailEditButton.disabled = !template;
+            thumbnailPreviewButton.disabled = !template;
             return controller;
         }
 
@@ -824,17 +846,13 @@
                 });
             }
         });
-        listen(thumbnailToggle, 'click', () => {
-            thumbnailHidden = !thumbnailHidden;
-            refresh();
-        });
-        listen(wrenchButton, 'click', () => {
+        listen(thumbnailEditButton, 'click', () => {
             let template = null;
             try { template = bridge.getFocusedTemplate && bridge.getFocusedTemplate(); }
             catch (error) { reportError(error, 'getFocusedTemplate'); }
             invokeCallback('openTemplateSettings', template);
         });
-        listen(thumbnailButton, 'click', () => {
+        listen(thumbnailPreviewButton, 'click', () => {
             let template = null;
             try { template = bridge.getFocusedTemplate && bridge.getFocusedTemplate(); }
             catch (error) { reportError(error, 'getFocusedTemplate'); }

@@ -868,6 +868,43 @@ function buildDriverSource(mode) {
                 assertEqual(modal.dataset.mobileOverhaulSuppressed, 'true', 'desktop modal must record suppression');
             });
 
+            await check('desktop-panel-render-skipped-while-mobile-active', async function() {
+                // Core regression test for the round-3 perf fix: gpp-init.js's
+                // refreshAll() used to unconditionally rebuild the ENTIRE
+                // desktop panel (progress bar, error settings, view settings,
+                // the whole colour palette, the ENTIRE template library grid
+                // with per-template thumbnail rendering, position/transform)
+                // on every single gppRequestUiRefresh() trigger -- even
+                // though this modal is permanently gpp-hidden the whole time
+                // Mobile Overhaul owns painting. That's pure wasted work on
+                // every colour change, placement commit, and autoscan tick;
+                // confirmed as the largest identified cost behind "even on
+                // PC" mobile performance complaints.
+                //
+                // #gpp-progress-section/#gpp-palette-section etc. are built
+                // lazily by ensureShellBuilt(), called only from open() --
+                // which Mobile Overhaul's own open() override always
+                // short-circuits past (straight to the mobile panel) -- so
+                // while mobile is healthy they never exist in the DOM at
+                // all, not merely hidden. #gpp-editing-label is different:
+                // it's part of the always-built modal chrome
+                // (gppBuildModalShell(), independent of ensureShellBuilt()),
+                // so it exists but must stay untouched.
+                var bridge = window.__mobileBoundary.bridge;
+                var modal = document.getElementById('gpp-modal');
+                var editingLabel = document.getElementById('gpp-editing-label');
+                assertBrowser(modal && editingLabel, 'the always-built modal chrome must exist for this to be a meaningful check');
+                assertEqual(modal.dataset.mobileOverhaulSuppressed, 'true', 'desktop modal must still be suppressed for this check to be meaningful');
+                assertBrowser(!document.getElementById('gpp-progress-section'), 'the desktop panel\'s inner sections must never have been built at all while mobile owns the UI (open() -- the only thing that builds them -- is always bypassed)');
+                assertEqual(editingLabel.textContent, '', 'the desktop editing label must start untouched');
+
+                bridge.requestRefresh();
+                await delay(30);
+
+                assertEqual(editingLabel.textContent, '', 'refreshAll() must not touch the hidden desktop editing label while mobile owns the UI');
+                assertBrowser(!document.getElementById('gpp-progress-section'), 'refreshAll() must still never build the desktop panel\'s inner sections after a refresh trigger');
+            });
+
             await waitFor(function() {
                 var controller = window.__mobileBoundary.controller;
                 return controller && controller.mounted && document.getElementById('gpc-mobile-overhaul-root');
@@ -1178,23 +1215,33 @@ function buildDriverSource(mode) {
                 assertEqual(window.__fixtureGetSelectedPaintColor(), '#FF0000', 'red selection must change the native paint color');
             });
 
-            await check('thumbnail-toggle-expands-palette-grid', async function() {
+            await check('thumbnail-shows-pencil-and-gear-overlay-actions', async function() {
+                // Round 3 real-device feedback: the Hide template thumbnail
+                // toggle is gone entirely (the thumbnail is now always
+                // shown), and the separate toolbar wrench button is gone
+                // too -- both replaced by two small overlay actions in the
+                // thumbnail's own corner: pencil (edit -> View B) and gear
+                // (settings -> the preview dialog).
+                var bridge = window.__mobileBoundary.bridge;
                 var viewA = document.getElementById('gpc-mobile-view-a');
-                var workspace = viewA.querySelector('.gpc-mva-workspace');
-                var paletteColumn = viewA.querySelector('.gpc-mva-palette-column');
-                var thumbnailColumn = viewA.querySelector('.gpc-mva-thumbnail-column');
-                var toggle = viewA.querySelector('button[aria-label="Hide template thumbnail"]');
-                var widthBefore = paletteColumn.getBoundingClientRect().width;
-                var columnsBefore = getComputedStyle(workspace).gridTemplateColumns;
-                assertBrowser(toggle && widthBefore > 0, 'the visible thumbnail layout must have a measurable palette column');
+                var thumbnail = viewA.querySelector('.gpc-mva-thumbnail');
+                var actions = thumbnail && thumbnail.querySelector('.gpc-mva-thumbnail-actions');
+                var editButton = actions && actions.querySelector('button[aria-label="Open template settings"]');
+                var previewButton = actions && actions.querySelector('button[aria-label="Open template preview"]');
 
-                toggle.click();
-                await waitFor(function() { return viewA.classList.contains('is-thumbnail-hidden'); }, 'the template thumbnail to hide');
-                await delay(20);
-                var widthAfter = paletteColumn.getBoundingClientRect().width;
-                assertEqual(getComputedStyle(thumbnailColumn).display, 'none', 'thumbnail hide must remove the thumbnail column from layout');
-                assertBrowser(widthAfter > widthBefore, 'hiding the thumbnail must expand the palette grid');
-                assertBrowser(getComputedStyle(workspace).gridTemplateColumns !== columnsBefore, 'thumbnail hide must switch the workspace to its one-column grid');
+                assertBrowser(!viewA.querySelector('button[aria-label="Hide template thumbnail"]'), 'the Hide template thumbnail toggle must no longer exist');
+                assertBrowser(!viewA.querySelector('button[aria-label="Show template thumbnail"]'), 'no "show thumbnail" counterpart may exist either -- there is nothing left to toggle');
+                assertEqual(thumbnail.tagName, 'DIV', 'the thumbnail must be a plain, non-interactive preview frame, not a button');
+                assertBrowser(editButton && previewButton, 'the thumbnail must expose exactly a pencil (edit) and a gear (preview) overlay action');
+                assertEqual(editButton.parentElement, actions, 'the edit action must live inside the thumbnail overlay, not a separate toolbar button');
+                assertEqual(previewButton.parentElement, actions, 'the preview action must live inside the thumbnail overlay, not the thumbnail itself');
+
+                // Both actions must move together with whether a template
+                // is currently focused, whatever that state happens to be
+                // at this point in the sequence.
+                var focused = bridge.getFocusedTemplate();
+                assertEqual(editButton.disabled, !focused, 'the edit action must be enabled exactly when a template is focused');
+                assertEqual(previewButton.disabled, !focused, 'the preview action must be enabled exactly when a template is focused');
             });
 
             await check('palette-navigation-controls-use-native-inputs', async function() {
@@ -1314,11 +1361,11 @@ function buildDriverSource(mode) {
                 var bridge = window.__mobileBoundary.bridge;
                 var viewA = document.getElementById('gpc-mobile-view-a');
                 var viewB = document.getElementById('gpc-mobile-view-b');
-                var wrench = viewA.querySelector('button[aria-label="Open template settings"]');
+                var editButton = viewA.querySelector('button[aria-label="Open template settings"]');
                 if (!historyFixtures) historyFixtures = window.__mobileHostFixture.installHistoryFixtures();
                 bridge.requestRefresh();
-                await waitFor(function() { return !wrench.disabled; }, 'the View A wrench to enable once a template is focused');
-                wrench.click();
+                await waitFor(function() { return !editButton.disabled; }, 'the View A thumbnail edit button to enable once a template is focused');
+                editButton.click();
                 await waitFor(function() {
                     return effectivelyHidden(viewA) && viewB && !effectivelyHidden(viewB);
                 }, 'View B to open after shrinking View A');
@@ -1357,17 +1404,17 @@ function buildDriverSource(mode) {
                 }, 'View A’s previously-dragged height to reapply after returning from View B');
             });
 
-            await check('view-a-wrench-opens-view-b', async function() {
+            await check('view-a-thumbnail-edit-opens-view-b', async function() {
                 var bridge = window.__mobileBoundary.bridge;
                 var viewA = document.getElementById('gpc-mobile-view-a');
                 var viewB = document.getElementById('gpc-mobile-view-b');
-                var wrench = viewA.querySelector('button[aria-label="Open template settings"]');
+                var editButton = viewA.querySelector('button[aria-label="Open template settings"]');
                 historyFixtures = window.__mobileHostFixture.installHistoryFixtures();
                 bridge.requestRefresh();
-                assertBrowser(wrench && !wrench.disabled, 'the focused template must enable the View A wrench');
+                assertBrowser(editButton && !editButton.disabled, 'the focused template must enable the View A thumbnail edit button');
 
-                wrench.focus();
-                wrench.click();
+                editButton.focus();
+                editButton.click();
                 await waitFor(function() {
                     return effectivelyHidden(viewA) && viewB && !effectivelyHidden(viewB);
                 }, 'View B to open');
@@ -1596,15 +1643,12 @@ function buildDriverSource(mode) {
                 window.__fixtureSetGamePalette(['#FF0000', '#00000000'], [0, 1], '#FF0000');
                 hostTemplate = window.__mobileHostFixture.installTemplate();
                 bridge.requestRefresh();
-                var showThumbnail = viewA.querySelector('button[aria-label="Show template thumbnail"]');
-                if (showThumbnail) showThumbnail.click();
-                var thumbnail = viewA.querySelector('button[aria-label="Open focused template preview"]');
+                var previewButton = viewA.querySelector('button[aria-label="Open template preview"]');
                 await waitFor(function() {
-                    return thumbnail && !thumbnail.disabled
-                        && getComputedStyle(thumbnail.parentElement).display !== 'none';
-                }, 'the focused View A thumbnail to become available');
+                    return previewButton && !previewButton.disabled;
+                }, 'the focused View A thumbnail preview button to become available');
 
-                thumbnail.click();
+                previewButton.click();
                 await waitFor(function() {
                     var overlay = document.getElementById('gpc-mobile-preview-dialog');
                     return overlay && !effectivelyHidden(overlay)
@@ -1786,7 +1830,7 @@ function buildDriverSource(mode) {
                 var eyedropper = document.getElementById('toggleEyedropper_Bottom');
                 assertEqual(eyedropper.getAttribute('data-gpc-mobile-eyedropper'), 'one-shot', 'real bottom Eyedropper must advertise one-shot behavior');
                 assertEqual(eyedropper.getAttribute('aria-label'), 'Pick one color from the map', 'mobile Eyedropper must have a descriptive label');
-                assertBrowser(eyedropper.querySelector('.gpc-mobile-eyedropper-label'), 'mobile Eyedropper must retain its compact visible label');
+                assertBrowser(!eyedropper.querySelector('.gpc-mobile-eyedropper-label'), 'the "Eye" visible text label must no longer be added -- the aria-label/title already describe it, matching every other icon-only control in this row');
                 assertDeepEqual(Array.from(hostTemplate.mask), [2], 'fixture must begin with only red selected');
                 window.__nativeEyedropperArmed = false;
                 var callsBefore = window.__nativeEyedropperCalls;
@@ -1931,11 +1975,11 @@ function buildDriverSource(mode) {
                 var controller = window.__mobileBoundary.controller;
                 var viewA = document.getElementById('gpc-mobile-view-a');
                 var viewB = document.getElementById('gpc-mobile-view-b');
-                var wrench = viewA.querySelector('button[aria-label="Open template settings"]');
+                var editButton = viewA.querySelector('button[aria-label="Open template settings"]');
                 controller.openPanel();
                 await waitFor(function() { return controller.isOpen === true && !effectivelyHidden(viewA); }, 'the panel to open showing View A');
-                wrench.click();
-                await waitFor(function() { return !effectivelyHidden(viewB); }, 'View B to open via the wrench icon');
+                editButton.click();
+                await waitFor(function() { return !effectivelyHidden(viewB); }, 'View B to open via the thumbnail edit button');
                 controller.closePanel();
                 await waitFor(function() { return controller.isOpen === false; }, 'the panel to close while View B was still active');
                 var resume = document.getElementById('resumePaintingControl');
@@ -1952,9 +1996,9 @@ function buildDriverSource(mode) {
                 var viewA = document.getElementById('gpc-mobile-view-a');
                 controller.openPanel();
                 await waitFor(function() { return controller.isOpen === true && !effectivelyHidden(viewA); }, 'the panel to open showing View A');
-                var thumbnail = viewA.querySelector('button[aria-label="Open focused template preview"]');
-                if (!thumbnail || thumbnail.disabled) return; // no focused template installed by this point in the sequence
-                thumbnail.click();
+                var previewButton = viewA.querySelector('button[aria-label="Open template preview"]');
+                if (!previewButton || previewButton.disabled) return; // no focused template installed by this point in the sequence
+                previewButton.click();
                 var overlay = document.getElementById('gpc-mobile-preview-dialog');
                 await waitFor(function() { return overlay && !effectivelyHidden(overlay); }, 'the preview modal to open');
                 controller.closePanel();
@@ -1980,6 +2024,26 @@ function buildDriverSource(mode) {
                 document.dispatchEvent(new CustomEvent('gpc:pixelColorChanged', { detail: '#000000' }));
                 await delay(75);
                 assertDeepEqual(Array.from(hostTemplate.mask), maskBeforeDestroy, 'controller destroy must remove the host color-change listener');
+
+                // Regression check for gpp-init.js's refreshAll(): it now
+                // skips its own (desktop-panel) DOM-render work while a
+                // LIVE #gpp-modal[data-gpc-mobile-overhaul-suppressed]
+                // check is true, instead of a mobileOverhaulActive flag
+                // captured once at Ghost++ init. Destroying the mobile
+                // controller routes through onControllerDestroyed ->
+                // gppMobileHandleControllerDestroyed ->
+                // gppMobileRestoreDesktopFallback, which deletes that
+                // dataset flag and immediately calls gppRequestUiRefresh()
+                // to hand control back to the desktop panel -- a stale
+                // captured flag would have permanently stranded refreshAll()
+                // in skip-mode even after this fallback ran.
+                var modal = document.getElementById('gpp-modal');
+                assertBrowser(!modal.dataset.mobileOverhaulSuppressed, 'destroying the mobile controller must clear the desktop modal\'s suppression flag');
+                var editingLabel = document.getElementById('gpp-editing-label');
+                assertBrowser(
+                    editingLabel && editingLabel.textContent.includes('X: ' + hostTemplate.position.gridX),
+                    'refreshAll() must have actually re-rendered the desktop panel after the mobile-crash fallback, not stayed permanently skipped',
+                );
             });
 
             await check('destroy-restores-native-dom', async function() {

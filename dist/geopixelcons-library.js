@@ -79,11 +79,13 @@ var mobileOverhaulInit = (function () {
     var MOBILE_ICONS = {
         // 2x2 grid of small squares -- "every color swatch," for Show all colors.
         showAllColors: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="6" height="6" rx="1"/><rect x="10" y="2" width="6" height="6" rx="1"/><rect x="2" y="10" width="6" height="6" rx="1"/><rect x="10" y="10" width="6" height="6" rx="1"/></svg>',
-        // A single framed square with a slash -- "hide/collapse the preview thumbnail."
-        hideThumbnail: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="12" height="12" rx="2"/><path d="M4 14 L14 4" stroke-linecap="round"/></svg>',
         // A plain gear -- "template settings" -- rendered as crisp strokes
         // instead of relying on a system emoji font's gear glyph.
         settings: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="2.6"/><path d="M9 2.4v2.1M9 13.5v2.1M15.6 9h-2.1M4.5 9H2.4M13.6 4.4l-1.5 1.5M5.9 12.1l-1.5 1.5M13.6 13.6l-1.5-1.5M5.9 5.9L4.4 4.4" stroke-linecap="round"/></svg>',
+        // A pencil silhouette -- overlaid on the View A thumbnail (round 3
+        // real-device feedback) to open template settings, replacing the
+        // separate toolbar wrench button.
+        edit: '<svg viewBox="0 0 18 18" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M11.9 3.9a1.6 1.6 0 0 1 2.2 2.2L6.4 13.8l-3 .8.8-3Z" stroke-linejoin="round" stroke-linecap="round"/></svg>',
         // Ghost++'s own close glyph (U+2715), for visual consistency across
         // the desktop and mobile shells instead of two different X characters.
         close: '✕',
@@ -1189,7 +1191,6 @@ var mobileOverhaulInit = (function () {
         let visible = true;
         let foldOpen = false;
         let showAll = false;
-        let thumbnailHidden = false;
         let search = '';
         let sort = 'default';
         let filters = [];
@@ -1379,8 +1380,6 @@ var mobileOverhaulInit = (function () {
                 display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 8px;
                 flex: 1 1 auto; min-height: 64px; overflow: hidden;
             }
-            .gpc-mobile-view-a.is-thumbnail-hidden .gpc-mva-workspace { grid-template-columns: minmax(0, 1fr); }
-            .gpc-mobile-view-a.is-thumbnail-hidden .gpc-mva-thumbnail-column { display: none; }
             .gpc-mva-palette-column { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 4px; }
             .gpc-mva-palette {
                 display: flex; flex: 1 1 auto; align-items: stretch; gap: 6px; min-height: 58px;
@@ -1404,14 +1403,35 @@ var mobileOverhaulInit = (function () {
             .gpc-mva-empty { align-self: center; padding: 8px; color: var(--gpp-mobile-muted); font-size: 12px; }
             .gpc-mva-thumbnail-column { display: flex; min-width: 0; flex-direction: column; }
             .gpc-mva-thumbnail {
-                box-sizing: border-box; display: flex; flex: 1 1 auto; min-height: 64px; align-items: center;
-                justify-content: center; padding: 4px; border: 1px solid var(--gpp-mobile-border);
+                box-sizing: border-box; position: relative; display: flex; flex: 1 1 auto; min-height: 64px;
+                align-items: center; justify-content: center; padding: 4px; border: 1px solid var(--gpp-mobile-border);
                 border-radius: 9px; background: var(--gpp-mobile-surface-2); color: var(--gpp-mobile-muted);
-                overflow: hidden; cursor: pointer; touch-action: manipulation;
+                overflow: hidden;
             }
-            .gpc-mva-thumbnail canvas, .gpc-mva-thumbnail img {
+            .gpc-mva-thumbnail-content {
+                display: flex; width: 100%; height: 100%; align-items: center; justify-content: center;
+            }
+            .gpc-mva-thumbnail-content canvas, .gpc-mva-thumbnail-content img {
                 display: block; max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: pixelated;
             }
+            /* Round 3: two small overlay actions replace the separate
+               toolbar wrench button and the thumbnail's own former
+               whole-tile "open preview" click -- pencil = template
+               settings (View B), gear = preview dialog. Positioned in the
+               thumbnail's own corner instead of the toolbar, so both
+               actions travel with the template they act on. */
+            .gpc-mva-thumbnail-actions {
+                position: absolute; right: 3px; bottom: 3px; z-index: 2;
+                display: flex; flex-direction: column; gap: 4px;
+            }
+            .gpc-mva-thumb-action {
+                box-sizing: border-box; width: 24px; height: 24px; padding: 0;
+                display: inline-flex; align-items: center; justify-content: center;
+                border: 1px solid var(--gpp-mobile-border); border-radius: 6px;
+                background: var(--gpp-mobile-surface); color: var(--gpp-mobile-text);
+                cursor: pointer; touch-action: manipulation; box-shadow: 0 1px 3px var(--gpp-mobile-shadow);
+            }
+            .gpc-mva-thumb-action:disabled { opacity: .45; cursor: not-allowed; }
             .gpc-mva-stats { flex: 0 0 auto; min-height: 18px; color: var(--gpp-mobile-muted);
                 font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
             .gpc-mva-status { min-height: 16px; color: var(--gpp-mobile-danger); font-size: 11px; }
@@ -1442,13 +1462,6 @@ var mobileOverhaulInit = (function () {
         const showAllButton = iconButton('gpc-mva-tool-button', 'showAllColors', 'Show all template colors');
         showAllButton.title = 'Show all colors';
         showAllButton.setAttribute('aria-pressed', 'false');
-
-        const thumbnailToggle = iconButton('gpc-mva-tool-button', 'hideThumbnail', 'Hide template thumbnail');
-        thumbnailToggle.title = 'Hide template thumbnail';
-        thumbnailToggle.setAttribute('aria-pressed', 'false');
-
-        const wrenchButton = iconButton('gpc-mva-tool-button', 'settings', 'Open template settings');
-        wrenchButton.title = 'Template settings';
 
         const foldRegion = element('div', 'gpc-mva-fold-region');
         const foldButton = button('gpc-mva-tool-button', '⇅', 'Open palette sort and filter controls');
@@ -1502,9 +1515,7 @@ var mobileOverhaulInit = (function () {
 
         toolbar.appendChild(searchInput);
         toolbar.appendChild(showAllButton);
-        toolbar.appendChild(thumbnailToggle);
         toolbar.appendChild(foldRegion);
-        toolbar.appendChild(wrenchButton);
 
         const workspace = element('div', 'gpc-mva-workspace');
         const paletteColumn = element('div', 'gpc-mva-palette-column');
@@ -1521,9 +1532,26 @@ var mobileOverhaulInit = (function () {
         paletteColumn.appendChild(paletteScroller);
         paletteColumn.appendChild(scrub);
 
+        // The thumbnail is a plain (non-interactive) preview frame now --
+        // its former single "tap anywhere to preview" behavior and the
+        // toolbar's separate wrench button are both replaced by two small
+        // overlay actions in its own corner (round 3 real-device feedback):
+        // pencil = template settings (was the wrench), gear = preview
+        // dialog (was the whole-tile tap).
         const thumbnailColumn = element('div', 'gpc-mva-thumbnail-column');
-        const thumbnailButton = button('gpc-mva-thumbnail', 'No template', 'Open focused template preview');
-        thumbnailColumn.appendChild(thumbnailButton);
+        const thumbnailFrame = element('div', 'gpc-mva-thumbnail');
+        thumbnailFrame.setAttribute('aria-label', 'Focused template preview');
+        const thumbnailContent = element('div', 'gpc-mva-thumbnail-content', 'No template');
+        const thumbnailActions = element('div', 'gpc-mva-thumbnail-actions');
+        const thumbnailEditButton = iconButton('gpc-mva-thumb-action', 'edit', 'Open template settings');
+        thumbnailEditButton.title = 'Edit template';
+        const thumbnailPreviewButton = iconButton('gpc-mva-thumb-action', 'settings', 'Open template preview');
+        thumbnailPreviewButton.title = 'Template preview';
+        thumbnailActions.appendChild(thumbnailEditButton);
+        thumbnailActions.appendChild(thumbnailPreviewButton);
+        thumbnailFrame.appendChild(thumbnailContent);
+        thumbnailFrame.appendChild(thumbnailActions);
+        thumbnailColumn.appendChild(thumbnailFrame);
         workspace.appendChild(paletteColumn);
         workspace.appendChild(thumbnailColumn);
 
@@ -1716,8 +1744,7 @@ var mobileOverhaulInit = (function () {
         }
 
         function renderThumbnail(template, version) {
-            replaceChildren(thumbnailButton, element('span', 'gpc-mva-empty', template ? 'Loading preview…' : 'No template'));
-            thumbnailButton.disabled = !template;
+            replaceChildren(thumbnailContent, element('span', 'gpc-mva-empty', template ? 'Loading preview…' : 'No template'));
             if (!template || typeof bridge.renderThumbnail !== 'function') return;
 
             let rendered;
@@ -1728,11 +1755,11 @@ var mobileOverhaulInit = (function () {
             }
             Promise.resolve(rendered).then(preview => {
                 if (destroyed || version !== refreshVersion || !preview) return;
-                replaceChildren(thumbnailButton, preview);
+                replaceChildren(thumbnailContent, preview);
                 preview.setAttribute && preview.setAttribute('aria-hidden', 'true');
             }).catch(error => {
                 if (destroyed || version !== refreshVersion) return;
-                replaceChildren(thumbnailButton, element('span', 'gpc-mva-empty', 'Preview unavailable'));
+                replaceChildren(thumbnailContent, element('span', 'gpc-mva-empty', 'Preview unavailable'));
                 reportError(error, 'renderThumbnail');
             });
         }
@@ -1743,14 +1770,10 @@ var mobileOverhaulInit = (function () {
             applyPanelHeight(panelHeight, false);
             root.hidden = !visible;
             root.setAttribute('aria-hidden', String(!visible));
-            toggleClass(root, 'is-thumbnail-hidden', thumbnailHidden);
             showAllButton.setAttribute('aria-pressed', String(showAll));
             showAllButton.title = showAll
                 ? 'Showing the whole project on the map -- tap to show only the active color'
                 : 'Showing only the active color on the map -- tap to preview the whole project';
-            thumbnailToggle.setAttribute('aria-pressed', String(thumbnailHidden));
-            thumbnailToggle.setAttribute('aria-label', thumbnailHidden ? 'Show template thumbnail' : 'Hide template thumbnail');
-            thumbnailToggle.title = thumbnailHidden ? 'Show template thumbnail' : 'Hide template thumbnail';
 
             let template = null;
             let rows = [];
@@ -1777,7 +1800,8 @@ var mobileOverhaulInit = (function () {
             }
             stats.textContent = mobileViewAFormatScanStats(template, scanBusy);
             stats.setAttribute('aria-busy', String(scanBusy));
-            wrenchButton.disabled = !template;
+            thumbnailEditButton.disabled = !template;
+            thumbnailPreviewButton.disabled = !template;
             return controller;
         }
 
@@ -1837,17 +1861,13 @@ var mobileOverhaulInit = (function () {
                 });
             }
         });
-        listen(thumbnailToggle, 'click', () => {
-            thumbnailHidden = !thumbnailHidden;
-            refresh();
-        });
-        listen(wrenchButton, 'click', () => {
+        listen(thumbnailEditButton, 'click', () => {
             let template = null;
             try { template = bridge.getFocusedTemplate && bridge.getFocusedTemplate(); }
             catch (error) { reportError(error, 'getFocusedTemplate'); }
             invokeCallback('openTemplateSettings', template);
         });
-        listen(thumbnailButton, 'click', () => {
+        listen(thumbnailPreviewButton, 'click', () => {
             let template = null;
             try { template = bridge.getFocusedTemplate && bridge.getFocusedTemplate(); }
             catch (error) { reportError(error, 'getFocusedTemplate'); }
@@ -2944,7 +2964,6 @@ var mobileOverhaulInit = (function () {
             .gpc-mobile-ui-scale-slider { display: flex; align-items: center; gap: 6px; min-width: 170px; }
             .gpc-mobile-ui-scale-range { min-width: 118px; min-height: 44px; accent-color: var(--gpp-mobile-focus); touch-action: none; }
             .gpc-mobile-ui-scale-output { min-width: 42px; font-size: 12px; font-weight: 700; text-align: right; }
-            .gpc-mobile-eyedropper-label { margin-left: 4px; font: inherit; font-size: 12px; }
             @media (orientation: landscape) and (max-height: 520px) {
                 .gpc-mobile-preview-overlay { align-items: flex-start; padding-top: max(6px, env(safe-area-inset-top, 0px)); }
                 .gpc-mobile-preview-card { width: min(96vw, 720px); max-height: calc(100vh - 12px); }
@@ -3326,7 +3345,6 @@ var mobileOverhaulInit = (function () {
         function restoreEyedropper(nativeButton) {
             const record = eyedropperRecords.get(nativeButton);
             if (!record) return;
-            if (record.label && record.label.parentNode === nativeButton) nativeButton.removeChild(record.label);
             restoreAttribute(nativeButton, 'style', record.style);
             restoreAttribute(nativeButton, 'aria-label', record.ariaLabel);
             restoreAttribute(nativeButton, 'title', record.title);
@@ -3385,17 +3403,17 @@ var mobileOverhaulInit = (function () {
             }
             removeFallbackEyedropper();
             if (!eyedropperRecords.has(nativeButton)) {
-                const label = element('span', 'gpc-mobile-eyedropper-label', 'Eye');
-                label.setAttribute('aria-hidden', 'true');
+                // Round 3 real-device feedback: no visible text label here
+                // anymore -- the relocated icon-only control (with its own
+                // aria-label/title below) is enough on its own, matching
+                // every other icon-only control in this row.
                 const record = {
                     style: captureAttribute(nativeButton, 'style'),
                     ariaLabel: captureAttribute(nativeButton, 'aria-label'),
                     title: captureAttribute(nativeButton, 'title'),
                     marker: captureAttribute(nativeButton, 'data-gpc-mobile-eyedropper'),
-                    label,
                 };
                 eyedropperRecords.set(nativeButton, record);
-                nativeButton.appendChild(label);
             }
             nativeButton.setAttribute('aria-label', 'Pick one color from the map');
             nativeButton.setAttribute('title', 'Eyedropper (one use)');
@@ -17447,6 +17465,45 @@ var mobileOverhaulInit = (function () {
 
                 function refreshAll() {
                     const template = gppState.getFocusedTemplate();
+
+                    // Single choke point every state-changing action already flows through
+                    // (ingest, focus change, mask/colour toggle, position edit, transform all
+                    // end in onChange() -> refreshAll()), so this one guarded call is enough to
+                    // keep the native-ghost mirror in sync without touching every caller site.
+                    // Must run unconditionally, even while Mobile Overhaul owns the UI --
+                    // unlike everything below, this is a real cross-cutting side effect,
+                    // not desktop-panel rendering.
+                    if (typeof gppShimSyncFocusedTemplate === 'function') gppShimSyncFocusedTemplate();
+
+                    // While Mobile Overhaul owns the painting UI, this modal is
+                    // gpp-hidden and its own open() is never called (it
+                    // short-circuits straight to the mobile panel instead) -- so
+                    // nothing ever legitimately reads this modal's rendered DOM.
+                    // gppRequestUiRefresh() (gpp-init.js's own subscriber list,
+                    // fed by essentially every state-changing action: colour
+                    // changes, placement commits, autoscan ticks, palette edits)
+                    // still called gppLastRefreshAll() = this function unconditionally,
+                    // meaning EVERY one of those triggers -- which can fire many
+                    // times a second during active painting/pan/zoom -- was fully
+                    // rebuilding the entire invisible desktop panel: progress bar,
+                    // error settings, view settings, the whole colour palette, the
+                    // ENTIRE template library grid (with per-template thumbnail
+                    // rendering), and position/transform. This was pure wasted
+                    // work on every refresh, confirmed as the largest identified
+                    // cost behind "even on PC" mobile performance complaints --
+                    // mobile was silently paying for a full desktop re-render on
+                    // top of its own. Bail out before any of it.
+                    //
+                    // Checked live (modalEl.dataset), NOT the mobileOverhaulActive
+                    // const captured once above -- gppMobileRestoreDesktopFallback()
+                    // (mobile-overhaul-bootstrap.js) can un-suppress this same
+                    // modal and hand control back to the desktop UI mid-session if
+                    // the mobile controller crashes after already starting. A
+                    // stale "was mobile active at Ghost++ init time" flag would
+                    // permanently strand refreshAll() in skip-mode even after that
+                    // fallback restored desktop rendering.
+                    if (modalEl.dataset.mobileOverhaulSuppressed === 'true') return;
+
                     const editingLabel = document.getElementById(GPP_IDS.editingLabel);
                     if (!template) {
                         editingLabel.textContent = '';
@@ -17455,12 +17512,6 @@ var mobileOverhaulInit = (function () {
                     } else {
                         editingLabel.textContent = template.name + ' — not placed';
                     }
-
-                    // Single choke point every state-changing action already flows through
-                    // (ingest, focus change, mask/colour toggle, position edit, transform all
-                    // end in onChange() -> refreshAll()), so this one guarded call is enough to
-                    // keep the native-ghost mirror in sync without touching every caller site.
-                    if (typeof gppShimSyncFocusedTemplate === 'function') gppShimSyncFocusedTemplate();
 
                     const progressContainer = document.getElementById('gpp-progress-section');
                     if (typeof gppRenderProgressBar === 'function' && progressContainer) {

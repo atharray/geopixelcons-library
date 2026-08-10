@@ -59,11 +59,13 @@
     var MOBILE_ICONS = {
         // 2x2 grid of small squares -- "every color swatch," for Show all colors.
         showAllColors: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="6" height="6" rx="1"/><rect x="10" y="2" width="6" height="6" rx="1"/><rect x="2" y="10" width="6" height="6" rx="1"/><rect x="10" y="10" width="6" height="6" rx="1"/></svg>',
-        // A single framed square with a slash -- "hide/collapse the preview thumbnail."
-        hideThumbnail: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="12" height="12" rx="2"/><path d="M4 14 L14 4" stroke-linecap="round"/></svg>',
         // A plain gear -- "template settings" -- rendered as crisp strokes
         // instead of relying on a system emoji font's gear glyph.
         settings: '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="2.6"/><path d="M9 2.4v2.1M9 13.5v2.1M15.6 9h-2.1M4.5 9H2.4M13.6 4.4l-1.5 1.5M5.9 12.1l-1.5 1.5M13.6 13.6l-1.5-1.5M5.9 5.9L4.4 4.4" stroke-linecap="round"/></svg>',
+        // A pencil silhouette -- overlaid on the View A thumbnail (round 3
+        // real-device feedback) to open template settings, replacing the
+        // separate toolbar wrench button.
+        edit: '<svg viewBox="0 0 18 18" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M11.9 3.9a1.6 1.6 0 0 1 2.2 2.2L6.4 13.8l-3 .8.8-3Z" stroke-linejoin="round" stroke-linecap="round"/></svg>',
         // Ghost++'s own close glyph (U+2715), for visual consistency across
         // the desktop and mobile shells instead of two different X characters.
         close: '✕',

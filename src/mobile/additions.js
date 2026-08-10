@@ -196,7 +196,6 @@
             .gpc-mobile-ui-scale-slider { display: flex; align-items: center; gap: 6px; min-width: 170px; }
             .gpc-mobile-ui-scale-range { min-width: 118px; min-height: 44px; accent-color: var(--gpp-mobile-focus); touch-action: none; }
             .gpc-mobile-ui-scale-output { min-width: 42px; font-size: 12px; font-weight: 700; text-align: right; }
-            .gpc-mobile-eyedropper-label { margin-left: 4px; font: inherit; font-size: 12px; }
             @media (orientation: landscape) and (max-height: 520px) {
                 .gpc-mobile-preview-overlay { align-items: flex-start; padding-top: max(6px, env(safe-area-inset-top, 0px)); }
                 .gpc-mobile-preview-card { width: min(96vw, 720px); max-height: calc(100vh - 12px); }
@@ -578,7 +577,6 @@
         function restoreEyedropper(nativeButton) {
             const record = eyedropperRecords.get(nativeButton);
             if (!record) return;
-            if (record.label && record.label.parentNode === nativeButton) nativeButton.removeChild(record.label);
             restoreAttribute(nativeButton, 'style', record.style);
             restoreAttribute(nativeButton, 'aria-label', record.ariaLabel);
             restoreAttribute(nativeButton, 'title', record.title);
@@ -637,17 +635,17 @@
             }
             removeFallbackEyedropper();
             if (!eyedropperRecords.has(nativeButton)) {
-                const label = element('span', 'gpc-mobile-eyedropper-label', 'Eye');
-                label.setAttribute('aria-hidden', 'true');
+                // Round 3 real-device feedback: no visible text label here
+                // anymore -- the relocated icon-only control (with its own
+                // aria-label/title below) is enough on its own, matching
+                // every other icon-only control in this row.
                 const record = {
                     style: captureAttribute(nativeButton, 'style'),
                     ariaLabel: captureAttribute(nativeButton, 'aria-label'),
                     title: captureAttribute(nativeButton, 'title'),
                     marker: captureAttribute(nativeButton, 'data-gpc-mobile-eyedropper'),
-                    label,
                 };
                 eyedropperRecords.set(nativeButton, record);
-                nativeButton.appendChild(label);
             }
             nativeButton.setAttribute('aria-label', 'Pick one color from the map');
             nativeButton.setAttribute('title', 'Eyedropper (one use)');
