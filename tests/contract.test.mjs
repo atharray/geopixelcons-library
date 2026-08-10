@@ -13,6 +13,15 @@ test('loads as a side-effect-free factory before the main userscript', () => {
     assert.equal(typeof sandbox.GeoPixelconsLibrary.boot, 'function');
 });
 
+test('publishes the library bridge when @require wraps the source', () => {
+    const sandbox = { Object, Error };
+    vm.createContext(sandbox);
+    const wrappedRequire = `(function(){\n${artifact}\n})();`;
+    assert.doesNotThrow(() => vm.runInContext(wrappedRequire, sandbox, { filename: 'tampermonkey-require.js' }));
+    assert.equal(sandbox.GeoPixelconsLibrary.version, '1.0.0');
+    assert.equal(typeof sandbox.GeoPixelconsLibrary.boot, 'function');
+});
+
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Mobile System Overhaul/);

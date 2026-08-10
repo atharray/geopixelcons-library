@@ -84,6 +84,9 @@ ${legacyProgram}
         boot,
     });
 })();
+if (typeof globalThis !== 'undefined') {
+    globalThis.GeoPixelconsLibrary = GeoPixelconsLibrary;
+}
 `;
 
 fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
