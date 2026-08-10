@@ -254,6 +254,45 @@
 
                 function refreshAll() {
                     const template = gppState.getFocusedTemplate();
+
+                    // Single choke point every state-changing action already flows through
+                    // (ingest, focus change, mask/colour toggle, position edit, transform all
+                    // end in onChange() -> refreshAll()), so this one guarded call is enough to
+                    // keep the native-ghost mirror in sync without touching every caller site.
+                    // Must run unconditionally, even while Mobile Overhaul owns the UI --
+                    // unlike everything below, this is a real cross-cutting side effect,
+                    // not desktop-panel rendering.
+                    if (typeof gppShimSyncFocusedTemplate === 'function') gppShimSyncFocusedTemplate();
+
+                    // While Mobile Overhaul owns the painting UI, this modal is
+                    // gpp-hidden and its own open() is never called (it
+                    // short-circuits straight to the mobile panel instead) -- so
+                    // nothing ever legitimately reads this modal's rendered DOM.
+                    // gppRequestUiRefresh() (gpp-init.js's own subscriber list,
+                    // fed by essentially every state-changing action: colour
+                    // changes, placement commits, autoscan ticks, palette edits)
+                    // still called gppLastRefreshAll() = this function unconditionally,
+                    // meaning EVERY one of those triggers -- which can fire many
+                    // times a second during active painting/pan/zoom -- was fully
+                    // rebuilding the entire invisible desktop panel: progress bar,
+                    // error settings, view settings, the whole colour palette, the
+                    // ENTIRE template library grid (with per-template thumbnail
+                    // rendering), and position/transform. This was pure wasted
+                    // work on every refresh, confirmed as the largest identified
+                    // cost behind "even on PC" mobile performance complaints --
+                    // mobile was silently paying for a full desktop re-render on
+                    // top of its own. Bail out before any of it.
+                    //
+                    // Checked live (modalEl.dataset), NOT the mobileOverhaulActive
+                    // const captured once above -- gppMobileRestoreDesktopFallback()
+                    // (mobile-overhaul-bootstrap.js) can un-suppress this same
+                    // modal and hand control back to the desktop UI mid-session if
+                    // the mobile controller crashes after already starting. A
+                    // stale "was mobile active at Ghost++ init time" flag would
+                    // permanently strand refreshAll() in skip-mode even after that
+                    // fallback restored desktop rendering.
+                    if (modalEl.dataset.mobileOverhaulSuppressed === 'true') return;
+
                     const editingLabel = document.getElementById(GPP_IDS.editingLabel);
                     if (!template) {
                         editingLabel.textContent = '';
@@ -262,12 +301,6 @@
                     } else {
                         editingLabel.textContent = template.name + ' — not placed';
                     }
-
-                    // Single choke point every state-changing action already flows through
-                    // (ingest, focus change, mask/colour toggle, position edit, transform all
-                    // end in onChange() -> refreshAll()), so this one guarded call is enough to
-                    // keep the native-ghost mirror in sync without touching every caller site.
-                    if (typeof gppShimSyncFocusedTemplate === 'function') gppShimSyncFocusedTemplate();
 
                     const progressContainer = document.getElementById('gpp-progress-section');
                     if (typeof gppRenderProgressBar === 'function' && progressContainer) {
