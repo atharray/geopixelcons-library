@@ -43,7 +43,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', desc: 'Superseded by Ghost++ Template Overlay. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
         { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', desc: 'Superseded by Ghost++ Template Overlay. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
-        { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Bottom paint controls span the full screen width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too'] },
+        { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Bottom paint controls span the full screen width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
     ];
 
     const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: false, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
@@ -1251,6 +1251,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Mobile Painting (in development): swatches were missing their base style class, so the hover/selected effects above never actually appeared -- now they do' },
                 { type: 'fixed', text: 'Mobile Painting (in development): stopped a repeating native "Color container not found" console error by hiding the native color grid instead of removing it' },
                 { type: 'fixed', text: 'Mobile Painting (in development): disabled colors no longer gray out -- that was always on regardless of the Ghost++ manager\'s own "Gray unselected color boxes" setting' },
+                { type: 'added', text: 'Mobile Painting (in development): added a control row below the color grid -- Enable (all/owned/filtered), Disable all, Get hex values, Sort, and Filter, all sharing state with the Ghost++ manager' },
+                { type: 'removed', text: 'Mobile Painting (in development): removed the redundant native Sort button now that the control row has its own Sort' },
+                { type: 'changed', text: 'Mobile Painting (in development): the color grid now shows 2 rows before scrolling instead of ~10, matching the Ghost++ manager\'s own compact view' },
+                { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring is now a square (was a circle) and spins 4x slower; the off-color slash is slightly more opaque' },
             ]
         },
         {
@@ -12715,6 +12719,19 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         if (typeof gppLastEnsureOpen === 'function') gppLastEnsureOpen();
     }
 
+    // Lets code outside this file (mobile-painting.js's compact bulk-action/
+    // sort/filter row) guarantee #gpp-palette-section's controller exists
+    // and reflects the currently focused template, WITHOUT
+    // gppEnsureGhostPlusPlusOpen()'s side effect of visibly revealing the
+    // modal. ensureShellBuilt() and a palette-only render pass only ever
+    // touch #gpp-left-body's children, never modalEl's own hidden/visible
+    // class, so this is safe to call at any time, whether or not the modal
+    // has ever been opened this session.
+    let gppLastEnsurePaletteReady = null;
+    function gppEnsurePaletteSectionReady() {
+        if (typeof gppLastEnsurePaletteReady === 'function') gppLastEnsurePaletteReady();
+    }
+
     if (_settings.ghostPlusPlus) {
         function gppStartGhostPlusPlus() {
         try {
@@ -12723,6 +12740,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 gppLastRefreshAll = refreshAll;
                 gppLastEnsureOpen = () => {
                     if (modalEl.classList.contains('gpp-hidden')) open();
+                };
+                gppLastEnsurePaletteReady = () => {
+                    ensureShellBuilt();
+                    const paletteContainer = document.getElementById('gpp-palette-section');
+                    if (typeof gppRenderPalette === 'function' && paletteContainer) {
+                        gppRenderPalette(paletteContainer, gppState.getFocusedTemplate(), refreshAll);
+                    }
                 };
                 const openerRefs = gppReplaceNativeOpener(() => {
                     if (modalEl.classList.contains('gpp-hidden')) open();
@@ -30201,7 +30225,11 @@ applyLockState();
             .gpp-palette-grid {
                 display: grid; grid-template-columns: repeat(auto-fill, minmax(26px, 1fr));
                 grid-auto-rows: minmax(26px, 1fr);
-                gap: 3px; max-height: 260px; overflow-y: auto; padding: 2px;
+                /* 2 visible rows (26px + 3px gap, doubled, plus the grid's own
+                   2px top/bottom padding) before scrolling -- same constant
+                   Ghost++'s own minified mode uses for the identical shape
+                   (see gpp-ui-shell.js's .gpp-minified .gpp-palette-grid). */
+                gap: 3px; max-height: 60px; overflow-y: auto; padding: 2px;
                 width: 100%; box-sizing: border-box;
                 scrollbar-gutter: stable;
             }
@@ -30233,23 +30261,30 @@ applyLockState();
                 content: ''; position: absolute; inset: 0; pointer-events: none;
                 border-radius: inherit;
                 background: linear-gradient(to top right,
-                    transparent calc(50% - 1px), rgba(50,50,50,.75) calc(50% - 1px),
-                    rgba(50,50,50,.75) calc(50% + 1px), transparent calc(50% + 1px));
+                    transparent calc(50% - 1px), rgba(50,50,50,.8) calc(50% - 1px),
+                    rgba(50,50,50,.8) calc(50% + 1px), transparent calc(50% + 1px));
             }
-            /* "Currently selected" indicator: a slowly-rotating ring of
-               alternating black/white dashes (repeating-conic-gradient
-               wedges, masked down to a ring) around whichever swatch was
-               last tapped -- separate pseudo-element from .gpp-swatch-off's
-               ::after slash so a swatch could in principle carry both
-               without conflict, even though in practice soloColor() always
-               leaves the selected swatch enabled. */
+            /* "Currently selected" indicator: a slowly-rotating SQUARE ring of
+               alternating black/white dashes around whichever swatch was last
+               tapped. The ring shape is a mask-composite "frame" trick, not
+               border-radius: 50% + a radial-gradient mask (which draws a
+               circle) -- a repeating-conic-gradient fills the whole
+               pseudo-element, then two identical linear-gradient mask layers
+               (one clipped to content-box, one to the full border-box) are
+               XORed together, leaving only the padding-box band (the frame)
+               visible. Separate pseudo-element from .gpp-swatch-off's ::after
+               slash so a swatch could in principle carry both without
+               conflict, even though in practice soloColor() always leaves
+               the selected swatch enabled. */
             .gpp-swatch.gpp-swatch-selected::before {
                 content: ''; position: absolute; inset: -3px; z-index: 1;
-                pointer-events: none; border-radius: 50%;
+                pointer-events: none; box-sizing: border-box; padding: 3px;
                 background: repeating-conic-gradient(#000 0deg 12deg, #fff 12deg 24deg);
-                -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
-                mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
-                animation: gpc-mobile-selected-spin 4s linear infinite;
+                -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+                -webkit-mask-composite: xor;
+                mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+                mask-composite: exclude;
+                animation: gpc-mobile-selected-spin 16s linear infinite;
             }
             @keyframes gpc-mobile-selected-spin {
                 to { transform: rotate(360deg); }
@@ -30278,6 +30313,59 @@ applyLockState();
             #gpp-palette-tooltip .gpp-palette-tooltip-stats {
                 margin-top: 2px; color: ${t2('#64748b', '#a6adc8')};
             }
+            /* Bulk-action / sort / filter / get-hex row -- reuses Ghost++'s
+               own .gpp-palette-bulk-row/-2col-row/-filter-dropdown/-button/
+               -menu/-option/-sort classes verbatim (see gpp-palette.js) so
+               these look identical to the real panel's own controls. */
+            .gpc-mobile-controls-row { width: 100%; box-sizing: border-box; margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+            .gpp-palette-bulk-row { display: flex; gap: 6px; }
+            .gpp-palette-bulk-row button,
+            .gpp-palette-bulk-row .gpp-palette-filter-dropdown {
+                flex: 1 1 0; min-width: 0;
+            }
+            .gpp-palette-bulk-row button {
+                border: 2px solid ${t2('#d1d5db', '#45475a')}; border-radius: 6px;
+                background: ${t2('#ffffff', '#11111b')}; color: ${t2('#111827', '#f5f5f5')};
+                font-size: 11px; font-weight: 600; cursor: pointer; padding: 4px 6px;
+            }
+            .gpp-palette-bulk-row button:hover { background: ${t2('#f3f4f6', '#313244')}; }
+            .gpp-palette-2col-row {
+                display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px;
+            }
+            .gpp-palette-2col-row button,
+            .gpp-palette-2col-row .gpp-palette-filter-dropdown,
+            .gpp-palette-2col-row .gpp-palette-sort-wrap {
+                width: 100%; box-sizing: border-box; min-width: 0;
+            }
+            .gpp-palette-filter-dropdown { position: relative; }
+            .gpp-palette-filter-button,
+            .gpp-palette-sort-select {
+                width: 100%; box-sizing: border-box; min-height: 28px;
+                border: 2px solid ${t2('#d1d5db', '#45475a')}; border-radius: 6px;
+                background: ${t2('#ffffff', '#11111b')}; color: ${t2('#111827', '#f5f5f5')};
+                font-size: 11px; cursor: pointer;
+                text-align: center; text-align-last: center;
+            }
+            .gpp-palette-filter-button {
+                display: flex; align-items: center; justify-content: center;
+                gap: 6px; padding: 3px 8px;
+            }
+            .gpp-palette-filter-menu {
+                display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 20;
+                min-width: 204px; padding: 6px; border-radius: 8px;
+                border: 1px solid ${t2('#e5e7eb', '#313244')};
+                background: ${t2('#ffffff', '#181825')};
+                box-shadow: 0 8px 24px rgba(0,0,0,.28);
+            }
+            .gpp-palette-filter-menu.gpp-open { display: flex; flex-direction: column; gap: 2px; }
+            .gpp-palette-filter-option {
+                display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 5px;
+                font-size: 12px; cursor: pointer; user-select: none;
+                color: ${t2('#111827', '#f5f5f5')};
+            }
+            .gpp-palette-filter-option:hover { background: ${t2('#f3f4f6', '#313244')}; }
+            .gpp-palette-filter-option input { width: 13px; height: 13px; cursor: pointer; }
+            .gpp-palette-sort-wrap { flex: 1 1 0; min-width: 0; }
         `;
         document.head.appendChild(style);
     }
@@ -30426,6 +30514,335 @@ applyLockState();
         return wrap;
     }
 
+    // ── Bulk-action / sort / filter / get-hex row ──────────────────────────
+    // A compact row of controls "duplicated" from Ghost++'s own palette
+    // panel (Enable all/owned/filtered, Disable all, Get hex values, Sort,
+    // Filter), per explicit product decision folding Ghost++'s 3 separate
+    // Enable buttons into one Enable▾ dropdown to fit the space.
+    //
+    // Enable/Disable/Get-hex only need public primitives (core.maskSet/
+    // maskHas, gppReadGamePalette(), computeVisibleOrder()'s already-exposed
+    // renderState) -- reimplemented directly against those rather than
+    // reaching into gpp-palette.js's private closures, low drift risk since
+    // this is plain set-membership logic already verified against its real
+    // handlers (allBtn/noneBtn/ownedBtn/enableFilteredBtn/
+    // copyHexValuesForScope).
+    //
+    // Sort and Filter are different: their RESULT (renderState.visible) is
+    // already reused via computeVisibleOrder, but *setting* them requires
+    // actually running Ghost++'s private 8-sort/6-filter algorithm, which
+    // only exists inside a live gpp-palette.js controller instance. Rather
+    // than duplicate that pipeline a second time (the exact drift risk
+    // computeVisibleOrder was built to avoid), these controls are a genuine
+    // remote control: gppEnsurePaletteSectionReady() (gpp-init.js) guarantees
+    // #gpp-palette-section's controller exists without ever revealing the
+    // modal, then our own dropdown/select write straight into ITS real form
+    // elements and dispatch the same events its own listeners are wired to
+    // -- one shared source of truth, so a change here reaches the real
+    // Ghost++ grid too (if open) exactly the same way a change made inside
+    // the real modal would.
+    function ensurePaletteControllerReady() {
+        if (typeof gppEnsurePaletteSectionReady === 'function') gppEnsurePaletteSectionReady();
+    }
+
+    function getRealPaletteFormControls() {
+        const container = document.getElementById('gpp-palette-section');
+        if (!container) return null;
+        return {
+            container,
+            searchInput: container.querySelector('.gpp-palette-search-input'),
+            sortSelect: container.querySelector('.gpp-palette-sort-select'),
+            filterInputs: Array.from(container.querySelectorAll('.gpp-palette-filter-menu input[type="checkbox"]')),
+        };
+    }
+
+    function notifyMaskChanged(template) {
+        gppState.persistTemplateState(template).catch((err) => {
+            console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
+        });
+        if (typeof gppRendererSchedule === 'function') gppRendererSchedule();
+        if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
+    }
+
+    function bulkEnableAll(template, core) {
+        template.mask = core.makeFullMask(template.palette.length, template.counts);
+        notifyMaskChanged(template);
+    }
+
+    function bulkDisableAll(template) {
+        template.mask = new Uint32Array(Math.ceil(template.palette.length / 32));
+        notifyMaskChanged(template);
+    }
+
+    function bulkEnableOwned(template, core) {
+        const rows = (typeof gppReadGamePalette === 'function') ? gppReadGamePalette() : [];
+        const allowedHex = new Set();
+        rows.forEach((row) => { if (row && row.hex) allowedHex.add(String(row.hex).toUpperCase()); });
+        const mask = new Uint32Array(Math.ceil(template.palette.length / 32));
+        for (let index = 0; index < template.palette.length; index++) {
+            if (allowedHex.has(core.packedToHex(template.palette[index]))) core.maskSet(mask, index, true);
+        }
+        template.mask = mask;
+        notifyMaskChanged(template);
+    }
+
+    // Mirrors the real enableFilteredBtn handler: an active search term
+    // (read from the real search box, if it exists) excludes non-matches
+    // even without the "Show search results only" checkbox on, exactly like
+    // the real button -- see gpp-palette.js's own comment on this exact
+    // behavior for why.
+    function bulkEnableFiltered(template, core) {
+        ensurePaletteControllerReady();
+        const realState = getRealPaletteRenderState(template.id);
+        const real = getRealPaletteFormControls();
+        const hasActiveSearch = !!(real && real.searchInput && real.searchInput.value.trim().length > 0);
+        const matchingSet = (realState && realState.matching) || new Set();
+        const visible = (realState && realState.visible) || [];
+        const mask = new Uint32Array(Math.ceil(template.palette.length / 32));
+        visible.forEach((index) => {
+            if (hasActiveSearch && !matchingSet.has(index)) return;
+            core.maskSet(mask, index, true);
+        });
+        template.mask = mask;
+        notifyMaskChanged(template);
+    }
+
+    const GPC_HEX_VALUE_SCOPES = [
+        { value: 'all', text: 'All colors' },
+        { value: 'owned', text: 'Owned colors only' },
+        { value: 'notOwned', text: 'Not owned colors only' },
+        { value: 'enabled', text: 'Enabled colors only' },
+        { value: 'enabledOwned', text: 'Enabled + owned colors' },
+        { value: 'filtered', text: 'Filtered colors only' },
+        { value: 'filteredOwned', text: 'Filtered + owned colors only' },
+    ];
+
+    function copyHexValuesForScope(template, core, scope) {
+        ensurePaletteControllerReady();
+        const ownedHex = new Set(((typeof gppReadGamePalette === 'function') ? gppReadGamePalette() : []).map((row) => String(row.hex).toUpperCase()));
+        const realState = getRealPaletteRenderState(template.id);
+        const filteredSet = new Set((realState && realState.visible) || []);
+        const hexes = [];
+        for (let index = 0; index < template.palette.length; index++) {
+            const hex = core.packedToHex(template.palette[index]);
+            const isOwned = ownedHex.has(hex);
+            const isEnabled = core.maskHas(template.mask, index);
+            const isFiltered = filteredSet.has(index);
+            let include;
+            switch (scope) {
+                case 'all': include = true; break;
+                case 'owned': include = isOwned; break;
+                case 'notOwned': include = !isOwned; break;
+                case 'enabled': include = isEnabled; break;
+                case 'enabledOwned': include = isEnabled && isOwned; break;
+                case 'filtered': include = isFiltered; break;
+                case 'filteredOwned': include = isFiltered && isOwned; break;
+                default: include = false;
+            }
+            if (include) hexes.push(hex);
+        }
+        const text = hexes.join(', ');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(() => alert(text || 'No matching colors.'));
+        } else {
+            alert(text || 'No matching colors.');
+        }
+        return hexes.length;
+    }
+
+    // Generic small popup-menu button, matching Ghost++'s own Filters/Get
+    // hex values dropdown pattern (gpp-palette-filter-dropdown/-button/
+    // -menu/-option -- generic despite the "filter" class names, see
+    // gpp-palette.js's own comment on that).
+    function buildDropdownButton(labelText, optionDefs) {
+        const dropdown = document.createElement('div');
+        dropdown.className = 'gpp-palette-filter-dropdown';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'gpp-palette-filter-button';
+        const buttonText = document.createElement('span');
+        buttonText.textContent = labelText;
+        const arrow = document.createElement('span');
+        arrow.textContent = '▾';
+        arrow.style.cssText = 'font-size:10px;opacity:.7;';
+        button.append(buttonText, arrow);
+
+        const menu = document.createElement('div');
+        menu.className = 'gpp-palette-filter-menu';
+        optionDefs.forEach(({ text, onClick }) => {
+            const option = document.createElement('div');
+            option.className = 'gpp-palette-filter-option';
+            option.textContent = text;
+            option.addEventListener('click', () => {
+                menu.classList.remove('gpp-open');
+                onClick();
+            });
+            menu.appendChild(option);
+        });
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            menu.classList.toggle('gpp-open');
+        });
+        menu.addEventListener('click', (event) => event.stopPropagation());
+        document.addEventListener('click', () => menu.classList.remove('gpp-open'));
+
+        dropdown.append(button, menu);
+        return { el: dropdown, setLabel: (text) => { buttonText.textContent = text; } };
+    }
+
+    // Our own <select>, but its options are cloned from the real sort
+    // select's current options (values + text) rather than a hardcoded
+    // second copy of GPP_PALETTE_SORT_OPTIONS -- one less place for the two
+    // lists to drift apart. Only synced once, at build time; a sort option
+    // that only unlocks after a scan runs (see gpp-palette.js's
+    // syncProgressGatedControls) won't retroactively appear here without a
+    // page reload -- disclosed limitation, not chased further.
+    function buildSortControl() {
+        const wrap = document.createElement('div');
+        wrap.className = 'gpp-palette-sort-wrap';
+        const select = document.createElement('select');
+        select.className = 'gpp-palette-sort-select';
+        select.title = 'Sort colors -- also updates the Ghost++ manager';
+
+        ensurePaletteControllerReady();
+        const real = getRealPaletteFormControls();
+        if (real && real.sortSelect) {
+            Array.from(real.sortSelect.options).forEach((realOpt) => {
+                const opt = document.createElement('option');
+                opt.value = realOpt.value;
+                opt.textContent = realOpt.textContent;
+                select.appendChild(opt);
+            });
+            select.value = real.sortSelect.value;
+        }
+
+        select.addEventListener('change', () => {
+            ensurePaletteControllerReady();
+            const fresh = getRealPaletteFormControls();
+            if (!fresh || !fresh.sortSelect) return;
+            fresh.sortSelect.value = select.value;
+            fresh.sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        wrap.appendChild(select);
+        return wrap;
+    }
+
+    // Checkboxes cloned (value + label text) from the real filter menu's
+    // current checkboxes, same anti-drift reasoning as buildSortControl.
+    // Each one writes straight through to its real counterpart on change --
+    // no local filter state of our own. Note: no search box here (out of
+    // scope for this row), so "Show search results only" is inert unless a
+    // search term also happens to be set in the real Ghost++ panel; and the
+    // "Filter within pixel count..." checkbox reuses whatever min/max the
+    // real panel currently has rather than adding a second pair of number
+    // inputs here.
+    function buildFilterControl() {
+        ensurePaletteControllerReady();
+        const real = getRealPaletteFormControls();
+        const optionDefs = (real ? real.filterInputs : []).map((realInput) => ({
+            value: realInput.value,
+            text: realInput.parentElement && realInput.parentElement.querySelector('span')
+                ? realInput.parentElement.querySelector('span').textContent
+                : realInput.value,
+            checked: realInput.checked,
+        }));
+
+        const dropdown = document.createElement('div');
+        dropdown.className = 'gpp-palette-filter-dropdown';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'gpp-palette-filter-button';
+        const buttonText = document.createElement('span');
+        buttonText.textContent = 'Filter';
+        const arrow = document.createElement('span');
+        arrow.textContent = '▾';
+        arrow.style.cssText = 'font-size:10px;opacity:.7;';
+        button.append(buttonText, arrow);
+
+        const menu = document.createElement('div');
+        menu.className = 'gpp-palette-filter-menu';
+        optionDefs.forEach(({ value, text, checked }) => {
+            const label = document.createElement('label');
+            label.className = 'gpp-palette-filter-option';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.value = value;
+            input.checked = checked;
+            const span = document.createElement('span');
+            span.textContent = text;
+            label.append(input, span);
+            menu.appendChild(label);
+
+            input.addEventListener('change', () => {
+                ensurePaletteControllerReady();
+                const fresh = getRealPaletteFormControls();
+                const target = fresh && fresh.filterInputs.find((el) => el.value === value);
+                if (!target) return;
+                target.checked = input.checked;
+                target.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        });
+
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            menu.classList.toggle('gpp-open');
+        });
+        menu.addEventListener('click', (event) => event.stopPropagation());
+        document.addEventListener('click', () => menu.classList.remove('gpp-open'));
+
+        dropdown.append(button, menu);
+        return dropdown;
+    }
+
+    function buildControlsRow() {
+        const row = document.createElement('div');
+        row.className = 'gpc-mobile-controls-row';
+
+        function withTemplate(fn) {
+            return () => {
+                const template = getFocusedTemplateWithPalette();
+                if (!template) {
+                    dbgPush('Mobile Painting: control row action ignored -- no focused Ghost++ template.', { uiComponent: 'Mobile Painting' });
+                    return;
+                }
+                fn(template, gppCreateCore());
+            };
+        }
+
+        const enableDropdown = buildDropdownButton('Enable', [
+            { text: 'All', onClick: withTemplate(bulkEnableAll) },
+            { text: 'Owned', onClick: withTemplate(bulkEnableOwned) },
+            { text: 'Filtered', onClick: withTemplate(bulkEnableFiltered) },
+        ]);
+        const disableAllBtn = document.createElement('button');
+        disableAllBtn.type = 'button';
+        disableAllBtn.textContent = 'Disable all';
+        disableAllBtn.addEventListener('click', withTemplate(bulkDisableAll));
+
+        const bulkRow = document.createElement('div');
+        bulkRow.className = 'gpp-palette-2col-row';
+        bulkRow.append(enableDropdown.el, disableAllBtn);
+
+        const sortWrap = buildSortControl();
+        const filterDropdown = buildFilterControl();
+        const controlsRow = document.createElement('div');
+        controlsRow.className = 'gpp-palette-2col-row';
+        controlsRow.append(sortWrap, filterDropdown);
+
+        const hexDropdown = buildDropdownButton('Get hex values', GPC_HEX_VALUE_SCOPES.map(({ value, text }) => ({
+            text,
+            onClick: withTemplate((template, core) => {
+                const count = copyHexValuesForScope(template, core, value);
+                hexDropdown.setLabel(count ? `Copied ${count}!` : 'Nothing to copy');
+                setTimeout(() => hexDropdown.setLabel('Get hex values'), 1200);
+            }),
+        })));
+
+        row.append(bulkRow, controlsRow, hexDropdown.el);
+        return row;
+    }
+
     // ── Live sync ────────────────────────────────────────────────────────
     // Keeps the inline grid matching Ghost++'s real state after the initial
     // swap: switching the focused template, toggling a color's show/hide, or
@@ -30526,6 +30943,16 @@ applyLockState();
         }
 
         liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null, selectedHex: null };
+
+        // The native Sort button (sortAndSetColors()) is redundant with our
+        // own Sort control below -- hidden in place, same reasoning as
+        // .control-container-colors above: never remove a native node
+        // outright, since something native may still expect to find it.
+        const nativeSortBtn = bottomControls.querySelector('#sortBtn');
+        if (nativeSortBtn) nativeSortBtn.style.display = 'none';
+
+        const innerWrapper = bottomControls.querySelector(':scope > div');
+        if (innerWrapper) innerWrapper.appendChild(buildControlsRow());
 
         // Ghost++'s template library loads from IndexedDB asynchronously (see
         // gppInitRuntime()), and may not be settings-enabled at all -- retry
