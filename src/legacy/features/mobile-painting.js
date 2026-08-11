@@ -69,14 +69,17 @@
     }
 
     // Builds a grid of the CURRENTLY FOCUSED Ghost++ template's own colors --
-    // not GeoPixels' native default palette -- reusing the real per-color
-    // enabled/disabled state (template.mask) and toggle behavior
-    // (core.maskToggle + gppState.persistTemplateState + gppRendererSchedule)
-    // that Ghost++'s own palette grid uses, so clicking a swatch here shows/
-    // hides that color in the ghost overlay exactly like the real Ghost++
-    // manager does -- this is genuinely the same underlying state, just a
-    // more compact rendering of it, not a separate copy that can drift out
-    // of sync.
+    // not GeoPixels' native default palette. Clicking a swatch here is NOT a
+    // plain per-color toggle like Ghost++'s own grid -- per explicit product
+    // decision, it "solos" that color (enable it, disable every other color
+    // in this template's overlay via core.maskSet) AND selects it as the
+    // active native paint color via changeColor(hex), so a mobile painter
+    // taps one swatch to both see only that color's remaining pixels on the
+    // map and be ready to paint them immediately. State (template.mask) and
+    // persistence/redraw (gppState.persistTemplateState, gppRendererSchedule)
+    // are still the same real Ghost++ state, not a separate copy -- and
+    // gppRequestUiRefresh() is called afterward so an already-open Ghost++
+    // modal reflects the solo immediately too, not just on its next poll.
     function buildTemplatePaletteGrid(template) {
         injectStyle();
         const core = gppCreateCore();
@@ -86,6 +89,22 @@
 
         const grid = document.createElement('div');
         grid.className = 'gpp-palette-grid';
+
+        function soloColor(targetIndex, hex) {
+            for (let index = 0; index < template.palette.length; index++) {
+                core.maskSet(template.mask, index, index === targetIndex);
+            }
+            const swatches = grid.children;
+            for (let index = 0; index < swatches.length; index++) {
+                setSwatchState(swatches[index], swatches[index].title, index === targetIndex);
+            }
+            if (typeof window.changeColor === 'function') window.changeColor(hex);
+            gppState.persistTemplateState(template).catch((err) => {
+                console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
+            });
+            if (typeof gppRendererSchedule === 'function') gppRendererSchedule();
+            if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
+        }
 
         const paletteLength = template.palette ? template.palette.length : 0;
         for (let index = 0; index < paletteLength; index++) {
@@ -97,14 +116,7 @@
             swatch.style.backgroundColor = hex;
             swatch.title = hex;
             setSwatchState(swatch, hex, enabled);
-            swatch.addEventListener('click', () => {
-                const nowEnabled = core.maskToggle(template.mask, index);
-                setSwatchState(swatch, hex, nowEnabled);
-                gppState.persistTemplateState(template).catch((err) => {
-                    console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
-                });
-                if (typeof gppRendererSchedule === 'function') gppRendererSchedule();
-            });
+            swatch.addEventListener('click', () => soloColor(index, hex));
             grid.appendChild(swatch);
         }
 

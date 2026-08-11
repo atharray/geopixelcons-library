@@ -43,7 +43,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', desc: 'Superseded by Ghost++ Template Overlay. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
         { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', desc: 'Superseded by Ghost++ Template Overlay. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
-        { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Bottom paint controls span the full screen width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid — same show/hide state as the Ghost++ manager'] },
+        { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Bottom paint controls span the full screen width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color'] },
     ];
 
     const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: false, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
@@ -1242,8 +1242,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             date: '2026-08-10',
             items: [
                 { type: 'added', text: 'Mobile Painting (in development): bottom paint controls now span the full width of the screen when enabled' },
-                { type: 'added', text: 'Mobile Painting (in development): native color grid replaced with the focused Ghost++ template\'s own color grid, styled like and sharing real show/hide state with the Ghost++ manager' },
-                { type: 'added', text: 'Mobile Painting (in development): the color grid now stays live-synced with the Ghost++ manager -- switching templates or toggling a color there updates it automatically' },
+                { type: 'added', text: 'Mobile Painting (in development): native color grid replaced with the focused Ghost++ template\'s own color grid, styled like the Ghost++ manager' },
+                { type: 'added', text: 'Mobile Painting (in development): the color grid now stays live-synced with the Ghost++ manager -- switching templates or changing a color\'s visibility there updates it automatically' },
+                { type: 'added', text: 'Mobile Painting (in development): tapping a color now shows only that color\'s remaining pixels on the map and selects it as your active paint color in one tap' },
             ]
         },
         {
@@ -30225,14 +30226,17 @@ applyLockState();
     }
 
     // Builds a grid of the CURRENTLY FOCUSED Ghost++ template's own colors --
-    // not GeoPixels' native default palette -- reusing the real per-color
-    // enabled/disabled state (template.mask) and toggle behavior
-    // (core.maskToggle + gppState.persistTemplateState + gppRendererSchedule)
-    // that Ghost++'s own palette grid uses, so clicking a swatch here shows/
-    // hides that color in the ghost overlay exactly like the real Ghost++
-    // manager does -- this is genuinely the same underlying state, just a
-    // more compact rendering of it, not a separate copy that can drift out
-    // of sync.
+    // not GeoPixels' native default palette. Clicking a swatch here is NOT a
+    // plain per-color toggle like Ghost++'s own grid -- per explicit product
+    // decision, it "solos" that color (enable it, disable every other color
+    // in this template's overlay via core.maskSet) AND selects it as the
+    // active native paint color via changeColor(hex), so a mobile painter
+    // taps one swatch to both see only that color's remaining pixels on the
+    // map and be ready to paint them immediately. State (template.mask) and
+    // persistence/redraw (gppState.persistTemplateState, gppRendererSchedule)
+    // are still the same real Ghost++ state, not a separate copy -- and
+    // gppRequestUiRefresh() is called afterward so an already-open Ghost++
+    // modal reflects the solo immediately too, not just on its next poll.
     function buildTemplatePaletteGrid(template) {
         injectStyle();
         const core = gppCreateCore();
@@ -30242,6 +30246,22 @@ applyLockState();
 
         const grid = document.createElement('div');
         grid.className = 'gpp-palette-grid';
+
+        function soloColor(targetIndex, hex) {
+            for (let index = 0; index < template.palette.length; index++) {
+                core.maskSet(template.mask, index, index === targetIndex);
+            }
+            const swatches = grid.children;
+            for (let index = 0; index < swatches.length; index++) {
+                setSwatchState(swatches[index], swatches[index].title, index === targetIndex);
+            }
+            if (typeof window.changeColor === 'function') window.changeColor(hex);
+            gppState.persistTemplateState(template).catch((err) => {
+                console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
+            });
+            if (typeof gppRendererSchedule === 'function') gppRendererSchedule();
+            if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
+        }
 
         const paletteLength = template.palette ? template.palette.length : 0;
         for (let index = 0; index < paletteLength; index++) {
@@ -30253,14 +30273,7 @@ applyLockState();
             swatch.style.backgroundColor = hex;
             swatch.title = hex;
             setSwatchState(swatch, hex, enabled);
-            swatch.addEventListener('click', () => {
-                const nowEnabled = core.maskToggle(template.mask, index);
-                setSwatchState(swatch, hex, nowEnabled);
-                gppState.persistTemplateState(template).catch((err) => {
-                    console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
-                });
-                if (typeof gppRendererSchedule === 'function') gppRendererSchedule();
-            });
+            swatch.addEventListener('click', () => soloColor(index, hex));
             grid.appendChild(swatch);
         }
 
