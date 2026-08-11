@@ -36,9 +36,13 @@
                 position: relative; aspect-ratio: 1 / 1; min-height: 15px; border-radius: 4px;
                 border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
                 cursor: pointer; display: flex; align-items: center; justify-content: center;
-                padding: 0; transition: transform .08s ease;
+                padding: 0; transition: transform .18s ease-out, box-shadow .18s ease-out;
             }
-            .gpp-swatch:hover { transform: scale(1.15); z-index: 2; }
+            .gpp-swatch:hover {
+                transform: scale(1.2);
+                box-shadow: 0 3px 8px ${t2('rgba(0,0,0,.35)', 'rgba(0,0,0,.6)')};
+                z-index: 2;
+            }
             .gpp-swatch.gpp-swatch-off { filter: grayscale(.7) opacity(.4); }
             .gpp-swatch.gpp-swatch-off::after {
                 content: ''; position: absolute; inset: 0; pointer-events: none;
@@ -46,6 +50,24 @@
                 background: linear-gradient(to top right,
                     transparent calc(50% - 1px), rgba(50,50,50,.75) calc(50% - 1px),
                     rgba(50,50,50,.75) calc(50% + 1px), transparent calc(50% + 1px));
+            }
+            /* "Currently selected" indicator: a slowly-rotating ring of
+               alternating black/white dashes (repeating-conic-gradient
+               wedges, masked down to a ring) around whichever swatch was
+               last tapped -- separate pseudo-element from .gpp-swatch-off's
+               ::after slash so a swatch could in principle carry both
+               without conflict, even though in practice soloColor() always
+               leaves the selected swatch enabled. */
+            .gpp-swatch.gpp-swatch-selected::before {
+                content: ''; position: absolute; inset: -3px; z-index: 1;
+                pointer-events: none; border-radius: 50%;
+                background: repeating-conic-gradient(#000 0deg 12deg, #fff 12deg 24deg);
+                -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+                mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+                animation: gpc-mobile-selected-spin 4s linear infinite;
+            }
+            @keyframes gpc-mobile-selected-spin {
+                to { transform: rotate(360deg); }
             }
             /* Shared with Ghost++'s own tooltip (#gpp-palette-tooltip is a
                page-global singleton -- see gpp-palette.js's
@@ -89,10 +111,16 @@
         return (template && template.palette && template.palette.length) ? template : null;
     }
 
+    // Also reconciles the "currently selected" rotating-ring indicator
+    // (liveState.selectedHex, set by soloColor below) against this swatch --
+    // every call site that already calls setSwatchState (initial build,
+    // soloColor's own update loop, resync()'s reconcile pass) gets the ring
+    // kept in sync for free, with no separate pass needed.
     function setSwatchState(swatch, hex, enabled) {
         swatch.classList.toggle('gpp-swatch-off', !enabled);
         swatch.setAttribute('aria-pressed', String(enabled));
         swatch.setAttribute('aria-label', `${enabled ? 'Hide' : 'Show'} ${hex}`);
+        swatch.classList.toggle('gpp-swatch-selected', !!liveState && liveState.selectedHex === hex);
     }
 
     // Native #hexDisplay (js/index148.js's SetColors) only ever updates on
@@ -166,6 +194,10 @@
             for (let index = 0; index < template.palette.length; index++) {
                 core.maskSet(template.mask, index, index === targetIndex);
             }
+            // Set BEFORE the update loop below, so setSwatchState's own
+            // liveState.selectedHex check reflects the NEW selection, not
+            // whatever was selected before this click.
+            if (liveState) liveState.selectedHex = hex;
             const swatches = grid.children;
             for (let i = 0; i < swatches.length; i++) {
                 const swatch = swatches[i];
@@ -225,7 +257,7 @@
     //      performFilterSort() directly -- neither reaches subscribers.
     //      Polling is the only reliable way to catch either without patching
     //      more of Ghost++'s own code than the one renderState hook above.
-    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey }
+    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, selectedHex }
 
     function resync() {
         if (!liveState) return;
@@ -239,6 +271,7 @@
                 liveState.grid = null;
                 liveState.templateId = null;
                 liveState.orderKey = null;
+                liveState.selectedHex = null;
             }
             return;
         }
@@ -280,7 +313,7 @@
             return;
         }
 
-        liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null };
+        liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null, selectedHex: null };
 
         // Ghost++'s template library loads from IndexedDB asynchronously (see
         // gppInitRuntime()), and may not be settings-enabled at all -- retry
