@@ -34935,3 +34935,6 @@ applyLockState();
         boot,
     });
 })();
+if (typeof globalThis !== 'undefined') {
+    globalThis.GeoPixelconsLibrary = GeoPixelconsLibrary;
+}
