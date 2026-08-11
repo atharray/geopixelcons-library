@@ -24,12 +24,17 @@ jobs:
         name: Require the one-time stable baseline tag
         shell: bash
         run: |
-          version="$(node -p "require('./package.json').version")"
-          if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
+          # Gate release-please on whether the one-time manual bootstrap has
+          # EVER run (i.e. any stable vX.Y.Z tag exists) -- not on whether a
+          # tag matching the *current* package.json version exists. package.json
+          # is bumped by the release-please PR itself before the matching tag
+          # is created, so checking the current version here would re-block
+          # every release after the first one forever.
+          if git ls-remote --tags origin | grep -Eq 'refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Release Please is waiting for the explicit v${version} bootstrap tag."
+            echo "Release Please is waiting for the explicit one-time bootstrap tag."
           fi
   release-please:
     needs: bootstrap-check
