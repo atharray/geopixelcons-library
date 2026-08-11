@@ -30390,6 +30390,7 @@ applyLockState();
 
             const swatch = document.createElement('button');
             swatch.type = 'button';
+            swatch.className = 'gpp-swatch';
             swatch.style.backgroundColor = hex;
             swatch.dataset.hex = hex;
             swatch.dataset.index = String(index);
