@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/atharray/geopixelcons-library/compare/v1.0.2...v2.0.0) (2026-08-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* Mobile Compatibility and Mobile System Overhaul are no longer available in GeoPixelcons++. Both were experimental; mobile support is being redesigned from scratch in a future release.
+
+### Features
+
+* remove Mobile Compatibility and Mobile System Overhaul entirely ([#9](https://github.com/atharray/geopixelcons-library/issues/9)) ([5c99ebf](https://github.com/atharray/geopixelcons-library/commit/5c99ebf8282d9f79f0a2234cd8e27b674dd727f1))
+
 ## [1.0.2](https://github.com/atharray/geopixelcons-library/compare/v1.0.1...v1.0.2) (2026-08-11)
 
 
