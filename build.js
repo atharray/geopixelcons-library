@@ -44,6 +44,7 @@ const LEGACY_SOURCE_ORDER = [
     'src/legacy/features/ext-log-out-button.js',
     'src/legacy/features/theme-editor.js',
     'src/legacy/features/map-markers.js',
+    'src/legacy/features/mobile-painting.js',
     'src/legacy/footer.js',
 ];
 

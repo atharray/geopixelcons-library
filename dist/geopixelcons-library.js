@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v1.0.2 - readable release bundle */
+/* GeoPixelcons Library v2.0.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.0.0'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.0.0';
+    const VERSION = '2.1.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -43,6 +43,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', desc: 'Superseded by Ghost++ Template Overlay. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
         { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', desc: 'Superseded by Ghost++ Template Overlay. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
+        { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Under active development — features are being added incrementally.', features: ['Bottom paint controls span the full screen width'] },
     ];
 
     const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: false, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
@@ -471,6 +472,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 },
                 extLogOutButton: () => {
                     flashEl(document.getElementById('gpc-logout-btn'));
+                },
+                mobilePaintingExtension: () => {
+                    flashEl(document.getElementById('bottomControls'));
                 },
             };
             const fn = nav[key];
@@ -1233,6 +1237,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.1.0',
+            date: '2026-08-10',
+            items: [
+                { type: 'added', text: 'Mobile Painting (in development): bottom paint controls now span the full width of the screen when enabled' },
+            ]
+        },
         {
             version: '2.0.0',
             date: '2026-08-09',
@@ -30140,6 +30151,64 @@ applyLockState();
             console.error('[GeoPixelcons++] \u274c Map Markers failed:', err);
         }
     }
+
+
+    // ============================================================
+    //  EXTENSION: Mobile Painting [mobilePaintingExtension]
+    // ============================================================
+    // In-development extension. Implementation is intentionally being built
+    // up in small, explicitly-requested increments -- do not add behavior
+    // here beyond what has actually been asked for.
+    if (_settings.mobilePaintingExtension) {
+        try {
+            (function _ext_mobilePainting() {
+
+    function applyFullWidthBottomControls(bottomControls) {
+        bottomControls.style.width = '100vw';
+        bottomControls.style.maxWidth = '100vw';
+        bottomControls.style.left = '0';
+        bottomControls.style.right = '0';
+        bottomControls.style.transform = 'none';
+    }
+
+    function mount(bottomControls) {
+        applyFullWidthBottomControls(bottomControls);
+        dbgPush('Mobile Painting: #bottomControls found -- applied full-width layout.', { uiComponent: 'Mobile Painting' });
+    }
+
+    const existing = document.getElementById('bottomControls');
+    if (existing) {
+        mount(existing);
+    } else {
+        const watchStartedAt = Date.now();
+        const observer = new MutationObserver(() => {
+            const el = document.getElementById('bottomControls');
+            if (el) {
+                observer.disconnect();
+                dbgPush('Mobile Painting: #bottomControls appeared ' + (Date.now() - watchStartedAt) + 'ms after watching started -- mounting now.', { uiComponent: 'Mobile Painting' });
+                mount(el);
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        setTimeout(() => {
+            observer.disconnect();
+            if (!document.getElementById('bottomControls')) {
+                dbgPush('Mobile Painting: gave up after 15s -- #bottomControls was never found.', { uiComponent: 'Mobile Painting' });
+                console.error('[GeoPixelcons++] Mobile Painting: never found #bottomControls.');
+            }
+        }, 15000);
+    }
+
+            })();
+            _featureStatus.mobilePaintingExtension = 'ok';
+            console.log('[GeoPixelcons++] ✅ Mobile Painting loaded');
+        } catch (err) {
+            _featureStatus.mobilePaintingExtension = 'error';
+            dbgPush(`Mobile Painting init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Mobile Painting' });
+            console.error('[GeoPixelcons++] ❌ Mobile Painting failed:', err);
+        }
+    }
+
 
 
     // ============================================================
