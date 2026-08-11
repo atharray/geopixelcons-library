@@ -56,6 +56,18 @@
         bottomControls.style.transform = 'none';
     }
 
+    function getFocusedTemplateWithPalette() {
+        if (typeof gppState === 'undefined' || typeof gppState.getFocusedTemplate !== 'function') return null;
+        const template = gppState.getFocusedTemplate();
+        return (template && template.palette && template.palette.length) ? template : null;
+    }
+
+    function setSwatchState(swatch, hex, enabled) {
+        swatch.classList.toggle('gpp-swatch-off', !enabled);
+        swatch.setAttribute('aria-pressed', String(enabled));
+        swatch.setAttribute('aria-label', `${enabled ? 'Hide' : 'Show'} ${hex}`);
+    }
+
     // Builds a grid of the CURRENTLY FOCUSED Ghost++ template's own colors --
     // not GeoPixels' native default palette -- reusing the real per-color
     // enabled/disabled state (template.mask) and toggle behavior
@@ -82,16 +94,12 @@
 
             const swatch = document.createElement('button');
             swatch.type = 'button';
-            swatch.className = 'gpp-swatch' + (enabled ? '' : ' gpp-swatch-off');
             swatch.style.backgroundColor = hex;
             swatch.title = hex;
-            swatch.setAttribute('aria-pressed', String(enabled));
-            swatch.setAttribute('aria-label', `${enabled ? 'Hide' : 'Show'} ${hex}`);
+            setSwatchState(swatch, hex, enabled);
             swatch.addEventListener('click', () => {
                 const nowEnabled = core.maskToggle(template.mask, index);
-                swatch.classList.toggle('gpp-swatch-off', !nowEnabled);
-                swatch.setAttribute('aria-pressed', String(nowEnabled));
-                swatch.setAttribute('aria-label', `${nowEnabled ? 'Hide' : 'Show'} ${hex}`);
+                setSwatchState(swatch, hex, nowEnabled);
                 gppState.persistTemplateState(template).catch((err) => {
                     console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
                 });
@@ -104,54 +112,94 @@
         return wrap;
     }
 
-    // Swaps GeoPixels' native `.control-container-colors` block (flat grid of
-    // every default paint color) for the focused Ghost++ template's own
-    // color grid, styled identically to Ghost++'s real palette. Requires
-    // Ghost++ to be enabled AND have a focused template with a decoded
-    // palette -- if neither is true yet, the native grid is left alone
-    // rather than showing an empty box (this is watched/retried below, not
-    // just checked once, since Ghost++'s template library loads from
-    // IndexedDB asynchronously after #bottomControls itself mounts).
-    function getFocusedTemplateWithPalette() {
-        if (typeof gppState === 'undefined' || typeof gppState.getFocusedTemplate !== 'function') return null;
-        const template = gppState.getFocusedTemplate();
-        return (template && template.palette && template.palette.length) ? template : null;
-    }
+    // ── Live sync ────────────────────────────────────────────────────────
+    // Keeps the inline grid matching Ghost++'s real state after the initial
+    // swap: switching the focused template, or toggling a color's show/hide
+    // from the actual Ghost++ modal, both need to be reflected here too.
+    //
+    // Two sources feed the same resync() function:
+    //   1. gppSubscribeUiRefresh() -- gpp-init.js's real external-refresh
+    //      hook. Confirmed to fire on a palette mask toggle (gpp-palette.js's
+    //      setSwatchMaskState calls gppRequestUiRefresh() directly), so a
+    //      color toggled from the real modal reaches this near-instantly.
+    //   2. A 1s poll fallback -- gpp-library.js's "switch focused template"
+    //      click handlers only call their own local refreshAll() (via the
+    //      onChange callback), never gppRequestUiRefresh(), so that specific
+    //      path does NOT reach subscribers. Polling is the only reliable way
+    //      to catch it without patching Ghost++'s own template-library code.
+    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, paletteLength }
 
-    function replaceNativeColorGrid(bottomControls) {
-        const nativeContainer = bottomControls.querySelector('.control-container-colors');
-        if (!nativeContainer) return false;
+    function resync() {
+        if (!liveState) return;
         const template = getFocusedTemplateWithPalette();
-        if (!template) return false;
+
+        if (!template) {
+            if (liveState.wrap) {
+                liveState.wrap.replaceWith(liveState.savedNativeContainer);
+                dbgPush('Mobile Painting: no focused Ghost++ template anymore -- restored the native color grid.', { uiComponent: 'Mobile Painting' });
+                liveState.wrap = null;
+                liveState.grid = null;
+                liveState.templateId = null;
+                liveState.paletteLength = null;
+            }
+            return;
+        }
+
+        const sameTemplate = liveState.grid && liveState.templateId === template.id && liveState.paletteLength === template.palette.length;
+        if (sameTemplate) {
+            const core = gppCreateCore();
+            const swatches = liveState.grid.children;
+            for (let index = 0; index < swatches.length; index++) {
+                const swatch = swatches[index];
+                const enabled = core.maskHas(template.mask, index);
+                if (swatch.classList.contains('gpp-swatch-off') === enabled) {
+                    setSwatchState(swatch, swatch.title, enabled);
+                }
+            }
+            return;
+        }
 
         const replacement = buildTemplatePaletteGrid(template);
-        nativeContainer.replaceWith(replacement);
-        dbgPush('Mobile Painting: replaced native color grid with template "' + template.id + '"\'s Ghost++ palette grid (' + template.palette.length + ' colors).', { uiComponent: 'Mobile Painting' });
-        return true;
+        (liveState.wrap || liveState.savedNativeContainer).replaceWith(replacement);
+        liveState.wrap = replacement;
+        liveState.grid = replacement.querySelector('.gpp-palette-grid');
+        liveState.templateId = template.id;
+        liveState.paletteLength = template.palette.length;
+        dbgPush('Mobile Painting: (re)built palette grid for template "' + template.id + '" (' + template.palette.length + ' colors).', { uiComponent: 'Mobile Painting' });
     }
 
     function mount(bottomControls) {
         applyFullWidthBottomControls(bottomControls);
         dbgPush('Mobile Painting: #bottomControls found -- applied full-width layout.', { uiComponent: 'Mobile Painting' });
 
-        if (replaceNativeColorGrid(bottomControls)) return;
+        const nativeContainer = bottomControls.querySelector('.control-container-colors');
+        if (!nativeContainer) {
+            dbgPush('Mobile Painting: no .control-container-colors found inside #bottomControls -- nothing to replace.', { uiComponent: 'Mobile Painting' });
+            return;
+        }
+
+        liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, paletteLength: null };
 
         // Ghost++'s template library loads from IndexedDB asynchronously (see
         // gppInitRuntime()), and may not be settings-enabled at all -- retry
         // for the same 15s window the rest of this codebase uses rather than
         // giving up after a single check.
-        const watchStartedAt = Date.now();
-        const retryInterval = setInterval(() => {
-            if (replaceNativeColorGrid(bottomControls)) {
+        resync();
+        if (!liveState.grid) {
+            const retryInterval = setInterval(() => {
+                resync();
+                if (liveState.grid) clearInterval(retryInterval);
+            }, 500);
+            setTimeout(() => {
                 clearInterval(retryInterval);
-            }
-        }, 500);
-        setTimeout(() => {
-            clearInterval(retryInterval);
-            if (!document.querySelector('.gpc-mobile-palette-wrap')) {
-                dbgPush('Mobile Painting: gave up after 15s -- no focused Ghost++ template with a decoded palette was found; left the native color grid in place.', { uiComponent: 'Mobile Painting' });
-            }
-        }, 15000);
+                if (!liveState.grid) {
+                    dbgPush('Mobile Painting: gave up after 15s -- no focused Ghost++ template with a decoded palette was found; left the native color grid in place.', { uiComponent: 'Mobile Painting' });
+                }
+            }, 15000);
+        }
+
+        if (typeof gppSubscribeUiRefresh === 'function') gppSubscribeUiRefresh(() => resync());
+        setInterval(() => resync(), 1000);
     }
 
     const existing = document.getElementById('bottomControls');

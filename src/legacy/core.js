@@ -1231,6 +1231,7 @@
             items: [
                 { type: 'added', text: 'Mobile Painting (in development): bottom paint controls now span the full width of the screen when enabled' },
                 { type: 'added', text: 'Mobile Painting (in development): native color grid replaced with the focused Ghost++ template\'s own color grid, styled like and sharing real show/hide state with the Ghost++ manager' },
+                { type: 'added', text: 'Mobile Painting (in development): the color grid now stays live-synced with the Ghost++ manager -- switching templates or toggling a color there updates it automatically' },
             ]
         },
         {
