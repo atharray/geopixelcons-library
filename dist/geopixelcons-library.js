@@ -1250,6 +1250,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Mobile Painting (in development): stronger hover feedback (bigger scale, soft shadow), plus a rotating dashed ring marking whichever color is currently selected' },
                 { type: 'fixed', text: 'Mobile Painting (in development): swatches were missing their base style class, so the hover/selected effects above never actually appeared -- now they do' },
                 { type: 'fixed', text: 'Mobile Painting (in development): stopped a repeating native "Color container not found" console error by hiding the native color grid instead of removing it' },
+                { type: 'fixed', text: 'Mobile Painting (in development): disabled colors no longer gray out -- that was always on regardless of the Ghost++ manager\'s own "Gray unselected color boxes" setting' },
             ]
         },
         {
@@ -30215,7 +30216,19 @@ applyLockState();
                 box-shadow: 0 3px 8px ${t2('rgba(0,0,0,.35)', 'rgba(0,0,0,.6)')};
                 z-index: 2;
             }
-            .gpp-swatch.gpp-swatch-off { filter: grayscale(.7) opacity(.4); }
+            /* Deliberately no grayscale/opacity dimming here, unlike Ghost++'s
+               own grid -- there, that's gated behind gppSettings.
+               grayDisabledSwatches (View Settings > Global > "Gray unselected
+               color boxes"), applied via a .gpp-palette-gray-disabled
+               ancestor class Ghost++ toggles on ITS OWN grid only.
+               mobile-painting.js never reads or toggles that class, so
+               copying the plain (ungated) filter rule here made this grid
+               permanently dimmed regardless of the setting -- the checkbox
+               had no real container to act on. Per explicit product
+               decision this grid should never dim off colors at all, so the
+               rule is dropped rather than wired up to the setting; the
+               diagonal slash below (which Ghost++ never gates either) is
+               the only off-state indicator here. */
             .gpp-swatch.gpp-swatch-off::after {
                 content: ''; position: absolute; inset: 0; pointer-events: none;
                 border-radius: inherit;

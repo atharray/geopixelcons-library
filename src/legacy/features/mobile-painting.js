@@ -43,7 +43,19 @@
                 box-shadow: 0 3px 8px ${t2('rgba(0,0,0,.35)', 'rgba(0,0,0,.6)')};
                 z-index: 2;
             }
-            .gpp-swatch.gpp-swatch-off { filter: grayscale(.7) opacity(.4); }
+            /* Deliberately no grayscale/opacity dimming here, unlike Ghost++'s
+               own grid -- there, that's gated behind gppSettings.
+               grayDisabledSwatches (View Settings > Global > "Gray unselected
+               color boxes"), applied via a .gpp-palette-gray-disabled
+               ancestor class Ghost++ toggles on ITS OWN grid only.
+               mobile-painting.js never reads or toggles that class, so
+               copying the plain (ungated) filter rule here made this grid
+               permanently dimmed regardless of the setting -- the checkbox
+               had no real container to act on. Per explicit product
+               decision this grid should never dim off colors at all, so the
+               rule is dropped rather than wired up to the setting; the
+               diagonal slash below (which Ghost++ never gates either) is
+               the only off-state indicator here. */
             .gpp-swatch.gpp-swatch-off::after {
                 content: ''; position: absolute; inset: 0; pointer-events: none;
                 border-radius: inherit;

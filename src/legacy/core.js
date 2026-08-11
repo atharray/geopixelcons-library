@@ -1238,6 +1238,7 @@
                 { type: 'added', text: 'Mobile Painting (in development): stronger hover feedback (bigger scale, soft shadow), plus a rotating dashed ring marking whichever color is currently selected' },
                 { type: 'fixed', text: 'Mobile Painting (in development): swatches were missing their base style class, so the hover/selected effects above never actually appeared -- now they do' },
                 { type: 'fixed', text: 'Mobile Painting (in development): stopped a repeating native "Color container not found" console error by hiding the native color grid instead of removing it' },
+                { type: 'fixed', text: 'Mobile Painting (in development): disabled colors no longer gray out -- that was always on regardless of the Ghost++ manager\'s own "Gray unselected color boxes" setting' },
             ]
         },
         {
