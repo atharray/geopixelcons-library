@@ -90,27 +90,22 @@
             #gpc-mobile-palette-grid .gpp-swatch.gpp-swatch-off::after {
                 content: none;
             }
-            /* "Currently selected" indicator: a STATIONARY square ring of
-               alternating black/white dashes around whichever swatch was last
-               tapped -- no rotation, per explicit product decision. The ring
-               shape is a mask-composite "frame" trick, not border-radius: 50%
-               + a radial-gradient mask (which draws a circle) -- a
-               repeating-conic-gradient fills the whole pseudo-element, then
-               two identical linear-gradient mask layers (one clipped to
-               content-box, one to the full border-box) are XORed together,
-               leaving only the padding-box band (the frame) visible.
-               Separate pseudo-element from .gpp-swatch-off's ::after slash so
-               a swatch could in principle carry both without conflict, even
-               though in practice soloColor() always leaves the selected
-               swatch enabled. */
+            /* "Currently selected" indicator: a plain black square border
+               with a white glow around it. Replaced the earlier rotating
+               (then stationary) dashed mask-composite frame per explicit
+               product decision -- simpler and less busy. Only shows while
+               liveState.soloMode is true (see setSwatchState) -- there's no
+               single "the" selected color to ring while in multi-select
+               mode (All/Owned/Filtered). Separate pseudo-element from
+               .gpp-swatch-off's ::after slash so a swatch could in
+               principle carry both without conflict, even though in
+               practice soloColor() always leaves the selected swatch
+               enabled. */
             .gpp-swatch.gpp-swatch-selected::before {
                 content: ''; position: absolute; inset: -3px; z-index: 1;
-                pointer-events: none; box-sizing: border-box; padding: 3px;
-                background: repeating-conic-gradient(#000 0deg 12deg, #fff 12deg 24deg);
-                -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-                -webkit-mask-composite: xor;
-                mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-                mask-composite: exclude;
+                pointer-events: none; box-sizing: border-box;
+                border: 2px solid #000;
+                box-shadow: 0 0 0 1px rgba(255,255,255,.9), 0 0 6px 2px rgba(255,255,255,.9);
             }
             /* Shared with Ghost++'s own tooltip (#gpp-palette-tooltip is a
                page-global singleton -- see gpp-palette.js's
@@ -206,16 +201,19 @@
         return (template && template.palette && template.palette.length) ? template : null;
     }
 
-    // Also reconciles the "currently selected" rotating-ring indicator
-    // (liveState.selectedHex, set by soloColor below) against this swatch --
-    // every call site that already calls setSwatchState (initial build,
-    // soloColor's own update loop, resync()'s reconcile pass) gets the ring
-    // kept in sync for free, with no separate pass needed.
+    // Also reconciles the "currently selected" ring indicator
+    // (liveState.selectedHex, set by soloColor/setGridClickTarget below)
+    // against this swatch -- every call site that already calls
+    // setSwatchState (initial build, soloColor's own update loop, resync()'s
+    // reconcile pass) gets the ring kept in sync for free, with no separate
+    // pass needed. The ring only shows while liveState.soloMode is true --
+    // there's no single "the" selected color to ring while in multi-select
+    // mode (see bulkEnableAll/Owned/Filtered, which set soloMode false).
     function setSwatchState(swatch, hex, enabled) {
         swatch.classList.toggle('gpp-swatch-off', !enabled);
         swatch.setAttribute('aria-pressed', String(enabled));
         swatch.setAttribute('aria-label', `${enabled ? 'Hide' : 'Show'} ${hex}`);
-        swatch.classList.toggle('gpp-swatch-selected', !!liveState && liveState.selectedHex === hex);
+        swatch.classList.toggle('gpp-swatch-selected', !!liveState && liveState.soloMode !== false && liveState.selectedHex === hex);
     }
 
     // Native #hexDisplay (js/index148.js's SetColors) only ever updates on
@@ -229,6 +227,21 @@
         if (!hexDisplay) return;
         hexDisplay.textContent = hex;
         hexDisplay.style.display = 'inline-block';
+    }
+
+    // Bare `window` inside a userscript is not reliably the same object as
+    // the native page's own `window` (Tampermonkey/Violentmonkey run scripts
+    // in a sandboxed realm in some browsers -- see the `unsafeWindow`
+    // fallback used almost everywhere else in this codebase, e.g.
+    // hide-paint-menu.js, paint-brush-swap.js, ghost-plus-plus/gpp-*.js).
+    // soloColor()/toggleColor() previously called bare `window.changeColor`,
+    // which silently no-ops when `window` is sandboxed -- the grid's own
+    // solo/toggle visuals still updated fine (self-contained DOM state), but
+    // the real native active paint color (`pixelColor`, js/index148.js)
+    // never actually changed. This matches this file's own established
+    // convention instead of inventing a new one.
+    function pageWindow() {
+        return (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
     }
 
     // Reads the SAME already-computed sort/filter result the real Ghost++
@@ -291,16 +304,58 @@
             }
             // Set BEFORE the update loop below, so setSwatchState's own
             // liveState.selectedHex check reflects the NEW selection, not
-            // whatever was selected before this click.
-            if (liveState) liveState.selectedHex = hex;
+            // whatever was selected before this click. soloMode is set true
+            // here too -- a solo click always re-establishes solo mode, even
+            // if an Enable All/Owned/Filtered bulk action had switched to
+            // multi-select mode moments earlier.
+            if (liveState) { liveState.selectedHex = hex; liveState.soloMode = true; }
             const swatches = grid.children;
             for (let i = 0; i < swatches.length; i++) {
                 const swatch = swatches[i];
                 const swatchIndex = Number(swatch.dataset.index);
                 setSwatchState(swatch, swatch.dataset.hex, swatchIndex === targetIndex);
             }
-            if (typeof window.changeColor === 'function') window.changeColor(hex);
+            const pw = pageWindow();
+            if (typeof pw.changeColor === 'function') pw.changeColor(hex);
             updateHexDisplay(hex);
+            gppState.persistTemplateState(template).catch((err) => {
+                console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
+            });
+            if (typeof gppRendererSchedule === 'function') gppRendererSchedule();
+            if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
+        }
+
+        // Multi-select mode counterpart to soloColor: used instead whenever
+        // liveState.soloMode is false (last Enable action was All/Owned/
+        // Filtered, not Selected) -- toggles just the clicked color's own
+        // mask bit, leaving every other color's visibility exactly as it
+        // was ("the visibility of each color remains"). Still tracks
+        // liveState.selectedHex (so switching the Enable dropdown back to
+        // "Selected" knows which color to re-solo), but the ring never
+        // shows for it while soloMode stays false (see setSwatchState).
+        // changeColor/updateHexDisplay only fire when the click is turning
+        // the color ON -- turning one off shouldn't also make it the active
+        // native paint color.
+        function toggleColor(targetIndex, hex) {
+            const nowEnabled = !core.maskHas(template.mask, targetIndex);
+            core.maskSet(template.mask, targetIndex, nowEnabled);
+            if (liveState) liveState.selectedHex = hex;
+            // grid.children is in `order` (sorted/filtered) sequence, NOT
+            // palette-index sequence -- can't index it by targetIndex
+            // directly, has to be matched by its own dataset.index, same as
+            // soloColor's own update loop does.
+            const swatches = grid.children;
+            for (let i = 0; i < swatches.length; i++) {
+                if (Number(swatches[i].dataset.index) === targetIndex) {
+                    setSwatchState(swatches[i], hex, nowEnabled);
+                    break;
+                }
+            }
+            if (nowEnabled) {
+                const pw = pageWindow();
+                if (typeof pw.changeColor === 'function') pw.changeColor(hex);
+                updateHexDisplay(hex);
+            }
             gppState.persistTemplateState(template).catch((err) => {
                 console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
             });
@@ -320,7 +375,10 @@
             swatch.dataset.hex = hex;
             swatch.dataset.index = String(index);
             setSwatchState(swatch, hex, enabled);
-            swatch.addEventListener('click', () => soloColor(index, hex));
+            swatch.addEventListener('click', () => {
+                if (liveState && liveState.soloMode === false) toggleColor(index, hex);
+                else soloColor(index, hex);
+            });
             // Same custom mouse-following tooltip as Ghost++'s real grid,
             // not a native title attribute -- see gppPaletteShowTooltip's own
             // comment in gpp-palette.js for why.
@@ -386,16 +444,18 @@
         if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
     }
 
-    // All/Owned/Filtered enable multiple colors at once, so there's no
-    // longer a single "the" active color afterward -- clear the solo-select
-    // ring (liveState.selectedHex) rather than leaving it pointing at
-    // whichever color happened to be soloed before. Each color's own
-    // enabled/disabled state (the mask) is otherwise untouched by this --
-    // only the ring indicator goes away. bulkEnableSelected (below) is the
-    // one enable action that's exempt: it's the solo-select operation
-    // itself, so it sets liveState.selectedHex rather than clearing it.
+    // All/Owned/Filtered enable multiple colors at once, so grid swatch
+    // clicks switch out of solo mode too (see the click handler in
+    // buildTemplatePaletteGrid) -- a tap now toggles just that one color
+    // instead of soloing it, and the ring stops showing (setSwatchState
+    // gates it on soloMode). liveState.selectedHex is deliberately left
+    // alone, NOT cleared, here -- it's kept as a "last individually touched
+    // color" memory so switching the Enable dropdown back to "Selected"
+    // (bulkEnableSelected below) knows what to re-solo, per explicit
+    // product decision: swapping to Selected while a color is already
+    // selected should immediately re-solo it.
     function bulkEnableAll(template, core) {
-        if (liveState) liveState.selectedHex = null;
+        if (liveState) liveState.soloMode = false;
         template.mask = core.makeFullMask(template.palette.length, template.counts);
         notifyMaskChanged(template);
     }
@@ -406,7 +466,7 @@
     }
 
     function bulkEnableOwned(template, core) {
-        if (liveState) liveState.selectedHex = null;
+        if (liveState) liveState.soloMode = false;
         const rows = (typeof gppReadGamePalette === 'function') ? gppReadGamePalette() : [];
         const allowedHex = new Set();
         rows.forEach((row) => { if (row && row.hex) allowedHex.add(String(row.hex).toUpperCase()); });
@@ -424,7 +484,7 @@
     // the real button -- see gpp-palette.js's own comment on this exact
     // behavior for why.
     function bulkEnableFiltered(template, core) {
-        if (liveState) liveState.selectedHex = null;
+        if (liveState) liveState.soloMode = false;
         ensurePaletteControllerReady();
         const realState = getRealPaletteRenderState(template.id);
         const real = getRealPaletteFormControls();
@@ -440,17 +500,21 @@
         notifyMaskChanged(template);
     }
 
-    // "Selected" under the Enable dropdown: replays soloColor's exact
-    // effect (disable every other color, enable just this one) for
-    // whichever color is currently marked selected (liveState.selectedHex),
-    // rather than requiring a swatch tap. Useful for restoring solo mode
-    // after an All/Owned/Filtered bulk-enable cleared it. No-ops if nothing
-    // is currently selected, or if that hex isn't in this template's
-    // palette (e.g. focused template changed since it was set).
+    // "Selected" under the Enable dropdown: switches grid clicks back to
+    // solo mode, and -- per explicit product decision -- if a color is
+    // already marked selected (liveState.selectedHex, set by the last
+    // individual swatch tap even while in multi-select mode) immediately
+    // replays soloColor's exact effect for it (disable every other color,
+    // enable just this one), rather than waiting for the next tap. The mode
+    // switch itself always happens; the immediate re-solo only happens if
+    // there's something to re-solo -- no-ops (with a dbgPush diagnostic) if
+    // nothing is currently selected, or if that hex isn't in this
+    // template's palette (e.g. focused template changed since it was set).
     function bulkEnableSelected(template, core) {
+        if (liveState) liveState.soloMode = true;
         const hex = liveState && liveState.selectedHex;
         if (!hex) {
-            dbgPush('Mobile Painting: "Selected" enable action ignored -- no color is currently selected.', { uiComponent: 'Mobile Painting' });
+            dbgPush('Mobile Painting: switched to solo mode, but no color is currently selected to re-solo.', { uiComponent: 'Mobile Painting' });
             return;
         }
         let targetIndex = -1;
@@ -458,13 +522,14 @@
             if (core.packedToHex(template.palette[index]) === hex) { targetIndex = index; break; }
         }
         if (targetIndex === -1) {
-            dbgPush('Mobile Painting: "Selected" enable action ignored -- selected color is not in this template\'s palette.', { uiComponent: 'Mobile Painting' });
+            dbgPush('Mobile Painting: switched to solo mode, but the selected color is not in this template\'s palette.', { uiComponent: 'Mobile Painting' });
             return;
         }
         for (let index = 0; index < template.palette.length; index++) {
             core.maskSet(template.mask, index, index === targetIndex);
         }
-        if (typeof window.changeColor === 'function') window.changeColor(hex);
+        const pw = pageWindow();
+        if (typeof pw.changeColor === 'function') pw.changeColor(hex);
         updateHexDisplay(hex);
         notifyMaskChanged(template);
     }
@@ -719,7 +784,7 @@
     //      performFilterSort() directly -- neither reaches subscribers.
     //      Polling is the only reliable way to catch either without patching
     //      more of Ghost++'s own code than the one renderState hook above.
-    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, selectedHex }
+    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, selectedHex, soloMode }
 
     function resync() {
         if (!liveState) return;
@@ -745,6 +810,7 @@
                 liveState.templateId = null;
                 liveState.orderKey = null;
                 liveState.selectedHex = null;
+                liveState.soloMode = true;
             }
             return;
         }
@@ -801,7 +867,7 @@
             return;
         }
 
-        liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null, selectedHex: null };
+        liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null, selectedHex: null, soloMode: true };
 
         // The native Sort button (sortAndSetColors()) is redundant with our
         // own Sort control below -- hidden in place, same reasoning as

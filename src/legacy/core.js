@@ -1252,7 +1252,10 @@
                 { type: 'changed', text: 'Mobile Painting (in development): Sort is now a plain "Sort" button with a dropdown menu instead of a native select that displayed whatever option was last chosen' },
                 { type: 'fixed', text: 'Mobile Painting (in development): control row buttons now stay white with black text by default, only switching to the dark palette when the GeoPixels++ extension\'s own theme selector is explicitly set to a dark theme -- previously also reacted to the OS/browser dark preference even though the surrounding native controls never actually go dark' },
                 { type: 'fixed', text: 'Mobile Painting (in development): the Enable/Filter/Get hex values dropdown menus no longer render underneath the Paint Menu Controls collapse/drag button row' },
-                { type: 'added', text: 'Mobile Painting (in development): the Enable dropdown has a new "Selected" option that re-solos whichever color is currently selected -- useful for getting back to solo mode after an All/Owned/Filtered bulk-enable, which now correctly clears the selected-color ring since multiple colors are enabled at once' },
+                { type: 'added', text: 'Mobile Painting (in development): the Enable dropdown has a new "Selected" option that switches the color grid back to solo-select mode and immediately re-solos whichever color was last individually tapped' },
+                { type: 'fixed', text: 'Mobile Painting (in development): tapping a color in the grid now actually changes the game\'s active paint color -- it was silently failing to reach the real page function in some browsers, even though the grid\'s own solo-select highlighting still updated correctly' },
+                { type: 'added', text: 'Mobile Painting (in development): picking Enable All/Owned/Filtered now switches the color grid to multi-select mode -- tapping a color toggles just that one color instead of soloing it, and the selected-color ring stops showing since there\'s no longer a single "the" selected color; picking Selected switches back' },
+                { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring is now a plain black square border with a white glow, replacing the dashed frame' },
             ]
         },
         {
