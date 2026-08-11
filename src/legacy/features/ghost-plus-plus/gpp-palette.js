@@ -1293,6 +1293,16 @@
             const previousScrollTop = grid.scrollTop;
             grid.innerHTML = '';
             renderState = { visible, visibleGroups, matching, colourLookup, shownCount: 0 };
+            // Exposed on the controller (not just this closure's local
+            // `renderState`) so mobile-painting.js's compact grid can read the
+            // exact same computed sort/filter order via
+            // gppPaletteControllers.get(document.getElementById(
+            // 'gpp-palette-section')).renderState -- a reference assignment,
+            // so it stays live as renderNextBatch() below mutates shownCount.
+            // Deliberately reusing this already-computed result instead of a
+            // second copy of the sort/filter algorithm, which could drift out
+            // of sync with this one.
+            controller.renderState = renderState;
             renderNextBatch();
             // performFilterSort() runs on every refresh (e.g. a single swatch
             // toggle, via controller.update), which always rebuilds the grid

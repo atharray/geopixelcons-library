@@ -43,7 +43,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', desc: 'Superseded by Ghost++ Template Overlay. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
         { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', desc: 'Superseded by Ghost++ Template Overlay. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
-        { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Bottom paint controls span the full screen width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color'] },
+        { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Bottom paint controls span the full screen width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too'] },
     ];
 
     const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: false, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
@@ -1245,6 +1245,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Mobile Painting (in development): native color grid replaced with the focused Ghost++ template\'s own color grid, styled like the Ghost++ manager' },
                 { type: 'added', text: 'Mobile Painting (in development): the color grid now stays live-synced with the Ghost++ manager -- switching templates or changing a color\'s visibility there updates it automatically' },
                 { type: 'added', text: 'Mobile Painting (in development): tapping a color now shows only that color\'s remaining pixels on the map and selects it as your active paint color in one tap' },
+                { type: 'added', text: 'Mobile Painting (in development): the selected color now shows in the hex display, and colors get the same hover tooltip as the Ghost++ manager' },
+                { type: 'added', text: 'Mobile Painting (in development): the color grid now respects whatever sort/filter is set in the Ghost++ manager\'s own color panel' },
             ]
         },
         {
@@ -10541,6 +10543,16 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             const previousScrollTop = grid.scrollTop;
             grid.innerHTML = '';
             renderState = { visible, visibleGroups, matching, colourLookup, shownCount: 0 };
+            // Exposed on the controller (not just this closure's local
+            // `renderState`) so mobile-painting.js's compact grid can read the
+            // exact same computed sort/filter order via
+            // gppPaletteControllers.get(document.getElementById(
+            // 'gpp-palette-section')).renderState -- a reference assignment,
+            // so it stays live as renderNextBatch() below mutates shownCount.
+            // Deliberately reusing this already-computed result instead of a
+            // second copy of the sort/filter algorithm, which could drift out
+            // of sync with this one.
+            controller.renderState = renderState;
             renderNextBatch();
             // performFilterSort() runs on every refresh (e.g. a single swatch
             // toggle, via controller.update), which always rebuilds the grid
@@ -30168,11 +30180,14 @@ applyLockState();
 
     const MP_STYLE_ID = 'gpc-mobile-painting-style';
 
-    // Reuses Ghost++'s own .gpp-palette-grid / .gpp-swatch class names and
-    // rules (see gpp-palette.js) so this looks identical to the real Ghost++
-    // palette. Trimmed to just the grid + on/off swatch state -- no search,
-    // sort, or bulk-action chrome, since this renders inline in the compact
-    // bottom paint bar rather than the full Ghost++ manager panel.
+    // Reuses Ghost++'s own .gpp-palette-grid / .gpp-swatch / tooltip class
+    // names and rules (see gpp-palette.js) so this looks and feels identical
+    // to the real Ghost++ palette. Trimmed to just the grid + on/off swatch
+    // state + hover tooltip -- no search/sort/filter/bulk-action CHROME,
+    // since this renders inline in the compact bottom paint bar rather than
+    // the full Ghost++ manager panel (the sort/filter EFFECTS themselves
+    // still apply -- see computeVisibleOrder below -- just not their own
+    // controls, which stay in the Ghost++ modal).
     function injectStyle() {
         if (document.getElementById(MP_STYLE_ID)) return;
         const style = document.createElement('style');
@@ -30201,6 +30216,30 @@ applyLockState();
                     transparent calc(50% - 1px), rgba(50,50,50,.75) calc(50% - 1px),
                     rgba(50,50,50,.75) calc(50% + 1px), transparent calc(50% + 1px));
             }
+            /* Shared with Ghost++'s own tooltip (#gpp-palette-tooltip is a
+               page-global singleton -- see gpp-palette.js's
+               gppPaletteEnsureTooltipEl) -- injected here too so the tooltip
+               looks right even if the real Ghost++ modal was never opened
+               this session (its own style tag would otherwise never run). */
+            #gpp-palette-tooltip {
+                position: fixed; z-index: 10070; pointer-events: none; display: none;
+                padding: 6px 9px; border-radius: 7px; font-size: 12px; line-height: 1.4;
+                background: ${t2('#ffffff', '#1e1e2e')};
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+                box-shadow: 0 8px 20px ${t2('rgba(15,23,42,.28)', 'rgba(0,0,0,.6)')};
+                color: ${t2('#111827', '#f5f5f5')};
+            }
+            #gpp-palette-tooltip .gpp-palette-tooltip-hex {
+                font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700;
+                display: flex; align-items: center; gap: 6px;
+            }
+            #gpp-palette-tooltip .gpp-palette-tooltip-swatch {
+                display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+                border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
+            }
+            #gpp-palette-tooltip .gpp-palette-tooltip-stats {
+                margin-top: 2px; color: ${t2('#64748b', '#a6adc8')};
+            }
         `;
         document.head.appendChild(style);
     }
@@ -30225,26 +30264,71 @@ applyLockState();
         swatch.setAttribute('aria-label', `${enabled ? 'Hide' : 'Show'} ${hex}`);
     }
 
-    // Builds a grid of the CURRENTLY FOCUSED Ghost++ template's own colors --
-    // not GeoPixels' native default palette. Clicking a swatch here is NOT a
-    // plain per-color toggle like Ghost++'s own grid -- per explicit product
+    // Native #hexDisplay (js/index148.js's SetColors) only ever updates on
+    // NATIVE swatch mouseover, and is hidden below Tailwind's md breakpoint
+    // (`hidden md:inline-block`) -- invisible at the phone widths this
+    // extension targets, since it existed purely as a hover preview for the
+    // native grid we've replaced. Forced visible here and updated on
+    // selection (not hover -- see the tooltip for that) instead.
+    function updateHexDisplay(hex) {
+        const hexDisplay = document.getElementById('hexDisplay');
+        if (!hexDisplay) return;
+        hexDisplay.textContent = hex;
+        hexDisplay.style.display = 'inline-block';
+    }
+
+    // Reads the SAME already-computed sort/filter result the real Ghost++
+    // palette panel last produced (controller.renderState.visible -- see the
+    // "Exposed on the controller" comment in gpp-palette.js's
+    // performFilterSort), rather than re-implementing that 8-sort/6-filter
+    // pipeline a second time here where it could drift out of sync. Only
+    // trusted when the real panel's controller is actually showing the SAME
+    // template (templateKey match) -- otherwise (Ghost++ modal never opened
+    // this session, or showing a different template) falls back to natural
+    // palette order with nothing filtered out.
+    function getRealPaletteRenderState(templateId) {
+        if (typeof gppPaletteControllers === 'undefined') return null;
+        const realContainer = document.getElementById('gpp-palette-section');
+        if (!realContainer) return null;
+        const realController = gppPaletteControllers.get(realContainer);
+        if (!realController || realController.templateKey !== templateId || !realController.renderState) return null;
+        return realController.renderState;
+    }
+
+    function computeVisibleOrder(template) {
+        const realState = getRealPaletteRenderState(template.id);
+        if (realState && Array.isArray(realState.visible)) return realState.visible.slice();
+        const order = [];
+        for (let index = 0; index < template.palette.length; index++) order.push(index);
+        return order;
+    }
+
+    // Builds the compact grid for `order` (a list of palette indices, already
+    // filtered/sorted to match whatever the real Ghost++ panel currently
+    // shows -- see computeVisibleOrder). Clicking a swatch is NOT a plain
+    // per-color toggle like Ghost++'s own grid -- per explicit product
     // decision, it "solos" that color (enable it, disable every other color
-    // in this template's overlay via core.maskSet) AND selects it as the
-    // active native paint color via changeColor(hex), so a mobile painter
-    // taps one swatch to both see only that color's remaining pixels on the
-    // map and be ready to paint them immediately. State (template.mask) and
-    // persistence/redraw (gppState.persistTemplateState, gppRendererSchedule)
-    // are still the same real Ghost++ state, not a separate copy -- and
-    // gppRequestUiRefresh() is called afterward so an already-open Ghost++
-    // modal reflects the solo immediately too, not just on its next poll.
-    function buildTemplatePaletteGrid(template) {
+    // in this template's overlay via core.maskSet), selects it as the active
+    // native paint color via changeColor(hex), and updates #hexDisplay, so a
+    // mobile painter taps one swatch to see only that color's remaining
+    // pixels on the map AND be ready to paint them immediately. State
+    // (template.mask) and persistence/redraw are still the same real Ghost++
+    // state, not a separate copy -- and gppRequestUiRefresh() is called
+    // afterward so an already-open Ghost++ modal reflects the solo
+    // immediately too, not just on its next poll.
+    function buildTemplatePaletteGrid(template, order) {
         injectStyle();
         const core = gppCreateCore();
+        const colourLookup = (typeof gppPaletteBuildColourLookup === 'function') ? gppPaletteBuildColourLookup(template) : null;
+        const hasProgress = !!template.scanSummary;
 
         const wrap = document.createElement('div');
         wrap.className = 'gpc-mobile-palette-wrap';
 
+        // Distinct id from Ghost++'s own (class-only, no id) .gpp-palette-grid
+        // so the two are unambiguous to refer to separately.
         const grid = document.createElement('div');
+        grid.id = 'gpc-mobile-palette-grid';
         grid.className = 'gpp-palette-grid';
 
         function soloColor(targetIndex, hex) {
@@ -30252,10 +30336,13 @@ applyLockState();
                 core.maskSet(template.mask, index, index === targetIndex);
             }
             const swatches = grid.children;
-            for (let index = 0; index < swatches.length; index++) {
-                setSwatchState(swatches[index], swatches[index].title, index === targetIndex);
+            for (let i = 0; i < swatches.length; i++) {
+                const swatch = swatches[i];
+                const swatchIndex = Number(swatch.dataset.index);
+                setSwatchState(swatch, swatch.dataset.hex, swatchIndex === targetIndex);
             }
             if (typeof window.changeColor === 'function') window.changeColor(hex);
+            updateHexDisplay(hex);
             gppState.persistTemplateState(template).catch((err) => {
                 console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
             });
@@ -30263,19 +30350,28 @@ applyLockState();
             if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
         }
 
-        const paletteLength = template.palette ? template.palette.length : 0;
-        for (let index = 0; index < paletteLength; index++) {
+        order.forEach((index) => {
             const hex = core.packedToHex(template.palette[index]);
             const enabled = core.maskHas(template.mask, index);
+            const stats = colourLookup ? gppPaletteStats(template, index, colourLookup) : null;
 
             const swatch = document.createElement('button');
             swatch.type = 'button';
             swatch.style.backgroundColor = hex;
-            swatch.title = hex;
+            swatch.dataset.hex = hex;
+            swatch.dataset.index = String(index);
             setSwatchState(swatch, hex, enabled);
             swatch.addEventListener('click', () => soloColor(index, hex));
+            // Same custom mouse-following tooltip as Ghost++'s real grid,
+            // not a native title attribute -- see gppPaletteShowTooltip's own
+            // comment in gpp-palette.js for why.
+            if (stats && typeof gppPaletteShowTooltip === 'function') {
+                swatch.addEventListener('mouseenter', (event) => gppPaletteShowTooltip(event, hex, stats, hasProgress));
+                swatch.addEventListener('mousemove', (event) => gppPaletteMoveTooltip(event));
+                swatch.addEventListener('mouseleave', () => gppPaletteHideTooltip());
+            }
             grid.appendChild(swatch);
-        }
+        });
 
         wrap.appendChild(grid);
         return wrap;
@@ -30283,8 +30379,9 @@ applyLockState();
 
     // ── Live sync ────────────────────────────────────────────────────────
     // Keeps the inline grid matching Ghost++'s real state after the initial
-    // swap: switching the focused template, or toggling a color's show/hide
-    // from the actual Ghost++ modal, both need to be reflected here too.
+    // swap: switching the focused template, toggling a color's show/hide, or
+    // changing the real panel's sort/search/filter selections, all need to
+    // be reflected here too.
     //
     // Two sources feed the same resync() function:
     //   1. gppSubscribeUiRefresh() -- gpp-init.js's real external-refresh
@@ -30292,11 +30389,12 @@ applyLockState();
     //      setSwatchMaskState calls gppRequestUiRefresh() directly), so a
     //      color toggled from the real modal reaches this near-instantly.
     //   2. A 1s poll fallback -- gpp-library.js's "switch focused template"
-    //      click handlers only call their own local refreshAll() (via the
-    //      onChange callback), never gppRequestUiRefresh(), so that specific
-    //      path does NOT reach subscribers. Polling is the only reliable way
-    //      to catch it without patching Ghost++'s own template-library code.
-    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, paletteLength }
+    //      click handlers only call their own local refreshAll(), never
+    //      gppRequestUiRefresh(), and sort/filter control changes only call
+    //      performFilterSort() directly -- neither reaches subscribers.
+    //      Polling is the only reliable way to catch either without patching
+    //      more of Ghost++'s own code than the one renderState hook above.
+    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey }
 
     function resync() {
         if (!liveState) return;
@@ -30309,32 +30407,36 @@ applyLockState();
                 liveState.wrap = null;
                 liveState.grid = null;
                 liveState.templateId = null;
-                liveState.paletteLength = null;
+                liveState.orderKey = null;
             }
             return;
         }
 
-        const sameTemplate = liveState.grid && liveState.templateId === template.id && liveState.paletteLength === template.palette.length;
-        if (sameTemplate) {
+        const order = computeVisibleOrder(template);
+        const orderKey = order.join(',');
+        const sameEverything = liveState.grid && liveState.templateId === template.id && liveState.orderKey === orderKey;
+
+        if (sameEverything) {
             const core = gppCreateCore();
             const swatches = liveState.grid.children;
-            for (let index = 0; index < swatches.length; index++) {
-                const swatch = swatches[index];
+            for (let i = 0; i < swatches.length; i++) {
+                const swatch = swatches[i];
+                const index = Number(swatch.dataset.index);
                 const enabled = core.maskHas(template.mask, index);
                 if (swatch.classList.contains('gpp-swatch-off') === enabled) {
-                    setSwatchState(swatch, swatch.title, enabled);
+                    setSwatchState(swatch, swatch.dataset.hex, enabled);
                 }
             }
             return;
         }
 
-        const replacement = buildTemplatePaletteGrid(template);
+        const replacement = buildTemplatePaletteGrid(template, order);
         (liveState.wrap || liveState.savedNativeContainer).replaceWith(replacement);
         liveState.wrap = replacement;
         liveState.grid = replacement.querySelector('.gpp-palette-grid');
         liveState.templateId = template.id;
-        liveState.paletteLength = template.palette.length;
-        dbgPush('Mobile Painting: (re)built palette grid for template "' + template.id + '" (' + template.palette.length + ' colors).', { uiComponent: 'Mobile Painting' });
+        liveState.orderKey = orderKey;
+        dbgPush('Mobile Painting: (re)built palette grid for template "' + template.id + '" (' + order.length + '/' + template.palette.length + ' colors visible).', { uiComponent: 'Mobile Painting' });
     }
 
     function mount(bottomControls) {
@@ -30347,7 +30449,7 @@ applyLockState();
             return;
         }
 
-        liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, paletteLength: null };
+        liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null };
 
         // Ghost++'s template library loads from IndexedDB asynchronously (see
         // gppInitRuntime()), and may not be settings-enabled at all -- retry
