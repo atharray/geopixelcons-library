@@ -266,7 +266,18 @@
 
         if (!template) {
             if (liveState.wrap) {
-                liveState.wrap.replaceWith(liveState.savedNativeContainer);
+                liveState.wrap.remove();
+                // Restore visibility rather than re-inserting the node --
+                // it was never removed from the DOM (see showCompactGrid
+                // below), only hidden, so the native site's own periodic
+                // SetColors() (js/index153.js) keeps finding
+                // .control-container-colors and quietly re-populating it
+                // the whole time, exactly like it would with this
+                // extension off. Actually detaching it (an earlier version
+                // of this code used replaceWith()) made every one of those
+                // native sync ticks log "Color container
+                // '.control-container-colors' not found." to the console.
+                liveState.savedNativeContainer.style.display = '';
                 dbgPush('Mobile Painting: no focused Ghost++ template anymore -- restored the native color grid.', { uiComponent: 'Mobile Painting' });
                 liveState.wrap = null;
                 liveState.grid = null;
@@ -296,12 +307,27 @@
         }
 
         const replacement = buildTemplatePaletteGrid(template, order);
-        (liveState.wrap || liveState.savedNativeContainer).replaceWith(replacement);
-        liveState.wrap = replacement;
+        showCompactGrid(replacement);
         liveState.grid = replacement.querySelector('.gpp-palette-grid');
         liveState.templateId = template.id;
         liveState.orderKey = orderKey;
         dbgPush('Mobile Painting: (re)built palette grid for template "' + template.id + '" (' + order.length + '/' + template.palette.length + ' colors visible).', { uiComponent: 'Mobile Painting' });
+    }
+
+    // Swaps the compact grid in without ever detaching
+    // .control-container-colors from the document -- only hides it (see
+    // resync()'s own comment for why that distinction matters). First swap
+    // hides the native container and inserts the replacement right after it;
+    // later rebuilds (template switch, order change) just replace the
+    // previous compact grid with the new one, native container untouched.
+    function showCompactGrid(replacement) {
+        if (liveState.wrap) {
+            liveState.wrap.replaceWith(replacement);
+        } else {
+            liveState.savedNativeContainer.style.display = 'none';
+            liveState.savedNativeContainer.insertAdjacentElement('afterend', replacement);
+        }
+        liveState.wrap = replacement;
     }
 
     function mount(bottomControls) {

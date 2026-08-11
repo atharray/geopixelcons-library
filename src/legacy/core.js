@@ -1236,6 +1236,8 @@
                 { type: 'added', text: 'Mobile Painting (in development): the selected color now shows in the hex display, and colors get the same hover tooltip as the Ghost++ manager' },
                 { type: 'added', text: 'Mobile Painting (in development): the color grid now respects whatever sort/filter is set in the Ghost++ manager\'s own color panel' },
                 { type: 'added', text: 'Mobile Painting (in development): stronger hover feedback (bigger scale, soft shadow), plus a rotating dashed ring marking whichever color is currently selected' },
+                { type: 'fixed', text: 'Mobile Painting (in development): swatches were missing their base style class, so the hover/selected effects above never actually appeared -- now they do' },
+                { type: 'fixed', text: 'Mobile Painting (in development): stopped a repeating native "Color container not found" console error by hiding the native color grid instead of removing it' },
             ]
         },
         {

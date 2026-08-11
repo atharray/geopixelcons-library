@@ -1248,6 +1248,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Mobile Painting (in development): the selected color now shows in the hex display, and colors get the same hover tooltip as the Ghost++ manager' },
                 { type: 'added', text: 'Mobile Painting (in development): the color grid now respects whatever sort/filter is set in the Ghost++ manager\'s own color panel' },
                 { type: 'added', text: 'Mobile Painting (in development): stronger hover feedback (bigger scale, soft shadow), plus a rotating dashed ring marking whichever color is currently selected' },
+                { type: 'fixed', text: 'Mobile Painting (in development): swatches were missing their base style class, so the hover/selected effects above never actually appeared -- now they do' },
+                { type: 'fixed', text: 'Mobile Painting (in development): stopped a repeating native "Color container not found" console error by hiding the native color grid instead of removing it' },
             ]
         },
         {
@@ -30436,7 +30438,18 @@ applyLockState();
 
         if (!template) {
             if (liveState.wrap) {
-                liveState.wrap.replaceWith(liveState.savedNativeContainer);
+                liveState.wrap.remove();
+                // Restore visibility rather than re-inserting the node --
+                // it was never removed from the DOM (see showCompactGrid
+                // below), only hidden, so the native site's own periodic
+                // SetColors() (js/index153.js) keeps finding
+                // .control-container-colors and quietly re-populating it
+                // the whole time, exactly like it would with this
+                // extension off. Actually detaching it (an earlier version
+                // of this code used replaceWith()) made every one of those
+                // native sync ticks log "Color container
+                // '.control-container-colors' not found." to the console.
+                liveState.savedNativeContainer.style.display = '';
                 dbgPush('Mobile Painting: no focused Ghost++ template anymore -- restored the native color grid.', { uiComponent: 'Mobile Painting' });
                 liveState.wrap = null;
                 liveState.grid = null;
@@ -30466,12 +30479,27 @@ applyLockState();
         }
 
         const replacement = buildTemplatePaletteGrid(template, order);
-        (liveState.wrap || liveState.savedNativeContainer).replaceWith(replacement);
-        liveState.wrap = replacement;
+        showCompactGrid(replacement);
         liveState.grid = replacement.querySelector('.gpp-palette-grid');
         liveState.templateId = template.id;
         liveState.orderKey = orderKey;
         dbgPush('Mobile Painting: (re)built palette grid for template "' + template.id + '" (' + order.length + '/' + template.palette.length + ' colors visible).', { uiComponent: 'Mobile Painting' });
+    }
+
+    // Swaps the compact grid in without ever detaching
+    // .control-container-colors from the document -- only hides it (see
+    // resync()'s own comment for why that distinction matters). First swap
+    // hides the native container and inserts the replacement right after it;
+    // later rebuilds (template switch, order change) just replace the
+    // previous compact grid with the new one, native container untouched.
+    function showCompactGrid(replacement) {
+        if (liveState.wrap) {
+            liveState.wrap.replaceWith(replacement);
+        } else {
+            liveState.savedNativeContainer.style.display = 'none';
+            liveState.savedNativeContainer.insertAdjacentElement('afterend', replacement);
+        }
+        liveState.wrap = replacement;
     }
 
     function mount(bottomControls) {
