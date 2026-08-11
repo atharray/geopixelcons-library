@@ -1245,6 +1245,10 @@
                 { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring is now a square (was a circle) and spins 4x slower' },
                 { type: 'fixed', text: 'Mobile Painting (in development): the control row now shows above the color grid instead of below it' },
                 { type: 'removed', text: 'Mobile Painting (in development): disabled colors no longer show a diagonal slash in the mobile grid either -- the underlying show/hide state is unchanged, only the visual indicator is gone' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the control row buttons now use this extension\'s own dark-mode palette consistently -- "Disable all" had no styling of its own before and rendered as bare text; every button, the Sort dropdown, and Filter/Enable/Get hex values menus now match' },
+                { type: 'changed', text: 'Mobile Painting (in development): control row buttons now have a capped width sized to their label instead of stretching to fill the row' },
+                { type: 'changed', text: 'Mobile Painting (in development): the Enable, Filter, and Get hex values menus now open upward instead of downward, since the row sits at the bottom of the screen' },
+                { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring no longer spins -- it\'s now a stationary square dashed border' },
             ]
         },
         {

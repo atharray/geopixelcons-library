@@ -69,18 +69,19 @@
             #gpc-mobile-palette-grid .gpp-swatch.gpp-swatch-off::after {
                 content: none;
             }
-            /* "Currently selected" indicator: a slowly-rotating SQUARE ring of
+            /* "Currently selected" indicator: a STATIONARY square ring of
                alternating black/white dashes around whichever swatch was last
-               tapped. The ring shape is a mask-composite "frame" trick, not
-               border-radius: 50% + a radial-gradient mask (which draws a
-               circle) -- a repeating-conic-gradient fills the whole
-               pseudo-element, then two identical linear-gradient mask layers
-               (one clipped to content-box, one to the full border-box) are
-               XORed together, leaving only the padding-box band (the frame)
-               visible. Separate pseudo-element from .gpp-swatch-off's ::after
-               slash so a swatch could in principle carry both without
-               conflict, even though in practice soloColor() always leaves
-               the selected swatch enabled. */
+               tapped -- no rotation, per explicit product decision. The ring
+               shape is a mask-composite "frame" trick, not border-radius: 50%
+               + a radial-gradient mask (which draws a circle) -- a
+               repeating-conic-gradient fills the whole pseudo-element, then
+               two identical linear-gradient mask layers (one clipped to
+               content-box, one to the full border-box) are XORed together,
+               leaving only the padding-box band (the frame) visible.
+               Separate pseudo-element from .gpp-swatch-off's ::after slash so
+               a swatch could in principle carry both without conflict, even
+               though in practice soloColor() always leaves the selected
+               swatch enabled. */
             .gpp-swatch.gpp-swatch-selected::before {
                 content: ''; position: absolute; inset: -3px; z-index: 1;
                 pointer-events: none; box-sizing: border-box; padding: 3px;
@@ -89,10 +90,6 @@
                 -webkit-mask-composite: xor;
                 mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
                 mask-composite: exclude;
-                animation: gpc-mobile-selected-spin 16s linear infinite;
-            }
-            @keyframes gpc-mobile-selected-spin {
-                to { transform: rotate(360deg); }
             }
             /* Shared with Ghost++'s own tooltip (#gpp-palette-tooltip is a
                page-global singleton -- see gpp-palette.js's
@@ -118,59 +115,61 @@
             #gpp-palette-tooltip .gpp-palette-tooltip-stats {
                 margin-top: 2px; color: ${t2('#64748b', '#a6adc8')};
             }
-            /* Bulk-action / sort / filter / get-hex row -- reuses Ghost++'s
-               own .gpp-palette-bulk-row/-2col-row/-filter-dropdown/-button/
-               -menu/-option/-sort classes verbatim (see gpp-palette.js) so
-               these look identical to the real panel's own controls. */
-            .gpc-mobile-controls-row { width: 100%; box-sizing: border-box; margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
-            .gpp-palette-bulk-row { display: flex; gap: 6px; }
-            .gpp-palette-bulk-row button,
-            .gpp-palette-bulk-row .gpp-palette-filter-dropdown {
-                flex: 1 1 0; min-width: 0;
+            /* Bulk-action / sort / filter / get-hex row. Styled via
+               t2()/isDarkMode() like the rest of this file -- NOT native
+               Tailwind dark: classes. Two things ruled that out: (1)
+               #bottomControls' own inner wrapper ships a hardcoded,
+               unconditional bg-white with no dark: variant of its own
+               (verified against the live DOM), so the native chrome never
+               itself goes dark -- there's no native dark system here to
+               hook into. (2) isDarkMode() (see core.js's "DARK THEME
+               DETECTION (Geopixels++ compatibility)" block) is this
+               codebase's real, deliberate cross-extension signal: it reads
+               the OTHER "GeoPixels++" extension's own geo++_settings.theme
+               first, falling back to body.dark / OS prefers-color-scheme --
+               dropping it here would have broken that compatibility. Colors
+               below are reused verbatim from this file's own
+               #gpp-palette-tooltip block above, not reinvented, so this row
+               matches the rest of this extension's own dark palette instead
+               of the much darker '#11111b' this row used previously (likely
+               the actual source of the "jarring black" look, independent of
+               whether isDarkMode() was even firing correctly). */
+            .gpc-mobile-controls-row {
+                width: 100%; box-sizing: border-box; margin-bottom: 6px;
+                display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
             }
-            .gpp-palette-bulk-row button {
+            .gpc-ctrl-btn, .gpc-ctrl-select {
+                max-width: 130px; box-sizing: border-box; min-width: 0;
                 border: 2px solid ${t2('#d1d5db', '#45475a')}; border-radius: 6px;
-                background: ${t2('#ffffff', '#11111b')}; color: ${t2('#111827', '#f5f5f5')};
-                font-size: 11px; font-weight: 600; cursor: pointer; padding: 4px 6px;
+                background: ${t2('#ffffff', '#1e1e2e')}; color: ${t2('#111827', '#f5f5f5')};
+                font-size: 11px; font-weight: 600; cursor: pointer;
             }
-            .gpp-palette-bulk-row button:hover { background: ${t2('#f3f4f6', '#313244')}; }
-            .gpp-palette-2col-row {
-                display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px;
+            .gpc-ctrl-btn {
+                display: flex; align-items: center; gap: 5px; overflow: hidden;
+                padding: 5px 8px; white-space: nowrap;
             }
-            .gpp-palette-2col-row button,
-            .gpp-palette-2col-row .gpp-palette-filter-dropdown,
-            .gpp-palette-2col-row .gpp-palette-sort-wrap {
-                width: 100%; box-sizing: border-box; min-width: 0;
-            }
-            .gpp-palette-filter-dropdown { position: relative; }
-            .gpp-palette-filter-button,
-            .gpp-palette-sort-select {
-                width: 100%; box-sizing: border-box; min-height: 28px;
-                border: 2px solid ${t2('#d1d5db', '#45475a')}; border-radius: 6px;
-                background: ${t2('#ffffff', '#11111b')}; color: ${t2('#111827', '#f5f5f5')};
-                font-size: 11px; cursor: pointer;
-                text-align: center; text-align-last: center;
-            }
-            .gpp-palette-filter-button {
-                display: flex; align-items: center; justify-content: center;
-                gap: 6px; padding: 3px 8px;
-            }
-            .gpp-palette-filter-menu {
-                display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 20;
-                min-width: 204px; padding: 6px; border-radius: 8px;
+            .gpc-ctrl-btn:hover { background: ${t2('#f3f4f6', '#313244')}; }
+            .gpc-ctrl-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+            .gpc-ctrl-btn-arrow { font-size: 9px; opacity: .7; flex-shrink: 0; }
+            .gpc-ctrl-select { min-height: 28px; padding: 4px 6px; }
+            .gpc-ctrl-dropdown { position: relative; display: inline-flex; min-width: 0; }
+            /* Menus open UPWARD (bottom, not top) -- this row sits at the very
+               bottom of the screen, so a downward menu would run off-page. */
+            .gpc-ctrl-menu {
+                display: none; position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 20;
+                min-width: 190px; max-width: 230px; padding: 6px; border-radius: 8px;
                 border: 1px solid ${t2('#e5e7eb', '#313244')};
                 background: ${t2('#ffffff', '#181825')};
-                box-shadow: 0 8px 24px rgba(0,0,0,.28);
+                box-shadow: 0 -8px 24px rgba(0,0,0,.28);
             }
-            .gpp-palette-filter-menu.gpp-open { display: flex; flex-direction: column; gap: 2px; }
-            .gpp-palette-filter-option {
+            .gpc-ctrl-menu.gpc-open { display: flex; flex-direction: column; gap: 2px; }
+            .gpc-ctrl-menu-option {
                 display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 5px;
                 font-size: 12px; cursor: pointer; user-select: none;
                 color: ${t2('#111827', '#f5f5f5')};
             }
-            .gpp-palette-filter-option:hover { background: ${t2('#f3f4f6', '#313244')}; }
-            .gpp-palette-filter-option input { width: 13px; height: 13px; cursor: pointer; }
-            .gpp-palette-sort-wrap { flex: 1 1 0; min-width: 0; }
+            .gpc-ctrl-menu-option:hover { background: ${t2('#f3f4f6', '#313244')}; }
+            .gpc-ctrl-menu-option input { width: 13px; height: 13px; cursor: pointer; }
         `;
         document.head.appendChild(style);
     }
@@ -455,41 +454,49 @@
         return hexes.length;
     }
 
-    // Generic small popup-menu button, matching Ghost++'s own Filters/Get
-    // hex values dropdown pattern (gpp-palette-filter-dropdown/-button/
-    // -menu/-option -- generic despite the "filter" class names, see
-    // gpp-palette.js's own comment on that).
+    // Class names below are OUR OWN (.gpc-ctrl-*), defined in injectStyle()
+    // with t2()/isDarkMode() branching -- see the comment on
+    // .gpc-mobile-controls-row there for why this uses this codebase's own
+    // theme signal rather than native Tailwind dark: classes.
+
+    // Generic small popup-menu button. Used for both the "Enable" and
+    // "Get hex values" menus -- Ghost++'s own filter-dropdown DOM pattern
+    // (trigger button + absolutely-positioned menu) without reusing its
+    // classes, so this row's styling can't be perturbed by Ghost++'s own
+    // re-injected stylesheet.
     function buildDropdownButton(labelText, optionDefs) {
         const dropdown = document.createElement('div');
-        dropdown.className = 'gpp-palette-filter-dropdown';
+        dropdown.className = 'gpc-ctrl-dropdown';
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'gpp-palette-filter-button';
+        button.className = 'gpc-ctrl-btn';
         const buttonText = document.createElement('span');
+        buttonText.className = 'gpc-ctrl-btn-text';
         buttonText.textContent = labelText;
         const arrow = document.createElement('span');
+        arrow.className = 'gpc-ctrl-btn-arrow';
         arrow.textContent = '▾';
-        arrow.style.cssText = 'font-size:10px;opacity:.7;';
         button.append(buttonText, arrow);
 
         const menu = document.createElement('div');
-        menu.className = 'gpp-palette-filter-menu';
+        menu.className = 'gpc-ctrl-menu';
+        const closeMenu = () => menu.classList.remove('gpc-open');
         optionDefs.forEach(({ text, onClick }) => {
             const option = document.createElement('div');
-            option.className = 'gpp-palette-filter-option';
+            option.className = 'gpc-ctrl-menu-option';
             option.textContent = text;
             option.addEventListener('click', () => {
-                menu.classList.remove('gpp-open');
+                closeMenu();
                 onClick();
             });
             menu.appendChild(option);
         });
         button.addEventListener('click', (event) => {
             event.stopPropagation();
-            menu.classList.toggle('gpp-open');
+            menu.classList.toggle('gpc-open');
         });
         menu.addEventListener('click', (event) => event.stopPropagation());
-        document.addEventListener('click', () => menu.classList.remove('gpp-open'));
+        document.addEventListener('click', closeMenu);
 
         dropdown.append(button, menu);
         return { el: dropdown, setLabel: (text) => { buttonText.textContent = text; } };
@@ -503,10 +510,8 @@
     // syncProgressGatedControls) won't retroactively appear here without a
     // page reload -- disclosed limitation, not chased further.
     function buildSortControl() {
-        const wrap = document.createElement('div');
-        wrap.className = 'gpp-palette-sort-wrap';
         const select = document.createElement('select');
-        select.className = 'gpp-palette-sort-select';
+        select.className = 'gpc-ctrl-select';
         select.title = 'Sort colors -- also updates the Ghost++ manager';
 
         ensurePaletteControllerReady();
@@ -529,8 +534,7 @@
             fresh.sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
         });
 
-        wrap.appendChild(select);
-        return wrap;
+        return select;
     }
 
     // Checkboxes cloned (value + label text) from the real filter menu's
@@ -554,22 +558,24 @@
         }));
 
         const dropdown = document.createElement('div');
-        dropdown.className = 'gpp-palette-filter-dropdown';
+        dropdown.className = 'gpc-ctrl-dropdown';
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'gpp-palette-filter-button';
+        button.className = 'gpc-ctrl-btn';
         const buttonText = document.createElement('span');
+        buttonText.className = 'gpc-ctrl-btn-text';
         buttonText.textContent = 'Filter';
         const arrow = document.createElement('span');
+        arrow.className = 'gpc-ctrl-btn-arrow';
         arrow.textContent = '▾';
-        arrow.style.cssText = 'font-size:10px;opacity:.7;';
         button.append(buttonText, arrow);
 
         const menu = document.createElement('div');
-        menu.className = 'gpp-palette-filter-menu';
+        menu.className = 'gpc-ctrl-menu';
+        const closeMenu = () => menu.classList.remove('gpc-open');
         optionDefs.forEach(({ value, text, checked }) => {
             const label = document.createElement('label');
-            label.className = 'gpp-palette-filter-option';
+            label.className = 'gpc-ctrl-menu-option';
             const input = document.createElement('input');
             input.type = 'checkbox';
             input.value = value;
@@ -591,10 +597,10 @@
 
         button.addEventListener('click', (event) => {
             event.stopPropagation();
-            menu.classList.toggle('gpp-open');
+            menu.classList.toggle('gpc-open');
         });
         menu.addEventListener('click', (event) => event.stopPropagation());
-        document.addEventListener('click', () => menu.classList.remove('gpp-open'));
+        document.addEventListener('click', closeMenu);
 
         dropdown.append(button, menu);
         return dropdown;
@@ -622,18 +628,15 @@
         ]);
         const disableAllBtn = document.createElement('button');
         disableAllBtn.type = 'button';
-        disableAllBtn.textContent = 'Disable all';
+        disableAllBtn.className = 'gpc-ctrl-btn';
+        const disableAllText = document.createElement('span');
+        disableAllText.className = 'gpc-ctrl-btn-text';
+        disableAllText.textContent = 'Disable all';
+        disableAllBtn.appendChild(disableAllText);
         disableAllBtn.addEventListener('click', withTemplate(bulkDisableAll));
 
-        const bulkRow = document.createElement('div');
-        bulkRow.className = 'gpp-palette-2col-row';
-        bulkRow.append(enableDropdown.el, disableAllBtn);
-
-        const sortWrap = buildSortControl();
+        const sortControl = buildSortControl();
         const filterDropdown = buildFilterControl();
-        const controlsRow = document.createElement('div');
-        controlsRow.className = 'gpp-palette-2col-row';
-        controlsRow.append(sortWrap, filterDropdown);
 
         const hexDropdown = buildDropdownButton('Get hex values', GPC_HEX_VALUE_SCOPES.map(({ value, text }) => ({
             text,
@@ -644,7 +647,7 @@
             }),
         })));
 
-        row.append(bulkRow, controlsRow, hexDropdown.el);
+        row.append(enableDropdown.el, disableAllBtn, sortControl, filterDropdown, hexDropdown.el);
         return row;
     }
 
