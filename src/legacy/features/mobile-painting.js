@@ -47,25 +47,27 @@
                 box-shadow: 0 3px 8px ${t2('rgba(0,0,0,.35)', 'rgba(0,0,0,.6)')};
                 z-index: 2;
             }
-            /* Deliberately no grayscale/opacity dimming here, unlike Ghost++'s
-               own grid -- there, that's gated behind gppSettings.
-               grayDisabledSwatches (View Settings > Global > "Gray unselected
-               color boxes"), applied via a .gpp-palette-gray-disabled
-               ancestor class Ghost++ toggles on ITS OWN grid only.
-               mobile-painting.js never reads or toggles that class, so
-               copying the plain (ungated) filter rule here made this grid
-               permanently dimmed regardless of the setting -- the checkbox
-               had no real container to act on. Per explicit product
-               decision this grid should never dim off colors at all, so the
-               rule is dropped rather than wired up to the setting; the
-               diagonal slash below (which Ghost++ never gates either) is
-               the only off-state indicator here. */
-            .gpp-swatch.gpp-swatch-off::after {
-                content: ''; position: absolute; inset: 0; pointer-events: none;
-                border-radius: inherit;
-                background: linear-gradient(to top right,
-                    transparent calc(50% - 1px), rgba(50,50,50,.8) calc(50% - 1px),
-                    rgba(50,50,50,.8) calc(50% + 1px), transparent calc(50% + 1px));
+            /* Per explicit product decision, disabled colors in THIS grid get
+               NO visual indicator at all -- no grayscale (see the removed-
+               filter history in the changelog), no diagonal slash either.
+               The underlying mask (template.mask via core.maskSet) is
+               unchanged -- other colors are still genuinely disabled in the
+               Ghost++ overlay, exactly as soloColor() always did; only the
+               visual off-state styling is suppressed here. Ghost++'s own
+               grid keeps its usual grayscale + slash treatment, untouched.
+               #gpc-mobile-palette-grid-scoped override below, not just an
+               absence of a rule here -- Ghost++'s own #gpp-palette-style
+               tag (gpp-palette.js's gppInjectPaletteStyle(), which our own
+               ensurePaletteControllerReady() calls can trigger) defines an
+               UNGATED .gpp-swatch.gpp-swatch-off::after slash rule that
+               would otherwise apply to every matching element on the page
+               regardless of which grid it's actually in or which stylesheet
+               "owns" it -- CSS selectors aren't scoped by which script wrote
+               them. The higher-specificity ID-scoped override is what
+               actually guarantees it never shows here, independent of
+               style-tag injection order. */
+            #gpc-mobile-palette-grid .gpp-swatch.gpp-swatch-off::after {
+                content: none;
             }
             /* "Currently selected" indicator: a slowly-rotating SQUARE ring of
                alternating black/white dashes around whichever swatch was last
