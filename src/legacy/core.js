@@ -1256,6 +1256,10 @@
                 { type: 'fixed', text: 'Mobile Painting (in development): tapping a color in the grid now actually changes the game\'s active paint color -- it was silently failing to reach the real page function in some browsers, even though the grid\'s own solo-select highlighting still updated correctly' },
                 { type: 'added', text: 'Mobile Painting (in development): picking Enable All/Owned/Filtered now switches the color grid to multi-select mode -- tapping a color toggles just that one color instead of soloing it, and the selected-color ring stops showing since there\'s no longer a single "the" selected color; picking Selected switches back' },
                 { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring is now a plain black square border with a white glow, replacing the dashed frame' },
+                { type: 'added', text: 'Ghost++ / Mobile Painting: using Enable, Sort, or Filter (in either the real Ghost++ manager or its mobile mirror, excluding Disable) now first tries to run Scan Progress, so progress numbers stay fresh without a separate manual click' },
+                { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring now sits above every other element under the bottom paint bar, and its corners match the swatch\'s own rounding instead of being square' },
+                { type: 'fixed', text: 'Mobile Painting (in development): toggling the Paint Menu Controls collapse button no longer shifts the color-grid controls row above the native hex display / sort / brush row' },
+                { type: 'added', text: 'Mobile Painting (in development): a small preview of the focused template\'s ghost image now sits to the right of the color grid, sized to the grid\'s own height without distorting the image' },
             ]
         },
         {

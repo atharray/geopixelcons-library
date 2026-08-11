@@ -1268,6 +1268,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Mobile Painting (in development): tapping a color in the grid now actually changes the game\'s active paint color -- it was silently failing to reach the real page function in some browsers, even though the grid\'s own solo-select highlighting still updated correctly' },
                 { type: 'added', text: 'Mobile Painting (in development): picking Enable All/Owned/Filtered now switches the color grid to multi-select mode -- tapping a color toggles just that one color instead of soloing it, and the selected-color ring stops showing since there\'s no longer a single "the" selected color; picking Selected switches back' },
                 { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring is now a plain black square border with a white glow, replacing the dashed frame' },
+                { type: 'added', text: 'Ghost++ / Mobile Painting: using Enable, Sort, or Filter (in either the real Ghost++ manager or its mobile mirror, excluding Disable) now first tries to run Scan Progress, so progress numbers stay fresh without a separate manual click' },
+                { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring now sits above every other element under the bottom paint bar, and its corners match the swatch\'s own rounding instead of being square' },
+                { type: 'fixed', text: 'Mobile Painting (in development): toggling the Paint Menu Controls collapse button no longer shifts the color-grid controls row above the native hex display / sort / brush row' },
+                { type: 'added', text: 'Mobile Painting (in development): a small preview of the focused template\'s ghost image now sits to the right of the color grid, sized to the grid\'s own height without distorting the image' },
             ]
         },
         {
@@ -8870,6 +8874,24 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         }
     }
 
+    // Per explicit product decision: any use of Enable/Sort/Filter (both
+    // here in gpp-palette.js's own controls, and mobile-painting.js's
+    // mirror of them) first tries to run a scan, so progress numbers stay
+    // fresh without a separate manual "Scan progress" click. Finds and
+    // clicks the REAL button (rather than calling gppScanTemplate directly)
+    // so its own disabled-state guard (no template focused, template not
+    // yet placed on the map, a scan already running) is respected exactly
+    // as it would be for a manual click, with no separate copy of that
+    // guard logic to keep in sync. No-ops quietly if the progress section
+    // isn't in the DOM yet, or its button isn't currently clickable.
+    function gppTryAutoScan() {
+        const container = document.getElementById('gpp-progress-section');
+        if (!container) return;
+        const scanBtn = Array.from(container.querySelectorAll('button'))
+            .find(btn => /^(Scan progress|Scanning…)$/.test(btn.textContent.trim()));
+        if (scanBtn && !scanBtn.disabled) scanBtn.click();
+    }
+
     // ── gpp-init.js render-function contract ───────────────────────────
     // container id: 'gpp-progress-section'. `template` may be null.
     function gppRenderProgressBar(container, template, onChange) {
@@ -10012,6 +10034,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             input.type = 'checkbox';
             input.value = value;
             input.addEventListener('change', () => {
+                gppTryAutoScan();
                 updateFilterButtonLabel();
                 performFilterSort();
             });
@@ -10033,7 +10056,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         countMaxInput.className = 'gpp-palette-count-input';
         const countDash = document.createElement('span');
         countDash.textContent = '–'; countDash.style.opacity = '.6';
-        [countMinInput, countMaxInput].forEach(input => input.addEventListener('input', () => performFilterSort()));
+        [countMinInput, countMaxInput].forEach(input => input.addEventListener('input', () => { gppTryAutoScan(); performFilterSort(); }));
         countSubRow.append(countMinInput, countDash, countMaxInput);
         filterMenu.appendChild(countSubRow);
 
@@ -10074,7 +10097,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             opt.textContent = text;
             sortSelect.appendChild(opt);
         });
-        sortSelect.addEventListener('change', () => performFilterSort());
+        sortSelect.addEventListener('change', () => { gppTryAutoScan(); performFilterSort(); });
         sortSelect.addEventListener('wheel', event => {
             event.preventDefault();
             const dir = event.deltaY > 0 ? 1 : -1;
@@ -10083,6 +10106,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             next = Math.min(Math.max(next, 0), sortSelect.options.length - 1);
             if (next !== sortSelect.selectedIndex) {
                 sortSelect.selectedIndex = next;
+                gppTryAutoScan();
                 performFilterSort();
             }
         }, { passive: false });
@@ -10264,6 +10288,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         allBtn.addEventListener('click', () => {
             const template = controller.template;
             if (!template) return;
+            gppTryAutoScan();
             template.mask = core.makeFullMask(template.palette.length, template.counts);
             persistAndNotify(template);
         });
@@ -10273,9 +10298,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             template.mask = new Uint32Array(Math.ceil(template.palette.length / 32));
             persistAndNotify(template);
         });
+        // gppTryAutoScan() covers both activeBtn and ownedBtn below, per
+        // explicit product decision this only applies to Enable actions,
+        // not Disable (noneBtn above is deliberately exempt).
         function applyGamePaletteMask(activeOnly) {
             const template = controller.template;
             if (!template) return;
+            gppTryAutoScan();
             const rows = gppReadGamePalette();
             const allowedHex = new Set();
             rows.forEach(row => {
@@ -10302,6 +10331,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         enableFilteredBtn.addEventListener('click', () => {
             const template = controller.template;
             if (!template) return;
+            gppTryAutoScan();
             // renderState.visible alone is NOT enough here: typing a search
             // term without ALSO checking "Show search results only"
             // (hideUnmatched) only sorts/glows matches by default — it does
@@ -30255,7 +30285,11 @@ applyLockState();
         const style = document.createElement('style');
         style.id = MP_STYLE_ID;
         style.textContent = `
-            .gpc-mobile-palette-wrap { width: 100%; box-sizing: border-box; }
+            /* Row layout: the swatch grid takes the available width, and a
+               small live preview of the focused template's ghost image
+               (see .gpc-mobile-preview-frame below) sits to its right,
+               sized to the grid's own height. */
+            .gpc-mobile-palette-wrap { width: 100%; box-sizing: border-box; display: flex; flex-direction: row; align-items: stretch; gap: 6px; }
             .gpp-palette-grid {
                 display: grid; grid-template-columns: repeat(auto-fill, minmax(26px, 1fr));
                 grid-auto-rows: minmax(26px, 1fr);
@@ -30264,8 +30298,39 @@ applyLockState();
                    Ghost++'s own minified mode uses for the identical shape
                    (see gpp-ui-shell.js's .gpp-minified .gpp-palette-grid). */
                 gap: 3px; max-height: 60px; overflow-y: auto; padding: 2px;
-                width: 100%; box-sizing: border-box;
+                flex: 1 1 auto; min-width: 0; box-sizing: border-box;
                 scrollbar-gutter: stable;
+            }
+            /* Small live preview of the focused template's own ghost image
+               (same source gpp-lib-current-canvas-wrap uses in the real
+               Ghost++ Library panel -- gppLibraryRenderFullCanvas -- not a
+               separate lower-res thumbnail, so nothing about the image
+               itself is downsampled/compressed). The frame's height matches
+               the grid's own (60px); the canvas gets ONLY 'height' set (not
+               'width', and deliberately no 'max-width' either -- that was
+               tried and measured to distort the image: clamping the
+               auto-computed width while height stayed fixed squashed a
+               200x100 test canvas down to 88x58 instead of the correct
+               116x58, exactly the compression this is meant to avoid), so
+               the browser derives width purely from the canvas's own real
+               aspect ratio. No cap on the frame's own width either, for the
+               same reason -- for any reasonably square-ish or moderately
+               wide template this stays small on its own since height alone
+               is already capped to the grid's height; an unusually
+               wide/panoramic template will make the frame wider rather than
+               distorting its image, which is the explicit priority order
+               ("don't compress... but constrain to match the height").
+               image-rendering: pixelated keeps pixel art crisp at a small
+               display size instead of blurring it. */
+            .gpc-mobile-preview-frame {
+                flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+                height: 60px; overflow: hidden; box-sizing: border-box;
+                border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
+                border-radius: 4px; background: ${t2('rgba(0,0,0,.03)', 'rgba(255,255,255,.05)')};
+            }
+            .gpc-mobile-preview-frame canvas {
+                height: 100%; width: auto; display: block;
+                image-rendering: pixelated;
             }
             .gpp-swatch {
                 position: relative; aspect-ratio: 1 / 1; min-height: 15px; border-radius: 4px;
@@ -30310,10 +30375,18 @@ applyLockState();
                .gpp-swatch-off's ::after slash so a swatch could in
                principle carry both without conflict, even though in
                practice soloColor() always leaves the selected swatch
-               enabled. */
+               enabled. border-radius is the swatch's own 4px plus the -3px
+               inset, so the ring's corners stay concentric with the
+               swatch's own rounded corners instead of going square-cornered
+               around a rounded swatch. z-index is well above anything else
+               that can appear under #bottomControls -- the control row's
+               own dropdown menus (1000) and the Paint Menu Controls
+               feature's topBar (hide-paint-menu.js, 20) included -- so the
+               ring for whichever swatch is selected always stays visible
+               above them rather than being able to render underneath. */
             .gpp-swatch.gpp-swatch-selected::before {
-                content: ''; position: absolute; inset: -3px; z-index: 1;
-                pointer-events: none; box-sizing: border-box;
+                content: ''; position: absolute; inset: -3px; z-index: 2000;
+                pointer-events: none; box-sizing: border-box; border-radius: 7px;
                 border: 2px solid #000;
                 box-shadow: 0 0 0 1px rgba(255,255,255,.9), 0 0 6px 2px rgba(255,255,255,.9);
             }
@@ -30480,6 +30553,22 @@ applyLockState();
         return order;
     }
 
+    // Cache for the ghost-image preview canvas (see buildTemplatePaletteGrid
+    // below) -- gppLibraryRenderFullCanvas() re-walks every pixel of the
+    // template's own indices array, which is wasted work if repeated on
+    // every resync() tick (color toggles, sort/filter changes -- none of
+    // which touch the image itself). Only regenerated when the focused
+    // template's identity actually changes; the same canvas node is reused
+    // (and just re-appended, a cheap DOM op) otherwise.
+    let previewCanvasTemplateId = null;
+    let previewCanvasEl = null;
+    function getTemplatePreviewCanvas(template) {
+        if (previewCanvasTemplateId === template.id && previewCanvasEl) return previewCanvasEl;
+        previewCanvasEl = (typeof gppLibraryRenderFullCanvas === 'function') ? gppLibraryRenderFullCanvas(template) : null;
+        previewCanvasTemplateId = template.id;
+        return previewCanvasEl;
+    }
+
     // Builds the compact grid for `order` (a list of palette indices, already
     // filtered/sorted to match whatever the real Ghost++ panel currently
     // shows -- see computeVisibleOrder). Clicking a swatch is NOT a plain
@@ -30601,6 +30690,19 @@ applyLockState();
         });
 
         wrap.appendChild(grid);
+
+        // Small live preview of the focused template's own ghost image, to
+        // the grid's right -- see the .gpc-mobile-preview-frame CSS comment
+        // above for the sizing/fidelity reasoning.
+        const previewCanvas = getTemplatePreviewCanvas(template);
+        if (previewCanvas) {
+            const previewFrame = document.createElement('div');
+            previewFrame.className = 'gpc-mobile-preview-frame';
+            previewFrame.title = template.name || 'Template preview';
+            previewFrame.appendChild(previewCanvas);
+            wrap.appendChild(previewFrame);
+        }
+
         return wrap;
     }
 
@@ -30635,6 +30737,24 @@ applyLockState();
         if (typeof gppEnsurePaletteSectionReady === 'function') gppEnsurePaletteSectionReady();
     }
 
+    // Mirrors Ghost++'s own product decision (gpp-scan.js's gppTryAutoScan,
+    // wired into gpp-palette.js's own Enable/Sort/Filter controls): any use
+    // of this row's Enable/Sort/Filter options first tries to run a scan
+    // too, so progress numbers stay fresh without a separate manual click.
+    // ensurePaletteControllerReady() first, since gppTryAutoScan() needs
+    // #gpp-progress-section (and the scan button inside it) to already
+    // exist, which it might not if the real Ghost++ modal was never opened
+    // this session; gppRequestUiRefresh() then renders that section's
+    // current content (including the button) for whichever template is
+    // actually focused right now. No-ops quietly (via gppTryAutoScan's own
+    // guards) if Ghost++ isn't enabled, nothing is focused, or the template
+    // isn't placed on the map yet.
+    function tryAutoScanFirst() {
+        ensurePaletteControllerReady();
+        if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
+        if (typeof gppTryAutoScan === 'function') gppTryAutoScan();
+    }
+
     function getRealPaletteFormControls() {
         const container = document.getElementById('gpp-palette-section');
         if (!container) return null;
@@ -30665,6 +30785,7 @@ applyLockState();
     // product decision: swapping to Selected while a color is already
     // selected should immediately re-solo it.
     function bulkEnableAll(template, core) {
+        tryAutoScanFirst();
         if (liveState) liveState.soloMode = false;
         template.mask = core.makeFullMask(template.palette.length, template.counts);
         notifyMaskChanged(template);
@@ -30676,6 +30797,7 @@ applyLockState();
     }
 
     function bulkEnableOwned(template, core) {
+        tryAutoScanFirst();
         if (liveState) liveState.soloMode = false;
         const rows = (typeof gppReadGamePalette === 'function') ? gppReadGamePalette() : [];
         const allowedHex = new Set();
@@ -30694,8 +30816,8 @@ applyLockState();
     // the real button -- see gpp-palette.js's own comment on this exact
     // behavior for why.
     function bulkEnableFiltered(template, core) {
+        tryAutoScanFirst();
         if (liveState) liveState.soloMode = false;
-        ensurePaletteControllerReady();
         const realState = getRealPaletteRenderState(template.id);
         const real = getRealPaletteFormControls();
         const hasActiveSearch = !!(real && real.searchInput && real.searchInput.value.trim().length > 0);
@@ -30721,6 +30843,7 @@ applyLockState();
     // nothing is currently selected, or if that hex isn't in this
     // template's palette (e.g. focused template changed since it was set).
     function bulkEnableSelected(template, core) {
+        tryAutoScanFirst();
         if (liveState) liveState.soloMode = true;
         const hex = liveState && liveState.selectedHex;
         if (!hex) {
@@ -30852,7 +30975,7 @@ applyLockState();
         const optionDefs = (real && real.sortSelect ? Array.from(real.sortSelect.options) : []).map((realOpt) => ({
             text: realOpt.textContent,
             onClick: () => {
-                ensurePaletteControllerReady();
+                tryAutoScanFirst();
                 const fresh = getRealPaletteFormControls();
                 if (!fresh || !fresh.sortSelect) return;
                 fresh.sortSelect.value = realOpt.value;
@@ -30911,7 +31034,7 @@ applyLockState();
             menu.appendChild(label);
 
             input.addEventListener('change', () => {
-                ensurePaletteControllerReady();
+                tryAutoScanFirst();
                 const fresh = getRealPaletteFormControls();
                 const target = fresh && fresh.filterInputs.find((el) => el.value === value);
                 if (!target) return;
@@ -31092,7 +31215,41 @@ applyLockState();
         // after the top bar). nativeContainer stays a stable anchor point
         // for this regardless of whether it or our compact grid is what's
         // actually showing at any given moment (see showCompactGrid).
-        nativeContainer.insertAdjacentElement('beforebegin', buildControlsRow());
+        const controlsRowEl = buildControlsRow();
+        nativeContainer.insertAdjacentElement('beforebegin', controlsRowEl);
+
+        // The Paint Menu Controls feature's own collapse toggle
+        // (hide-paint-menu.js's #gpc-hide-paint-toggle / #gpc-paint-flip-pos)
+        // reorders the NATIVE top bar (.w-full.flex, with hexDisplay/
+        // sortBtn/brush buttons/energy) and this hidden .control-container-
+        // colors relative to EACH OTHER on every press via plain
+        // insertBefore() calls, regardless of whether their relative order
+        // actually needs to change -- see its own updateState(). Those
+        // calls don't know about controlsRowEl sitting between them, so the
+        // net effect drags the native top bar to end up AFTER controlsRowEl
+        // instead of before it: an unrelated feature's DOM write stepping
+        // on this one's. Rather than coupling the two features together,
+        // this MutationObserver just re-asserts controlsRowEl's own
+        // position (immediately before nativeContainer, its stable anchor)
+        // whenever the shared parent's children change for ANY reason --
+        // self-heals from this specific interaction, and any similar one,
+        // without needing to know what moved what. Debounced onto a
+        // microtask (same pattern as gpp-init.js's own gppRefreshTheme) so
+        // a burst of synchronous mutations only triggers one recheck.
+        const swapParent = nativeContainer.parentElement;
+        if (swapParent) {
+            let reorderCheckQueued = false;
+            new MutationObserver(() => {
+                if (reorderCheckQueued) return;
+                reorderCheckQueued = true;
+                Promise.resolve().then(() => {
+                    reorderCheckQueued = false;
+                    if (controlsRowEl.nextElementSibling !== nativeContainer) {
+                        nativeContainer.insertAdjacentElement('beforebegin', controlsRowEl);
+                    }
+                });
+            }).observe(swapParent, { childList: true });
+        }
 
         // Ghost++'s template library loads from IndexedDB asynchronously (see
         // gppInitRuntime()), and may not be settings-enabled at all -- retry

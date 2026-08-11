@@ -746,6 +746,24 @@
         }
     }
 
+    // Per explicit product decision: any use of Enable/Sort/Filter (both
+    // here in gpp-palette.js's own controls, and mobile-painting.js's
+    // mirror of them) first tries to run a scan, so progress numbers stay
+    // fresh without a separate manual "Scan progress" click. Finds and
+    // clicks the REAL button (rather than calling gppScanTemplate directly)
+    // so its own disabled-state guard (no template focused, template not
+    // yet placed on the map, a scan already running) is respected exactly
+    // as it would be for a manual click, with no separate copy of that
+    // guard logic to keep in sync. No-ops quietly if the progress section
+    // isn't in the DOM yet, or its button isn't currently clickable.
+    function gppTryAutoScan() {
+        const container = document.getElementById('gpp-progress-section');
+        if (!container) return;
+        const scanBtn = Array.from(container.querySelectorAll('button'))
+            .find(btn => /^(Scan progress|Scanning…)$/.test(btn.textContent.trim()));
+        if (scanBtn && !scanBtn.disabled) scanBtn.click();
+    }
+
     // ── gpp-init.js render-function contract ───────────────────────────
     // container id: 'gpp-progress-section'. `template` may be null.
     function gppRenderProgressBar(container, template, onChange) {
