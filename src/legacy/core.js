@@ -1249,6 +1249,10 @@
                 { type: 'changed', text: 'Mobile Painting (in development): control row buttons now have a capped width sized to their label instead of stretching to fill the row' },
                 { type: 'changed', text: 'Mobile Painting (in development): the Enable, Filter, and Get hex values menus now open upward instead of downward, since the row sits at the bottom of the screen' },
                 { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring no longer spins -- it\'s now a stationary square dashed border' },
+                { type: 'changed', text: 'Mobile Painting (in development): Sort is now a plain "Sort" button with a dropdown menu instead of a native select that displayed whatever option was last chosen' },
+                { type: 'fixed', text: 'Mobile Painting (in development): control row buttons now stay white with black text by default, only switching to the dark palette when the GeoPixels++ extension\'s own theme selector is explicitly set to a dark theme -- previously also reacted to the OS/browser dark preference even though the surrounding native controls never actually go dark' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the Enable/Filter/Get hex values dropdown menus no longer render underneath the Paint Menu Controls collapse/drag button row' },
+                { type: 'added', text: 'Mobile Painting (in development): the Enable dropdown has a new "Selected" option that re-solos whichever color is currently selected -- useful for getting back to solo mode after an All/Owned/Filtered bulk-enable, which now correctly clears the selected-color ring since multiple colors are enabled at once' },
             ]
         },
         {

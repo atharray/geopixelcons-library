@@ -11,6 +11,27 @@
 
     const MP_STYLE_ID = 'gpc-mobile-painting-style';
 
+    // Narrower than core.js's shared isDarkMode(): only the OTHER
+    // "GeoPixels++" extension's own explicit theme selector counts here, not
+    // body.dark or the OS-level prefers-color-scheme fallback isDarkMode()
+    // also honors. See the .gpc-mobile-controls-row comment in injectStyle()
+    // below for why -- #bottomControls' own wrapper never itself goes dark,
+    // so an OS/body signal alone would make these buttons black against a
+    // background that stays unconditionally white regardless.
+    function isControlsRowDark() {
+        try {
+            const raw = localStorage.getItem('geo++_settings');
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed.theme && parsed.theme !== 'system') {
+                    return parsed.theme === 'simple_black';
+                }
+            }
+        } catch (e) {}
+        return false;
+    }
+    function tc(light, dark) { return isControlsRowDark() ? dark : light; }
+
     // Reuses Ghost++'s own .gpp-palette-grid / .gpp-swatch / tooltip class
     // names and rules (see gpp-palette.js) so this looks and feels identical
     // to the real Ghost++ palette. Trimmed to just the grid + on/off swatch
@@ -115,60 +136,57 @@
             #gpp-palette-tooltip .gpp-palette-tooltip-stats {
                 margin-top: 2px; color: ${t2('#64748b', '#a6adc8')};
             }
-            /* Bulk-action / sort / filter / get-hex row. Styled via
-               t2()/isDarkMode() like the rest of this file -- NOT native
-               Tailwind dark: classes. Two things ruled that out: (1)
+            /* Bulk-action / sort / filter / get-hex row. Styled via tc(),
+               a narrower variant of t2()/isDarkMode() defined below: this
+               row should only go dark when the OTHER "GeoPixels++"
+               extension's OWN theme selector is explicitly set to a dark
+               theme -- unlike isDarkMode() (core.js's "DARK THEME
+               DETECTION (Geopixels++ compatibility)"), it does NOT fall
+               back to body.dark or the OS-level prefers-color-scheme, since
                #bottomControls' own inner wrapper ships a hardcoded,
                unconditional bg-white with no dark: variant of its own
-               (verified against the live DOM), so the native chrome never
-               itself goes dark -- there's no native dark system here to
-               hook into. (2) isDarkMode() (see core.js's "DARK THEME
-               DETECTION (Geopixels++ compatibility)" block) is this
-               codebase's real, deliberate cross-extension signal: it reads
-               the OTHER "GeoPixels++" extension's own geo++_settings.theme
-               first, falling back to body.dark / OS prefers-color-scheme --
-               dropping it here would have broken that compatibility. Colors
-               below are reused verbatim from this file's own
-               #gpp-palette-tooltip block above, not reinvented, so this row
-               matches the rest of this extension's own dark palette instead
-               of the much darker '#11111b' this row used previously (likely
-               the actual source of the "jarring black" look, independent of
-               whether isDarkMode() was even firing correctly). */
+               (verified against the live DOM) -- an OS/body dark signal
+               alone would make these buttons black against a background
+               that stays unconditionally white regardless. Colors below are
+               reused verbatim from this file's own #gpp-palette-tooltip
+               block above, not reinvented. */
             .gpc-mobile-controls-row {
                 width: 100%; box-sizing: border-box; margin-bottom: 6px;
                 display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
             }
-            .gpc-ctrl-btn, .gpc-ctrl-select {
-                max-width: 130px; box-sizing: border-box; min-width: 0;
-                border: 2px solid ${t2('#d1d5db', '#45475a')}; border-radius: 6px;
-                background: ${t2('#ffffff', '#1e1e2e')}; color: ${t2('#111827', '#f5f5f5')};
-                font-size: 11px; font-weight: 600; cursor: pointer;
-            }
             .gpc-ctrl-btn {
+                max-width: 130px; box-sizing: border-box; min-width: 0;
+                border: 2px solid ${tc('#d1d5db', '#45475a')}; border-radius: 6px;
+                background: ${tc('#ffffff', '#1e1e2e')}; color: ${tc('#111827', '#f5f5f5')};
+                font-size: 11px; font-weight: 600; cursor: pointer;
                 display: flex; align-items: center; gap: 5px; overflow: hidden;
                 padding: 5px 8px; white-space: nowrap;
             }
-            .gpc-ctrl-btn:hover { background: ${t2('#f3f4f6', '#313244')}; }
+            .gpc-ctrl-btn:hover { background: ${tc('#f3f4f6', '#313244')}; }
             .gpc-ctrl-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
             .gpc-ctrl-btn-arrow { font-size: 9px; opacity: .7; flex-shrink: 0; }
-            .gpc-ctrl-select { min-height: 28px; padding: 4px 6px; }
             .gpc-ctrl-dropdown { position: relative; display: inline-flex; min-width: 0; }
             /* Menus open UPWARD (bottom, not top) -- this row sits at the very
-               bottom of the screen, so a downward menu would run off-page. */
+               bottom of the screen, so a downward menu would run off-page.
+               z-index is well above the Paint Menu Controls feature's topBar
+               (hide-paint-menu.js, inline z-index: 20, appended as a later
+               DOM sibling of this row inside the same #bottomControls) --
+               with equal z-index the later DOM element wins ties, which was
+               burying this menu under that toggle's button row. */
             .gpc-ctrl-menu {
-                display: none; position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 20;
+                display: none; position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 1000;
                 min-width: 190px; max-width: 230px; padding: 6px; border-radius: 8px;
-                border: 1px solid ${t2('#e5e7eb', '#313244')};
-                background: ${t2('#ffffff', '#181825')};
+                border: 1px solid ${tc('#e5e7eb', '#313244')};
+                background: ${tc('#ffffff', '#181825')};
                 box-shadow: 0 -8px 24px rgba(0,0,0,.28);
             }
             .gpc-ctrl-menu.gpc-open { display: flex; flex-direction: column; gap: 2px; }
             .gpc-ctrl-menu-option {
                 display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 5px;
                 font-size: 12px; cursor: pointer; user-select: none;
-                color: ${t2('#111827', '#f5f5f5')};
+                color: ${tc('#111827', '#f5f5f5')};
             }
-            .gpc-ctrl-menu-option:hover { background: ${t2('#f3f4f6', '#313244')}; }
+            .gpc-ctrl-menu-option:hover { background: ${tc('#f3f4f6', '#313244')}; }
             .gpc-ctrl-menu-option input { width: 13px; height: 13px; cursor: pointer; }
         `;
         document.head.appendChild(style);
@@ -368,7 +386,16 @@
         if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
     }
 
+    // All/Owned/Filtered enable multiple colors at once, so there's no
+    // longer a single "the" active color afterward -- clear the solo-select
+    // ring (liveState.selectedHex) rather than leaving it pointing at
+    // whichever color happened to be soloed before. Each color's own
+    // enabled/disabled state (the mask) is otherwise untouched by this --
+    // only the ring indicator goes away. bulkEnableSelected (below) is the
+    // one enable action that's exempt: it's the solo-select operation
+    // itself, so it sets liveState.selectedHex rather than clearing it.
     function bulkEnableAll(template, core) {
+        if (liveState) liveState.selectedHex = null;
         template.mask = core.makeFullMask(template.palette.length, template.counts);
         notifyMaskChanged(template);
     }
@@ -379,6 +406,7 @@
     }
 
     function bulkEnableOwned(template, core) {
+        if (liveState) liveState.selectedHex = null;
         const rows = (typeof gppReadGamePalette === 'function') ? gppReadGamePalette() : [];
         const allowedHex = new Set();
         rows.forEach((row) => { if (row && row.hex) allowedHex.add(String(row.hex).toUpperCase()); });
@@ -396,6 +424,7 @@
     // the real button -- see gpp-palette.js's own comment on this exact
     // behavior for why.
     function bulkEnableFiltered(template, core) {
+        if (liveState) liveState.selectedHex = null;
         ensurePaletteControllerReady();
         const realState = getRealPaletteRenderState(template.id);
         const real = getRealPaletteFormControls();
@@ -408,6 +437,35 @@
             core.maskSet(mask, index, true);
         });
         template.mask = mask;
+        notifyMaskChanged(template);
+    }
+
+    // "Selected" under the Enable dropdown: replays soloColor's exact
+    // effect (disable every other color, enable just this one) for
+    // whichever color is currently marked selected (liveState.selectedHex),
+    // rather than requiring a swatch tap. Useful for restoring solo mode
+    // after an All/Owned/Filtered bulk-enable cleared it. No-ops if nothing
+    // is currently selected, or if that hex isn't in this template's
+    // palette (e.g. focused template changed since it was set).
+    function bulkEnableSelected(template, core) {
+        const hex = liveState && liveState.selectedHex;
+        if (!hex) {
+            dbgPush('Mobile Painting: "Selected" enable action ignored -- no color is currently selected.', { uiComponent: 'Mobile Painting' });
+            return;
+        }
+        let targetIndex = -1;
+        for (let index = 0; index < template.palette.length; index++) {
+            if (core.packedToHex(template.palette[index]) === hex) { targetIndex = index; break; }
+        }
+        if (targetIndex === -1) {
+            dbgPush('Mobile Painting: "Selected" enable action ignored -- selected color is not in this template\'s palette.', { uiComponent: 'Mobile Painting' });
+            return;
+        }
+        for (let index = 0; index < template.palette.length; index++) {
+            core.maskSet(template.mask, index, index === targetIndex);
+        }
+        if (typeof window.changeColor === 'function') window.changeColor(hex);
+        updateHexDisplay(hex);
         notifyMaskChanged(template);
     }
 
@@ -505,36 +563,28 @@
     // Our own <select>, but its options are cloned from the real sort
     // select's current options (values + text) rather than a hardcoded
     // second copy of GPP_PALETTE_SORT_OPTIONS -- one less place for the two
-    // lists to drift apart. Only synced once, at build time; a sort option
-    // that only unlocks after a scan runs (see gpp-palette.js's
-    // syncProgressGatedControls) won't retroactively appear here without a
-    // page reload -- disclosed limitation, not chased further.
+    // lists to drift apart. A dropdown button (same as Enable/Filter/Get hex
+    // values) rather than a native <select> -- a <select> always displays
+    // whichever option is currently chosen, so it can't stay labeled "Sort";
+    // this is an action menu, not a persistent state display. Only synced
+    // once, at build time; a sort option that only unlocks after a scan runs
+    // (see gpp-palette.js's syncProgressGatedControls) won't retroactively
+    // appear here without a page reload -- disclosed limitation, not chased
+    // further.
     function buildSortControl() {
-        const select = document.createElement('select');
-        select.className = 'gpc-ctrl-select';
-        select.title = 'Sort colors -- also updates the Ghost++ manager';
-
         ensurePaletteControllerReady();
         const real = getRealPaletteFormControls();
-        if (real && real.sortSelect) {
-            Array.from(real.sortSelect.options).forEach((realOpt) => {
-                const opt = document.createElement('option');
-                opt.value = realOpt.value;
-                opt.textContent = realOpt.textContent;
-                select.appendChild(opt);
-            });
-            select.value = real.sortSelect.value;
-        }
-
-        select.addEventListener('change', () => {
-            ensurePaletteControllerReady();
-            const fresh = getRealPaletteFormControls();
-            if (!fresh || !fresh.sortSelect) return;
-            fresh.sortSelect.value = select.value;
-            fresh.sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-
-        return select;
+        const optionDefs = (real && real.sortSelect ? Array.from(real.sortSelect.options) : []).map((realOpt) => ({
+            text: realOpt.textContent,
+            onClick: () => {
+                ensurePaletteControllerReady();
+                const fresh = getRealPaletteFormControls();
+                if (!fresh || !fresh.sortSelect) return;
+                fresh.sortSelect.value = realOpt.value;
+                fresh.sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            },
+        }));
+        return buildDropdownButton('Sort', optionDefs).el;
     }
 
     // Checkboxes cloned (value + label text) from the real filter menu's
@@ -625,6 +675,7 @@
             { text: 'All', onClick: withTemplate(bulkEnableAll) },
             { text: 'Owned', onClick: withTemplate(bulkEnableOwned) },
             { text: 'Filtered', onClick: withTemplate(bulkEnableFiltered) },
+            { text: 'Selected', onClick: withTemplate(bulkEnableSelected) },
         ]);
         const disableAllBtn = document.createElement('button');
         disableAllBtn.type = 'button';
