@@ -45,27 +45,17 @@
         if (typeof gppLastEnsureOpen === 'function') gppLastEnsureOpen();
     }
 
-    if (_settings.ghostPlusPlus || gpcMobileOverhaulAvailable()) {
+    if (_settings.ghostPlusPlus) {
         function gppStartGhostPlusPlus() {
         try {
             (function _init_ghostPlusPlus() {
                 const modalEl = gppBuildModalShell();
-                const mobileOverhaulActive = gpcMobileOverhaulAvailable();
-                if (mobileOverhaulActive) {
-                    modalEl.classList.add('gpp-hidden');
-                    modalEl.setAttribute('aria-hidden', 'true');
-                    modalEl.dataset.mobileOverhaulSuppressed = 'true';
-                }
                 gppLastRefreshAll = refreshAll;
                 gppLastEnsureOpen = () => {
-                    if (gpcMobileOverhaulAvailable()) {
-                        if (typeof gppMobileOverhaulEnsureOpen === 'function') gppMobileOverhaulEnsureOpen();
-                    } else if (modalEl.classList.contains('gpp-hidden')) open();
+                    if (modalEl.classList.contains('gpp-hidden')) open();
                 };
                 const openerRefs = gppReplaceNativeOpener(() => {
-                    if (gpcMobileOverhaulAvailable()) {
-                        if (typeof gppMobileOverhaulTogglePanel === 'function') gppMobileOverhaulTogglePanel();
-                    } else if (modalEl.classList.contains('gpp-hidden')) open();
+                    if (modalEl.classList.contains('gpp-hidden')) open();
                     else close();
                 });
                 modalEl.addEventListener('click', event => {
@@ -147,10 +137,6 @@
                 }
 
                 async function open() {
-                    if (gpcMobileOverhaulAvailable()) {
-                        if (typeof gppMobileOverhaulEnsureOpen === 'function') gppMobileOverhaulEnsureOpen();
-                        return;
-                    }
                     modalEl.classList.remove('gpp-hidden');
                     modalEl.setAttribute('aria-hidden', 'false');
                     // Always re-center on open, discarding any left/top a

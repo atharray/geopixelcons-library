@@ -2,7 +2,7 @@
     // ============================================================
     //  EXTENSION: Auto-open Menus on Hover [extAutoHoverMenus]
     // ============================================================
-    if (_settings.extAutoHoverMenus && !gpcMobileOverhaulAvailable()) {
+    if (_settings.extAutoHoverMenus) {
         try {
             (function _ext_autoHoverMenus() {
 
