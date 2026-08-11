@@ -754,8 +754,13 @@
         const nativeSortBtn = bottomControls.querySelector('#sortBtn');
         if (nativeSortBtn) nativeSortBtn.style.display = 'none';
 
-        const innerWrapper = bottomControls.querySelector(':scope > div');
-        if (innerWrapper) innerWrapper.appendChild(buildControlsRow());
+        // Inserted right before the (native or compact) color grid, not
+        // appended to the end of innerWrapper -- appendChild put it below
+        // the grid, since the grid always sits earlier (2nd child, right
+        // after the top bar). nativeContainer stays a stable anchor point
+        // for this regardless of whether it or our compact grid is what's
+        // actually showing at any given moment (see showCompactGrid).
+        nativeContainer.insertAdjacentElement('beforebegin', buildControlsRow());
 
         // Ghost++'s template library loads from IndexedDB asynchronously (see
         // gppInitRuntime()), and may not be settings-enabled at all -- retry

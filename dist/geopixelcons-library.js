@@ -1255,6 +1255,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'removed', text: 'Mobile Painting (in development): removed the redundant native Sort button now that the control row has its own Sort' },
                 { type: 'changed', text: 'Mobile Painting (in development): the color grid now shows 2 rows before scrolling instead of ~10, matching the Ghost++ manager\'s own compact view' },
                 { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring is now a square (was a circle) and spins 4x slower; the off-color slash is slightly more opaque' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the control row now shows above the color grid instead of below it' },
             ]
         },
         {
@@ -30951,8 +30952,13 @@ applyLockState();
         const nativeSortBtn = bottomControls.querySelector('#sortBtn');
         if (nativeSortBtn) nativeSortBtn.style.display = 'none';
 
-        const innerWrapper = bottomControls.querySelector(':scope > div');
-        if (innerWrapper) innerWrapper.appendChild(buildControlsRow());
+        // Inserted right before the (native or compact) color grid, not
+        // appended to the end of innerWrapper -- appendChild put it below
+        // the grid, since the grid always sits earlier (2nd child, right
+        // after the top bar). nativeContainer stays a stable anchor point
+        // for this regardless of whether it or our compact grid is what's
+        // actually showing at any given moment (see showCompactGrid).
+        nativeContainer.insertAdjacentElement('beforebegin', buildControlsRow());
 
         // Ghost++'s template library loads from IndexedDB asynchronously (see
         // gppInitRuntime()), and may not be settings-enabled at all -- retry

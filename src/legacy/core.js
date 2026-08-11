@@ -1243,6 +1243,7 @@
                 { type: 'removed', text: 'Mobile Painting (in development): removed the redundant native Sort button now that the control row has its own Sort' },
                 { type: 'changed', text: 'Mobile Painting (in development): the color grid now shows 2 rows before scrolling instead of ~10, matching the Ghost++ manager\'s own compact view' },
                 { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring is now a square (was a circle) and spins 4x slower; the off-color slash is slightly more opaque' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the control row now shows above the color grid instead of below it' },
             ]
         },
         {
