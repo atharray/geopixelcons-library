@@ -2,7 +2,7 @@
     // ============================================================
     //  EXTENSION: Pill Hover Labels [extPillHoverLabels]
     // ============================================================
-    if (_settings.extPillHoverLabels && !gpcMobileOverhaulAvailable()) {
+    if (_settings.extPillHoverLabels) {
         try {
             (function _ext_pillHoverLabels() {
 

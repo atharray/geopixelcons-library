@@ -823,7 +823,7 @@
     // hoisted; the only state this touches — gppSettings/gppState/
     // gppDatabase — is only ever read later, asynchronously, by which point
     // the whole script's synchronous top-level pass has already run).
-    if (_settings.ghostPlusPlus || gpcMobileOverhaulAvailable()) {
+    if (_settings.ghostPlusPlus) {
         try {
             gppRendererMount();
         } catch (err) {

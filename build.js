@@ -8,7 +8,6 @@ const ROOT = __dirname;
 const PACKAGE = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const OUTPUT = path.join(ROOT, 'dist', 'geopixelcons-library.js');
 const LEGACY_SOURCE_ORDER = [
-    'src/mobile/gpp-mobile-ui.js',
     'src/legacy/core.js',
     'src/legacy/features/ghost-plus-plus/gpp-core.js',
     'src/legacy/features/ghost-plus-plus/gpp-bridge.js',
@@ -45,7 +44,6 @@ const LEGACY_SOURCE_ORDER = [
     'src/legacy/features/ext-log-out-button.js',
     'src/legacy/features/theme-editor.js',
     'src/legacy/features/map-markers.js',
-    'src/legacy/features/mobile-overhaul-bootstrap.js',
     'src/legacy/footer.js',
 ];
 

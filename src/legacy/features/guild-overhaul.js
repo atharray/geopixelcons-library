@@ -153,12 +153,6 @@
             touch-action: none !important;
         }
 
-        .draggable-panel.gpc-mobile-compat,
-        .draggable-panel.gpc-mobile-compat .guild-modal-header,
-        .draggable-panel.gpc-mobile-compat .guild-modal-header span {
-            touch-action: auto !important;
-        }
-
         /* Use Tailwind CSS variables for dark mode compatibility */
         .guild-message-section {
             border: 1px solid var(--color-gray-200, #e5e7eb);
@@ -4060,8 +4054,6 @@
 
             if (panel.classList.contains('draggable-panel')) return;
 
-            const mobileCompat = typeof gpcMobileCompatibilityActive === 'function' && gpcMobileCompatibilityActive();
-
             modal.style.position = 'fixed';
             modal.style.inset = 'auto';
             modal.style.backgroundColor = 'transparent';
@@ -4077,23 +4069,13 @@
             panel.style.scale = '1';
             panel.style.pointerEvents = 'auto';
             panel.classList.add('draggable-panel');
-            panel.classList.toggle('gpc-mobile-compat', mobileCompat);
 
-            if (mobileCompat) {
-                panel.style.top = '8px';
-                panel.style.left = '8px';
-                panel.style.width = 'calc(100vw - 16px)';
-                panel.style.maxWidth = 'calc(100vw - 16px)';
-                panel.style.maxHeight = 'calc(100dvh - 16px)';
-                panel.style.overflowY = 'auto';
-            } else {
-                panel.style.top = '100px';
-                panel.style.left = 'calc(50% - 25rem)';
-                panel.style.width = '50rem';
-                panel.style.maxWidth = '90vw';
-                panel.style.maxHeight = '85vh';
-                panel.style.overflowY = '';
-            }
+            panel.style.top = '100px';
+            panel.style.left = 'calc(50% - 25rem)';
+            panel.style.width = '50rem';
+            panel.style.maxWidth = '90vw';
+            panel.style.maxHeight = '85vh';
+            panel.style.overflowY = '';
 
             const existingHeader = panel.querySelector('.guild-modal-header');
             if (existingHeader) existingHeader.remove();
@@ -4103,7 +4085,7 @@
             headerBar.style.cssText = `
                 position: absolute; top: 0; left: 0; right: 0; height: 40px;
                 background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-                cursor: ${mobileCompat ? 'default' : 'move'}; border-radius: 0.75rem 0.75rem 0 0;
+                cursor: move; border-radius: 0.75rem 0.75rem 0 0;
                 display: flex; align-items: center; justify-content: space-between;
                 padding: 0 16px; color: white; font-weight: 600;
                 user-select: none; z-index: 50; pointer-events: auto;
@@ -4111,7 +4093,7 @@
             
             const titleSpan = document.createElement('span');
             titleSpan.textContent = 'Guild Panel';
-            titleSpan.style.cursor = mobileCompat ? 'default' : 'move';
+            titleSpan.style.cursor = 'move';
             
             const closeBtn = document.createElement('button');
             closeBtn.textContent = '✕';
@@ -4150,11 +4132,9 @@
             if (panel.firstChild) panel.insertBefore(headerBar, panel.firstChild);
             else panel.appendChild(headerBar);
 
-            if (!mobileCompat) {
-                panel.appendChild(resizeHandle);
-                setupDragHandling(panel, titleSpan);
-                setupResizeHandling(panel, resizeHandle);
-            }
+            panel.appendChild(resizeHandle);
+            setupDragHandling(panel, titleSpan);
+            setupResizeHandling(panel, resizeHandle);
             setupMessageCollapsible();
             setupContentTracking();
 
@@ -4169,16 +4149,8 @@
 
             // Reset panel to center every time the modal is opened (fixes off-screen lock after dragging outside window)
             const _centerPanel = () => {
-                if (mobileCompat) {
-                    panel.style.top = '8px';
-                    panel.style.left = '8px';
-                    panel.style.width = 'calc(100vw - 16px)';
-                    panel.style.maxWidth = 'calc(100vw - 16px)';
-                    panel.style.maxHeight = 'calc(100dvh - 16px)';
-                } else {
-                    panel.style.top = '100px';
-                    panel.style.left = 'calc(50% - 25rem)';
-                }
+                panel.style.top = '100px';
+                panel.style.left = 'calc(50% - 25rem)';
             };
             const _visibilityObserver = new MutationObserver(() => {
                 if (!modal.classList.contains('hidden')) _centerPanel();

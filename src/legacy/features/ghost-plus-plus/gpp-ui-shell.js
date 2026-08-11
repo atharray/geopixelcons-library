@@ -540,20 +540,15 @@
             const toggleBtn = modal.querySelector('[data-gpp-action="toggle-right"]');
 
             // ── Narrow-width full-panel swap ────────────────────────────
-            // Per explicit user request: emulates the legacy Ghost Template
-            // Manager's own gpc-mobile-compat/gpc-mobile-preview-open
-            // pattern (ghost-template-manager.js) -- at a narrow modal
-            // width, this button no longer partially collapses the right
-            // panel to a 34px stub (which barely helps when the LEFT panel
-            // is already cramped too); instead it swaps between showing the
-            // left panel fully OR the right panel fully, one at a time.
-            // Decided fresh on every click from the modal's CURRENT width
-            // (not a separate persistent "mobile mode" setting, unlike
-            // GTM's own gpcMobileCompatibilityActive() -- Ghost++ has no
-            // equivalent global toggle, and re-purposing that unrelated
-            // extension's setting here would be the wrong coupling), so
-            // resizing the modal narrower/wider between clicks always gets
-            // the behaviour appropriate to its size AT THAT MOMENT.
+            // Per explicit user request: at a narrow modal width, this
+            // button no longer partially collapses the right panel to a
+            // 34px stub (which barely helps when the LEFT panel is already
+            // cramped too); instead it swaps between showing the left panel
+            // fully OR the right panel fully, one at a time. Decided fresh
+            // on every click from the modal's CURRENT width (not a separate
+            // persistent "mobile mode" setting -- Ghost++ has no such global
+            // toggle), so resizing the modal narrower/wider between clicks
+            // always gets the behaviour appropriate to its size AT THAT MOMENT.
             // GPP_NARROW_SWAP_MARGIN (not just the bare CSS min-width
             // itself): the split is already quite cramped somewhat above
             // the literal 480px floor, not only exactly at it.

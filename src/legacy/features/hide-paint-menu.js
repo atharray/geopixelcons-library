@@ -2,7 +2,7 @@
     // ============================================================
     //  FEATURE: Paint Menu Controls [hidePaintMenu]
     // ============================================================
-    if (_settings.hidePaintMenu && !gpcMobileOverhaulAvailable()) {
+    if (_settings.hidePaintMenu) {
         try {
             (function _init_hidePaintMenu() {
 

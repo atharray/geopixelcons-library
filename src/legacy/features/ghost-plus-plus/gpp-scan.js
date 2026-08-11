@@ -91,10 +91,7 @@
     let gppAutoscanDebounceTimer = null;
 
     function gppScheduleAutoscan() {
-        // Mobile Overhaul promises always-live progress with no manual Scan
-        // action. Reuse the existing trailing debounce instead of scanning
-        // once per queued pixel; desktop behavior remains setting-controlled.
-        if (!gpcMobileOverhaulAvailable() && !gppSettings.autoscanEnabled) return;
+        if (!gppSettings.autoscanEnabled) return;
         clearTimeout(gppAutoscanDebounceTimer);
         gppAutoscanDebounceTimer = setTimeout(() => {
             const template = gppState.getFocusedTemplate();
