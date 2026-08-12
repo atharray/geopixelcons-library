@@ -1285,6 +1285,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'changed', text: 'Mobile Painting (in development): the drop zone\'s own desktop-oriented text (drag/drop + paste instructions, supported formats, "or load from a URL") is now replaced with a single "Click to upload template files" line while shown here -- mobile painters only ever tap to pick a file. The real text is restored the instant this view closes, so the actual Ghost++ modal is unaffected' },
                 { type: 'fixed', text: 'Mobile Painting (in development): fixed this row\'s buttons and the p1/p2/p3 columns staying in whichever light/dark theme was active the very first time they rendered, even after switching the GeoPixels++ extension\'s own theme setting -- the color values were baked into a stylesheet that was only ever written once per page load and never refreshed' },
                 { type: 'fixed', text: 'Mobile Painting (in development): the control row buttons (Enable/Disable/Sort/Filter/Get hex values) were still stuck in whichever theme was active on first render even after the previous fix, because the stylesheet refresh only ever ran when the color grid itself got rebuilt from scratch (switching templates) -- an idle tick with the same template focused, by far the common case, skipped it entirely. The stylesheet now refreshes on every tick regardless, so switching the GeoPixels++ theme takes effect within about a second without needing to touch a template' },
+                { type: 'changed', text: 'Mobile Painting (in development): the three columns\' ids now describe what they actually hold (#gpc-mobile-scan-panel / #gpc-mobile-upload-panel / #gpc-mobile-placement-panel) instead of their leftover scaffolding-era gpc-mobile-placeholder-1/2/3 names, from back when they held nothing but literal "placeholder 1"/"placeholder 2" text' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the three columns no longer size to their own content\'s height independently -- since p1\'s counts line only shows once there\'s something to report and the drop zone/scan bar can wrap differently, they could end up visibly uneven heights. All three now stretch to match whichever one is tallest' },
             ]
         },
         {
@@ -30377,18 +30379,28 @@ applyLockState();
             /* Shown in place of #gpc-native-top-bar and .gpc-mobile-controls-
                row once the preview-thumbnail canvas is tapped -- see
                toggleNativeControlsForPlaceholders. Three equal-width columns
-               (p1/p2/p3), each holding real Ghost++ panels BORROWED (moved,
-               not cloned -- see borrowNode) from their real locations in the
-               (hidden) Ghost++ modal for as long as this view is showing,
-               and returned when switching back. Single shared parent for
-               the same reason established for the two-panel version this
+               (#gpc-mobile-scan-panel / -upload-panel / -placement-panel),
+               each holding real Ghost++ panels BORROWED (moved, not cloned
+               -- see borrowNode) from their real locations in the (hidden)
+               Ghost++ modal for as long as this view is showing, and
+               returned when switching back. Single shared parent for the
+               same reason established for the two-panel version this
                replaced: innerWrapper (their parent once inserted) is a flex
                column with its own gap-4 (16px) between children -- one
                shared parent means that gap applies once around the row as
-               a whole, not once per bare sibling column. */
+               a whole, not once per bare sibling column.
+               align-items: stretch (the default value -- listed explicitly
+               here since it's load-bearing, not just left implicit) pins
+               all three columns' heights to whichever one is tallest, since
+               their own real content heights can differ (e.g. p1's counts
+               line only shows once there's something to report). Each
+               column is itself display:flex/flex-direction:column (see
+               .gpc-mobile-placeholder below), so the extra height a shorter
+               column gets just becomes trailing empty space inside it
+               rather than stretching any individual child. */
             .gpc-mobile-placeholder-group {
                 width: 100%; box-sizing: border-box;
-                display: flex; flex-direction: row; align-items: flex-start; gap: 6px;
+                display: flex; flex-direction: row; align-items: stretch; gap: 6px;
             }
             .gpc-mobile-placeholder {
                 flex: 1 1 0; min-width: 0; box-sizing: border-box; padding: 8px;
@@ -30760,12 +30772,12 @@ applyLockState();
     // checks (e.g. is placeholder mode even showing).
     function rebuildPlaceholderColumns() {
         returnBorrowedNodes();
-        const p1 = document.getElementById('gpc-mobile-placeholder-1');
-        const p2 = document.getElementById('gpc-mobile-placeholder-2');
-        const p3 = document.getElementById('gpc-mobile-placeholder-3');
-        if (p1) { p1.innerHTML = ''; buildPlaceholder1Content(p1); }
-        if (p2) { p2.innerHTML = ''; buildPlaceholder2Content(p2); }
-        if (p3) { p3.innerHTML = ''; buildPlaceholder3Content(p3); }
+        const scanPanel = document.getElementById('gpc-mobile-scan-panel');
+        const uploadPanel = document.getElementById('gpc-mobile-upload-panel');
+        const placementPanel = document.getElementById('gpc-mobile-placement-panel');
+        if (scanPanel) { scanPanel.innerHTML = ''; buildPlaceholder1Content(scanPanel); }
+        if (uploadPanel) { uploadPanel.innerHTML = ''; buildPlaceholder2Content(uploadPanel); }
+        if (placementPanel) { placementPanel.innerHTML = ''; buildPlaceholder3Content(placementPanel); }
     }
 
     // Keeps p1/p2/p3 live-synced with Ghost++'s own re-renders WHILE
@@ -31046,16 +31058,21 @@ applyLockState();
             group.id = 'gpc-mobile-placeholder-group';
             group.className = 'gpc-mobile-placeholder-group gpc-hidden';
 
-            const p1 = document.createElement('div');
-            p1.id = 'gpc-mobile-placeholder-1';
-            p1.className = 'gpc-mobile-placeholder';
-            const p2 = document.createElement('div');
-            p2.id = 'gpc-mobile-placeholder-2';
-            p2.className = 'gpc-mobile-placeholder';
-            const p3 = document.createElement('div');
-            p3.id = 'gpc-mobile-placeholder-3';
-            p3.className = 'gpc-mobile-placeholder';
-            group.append(p1, p2, p3);
+            // Ids name what each column actually holds (see buildPlaceholder-
+            // {1,2,3}Content) instead of their old scaffolding-era
+            // gpc-mobile-placeholder-{1,2,3} names, left over from when
+            // these genuinely held nothing but "placeholder 1"/"placeholder
+            // 2" text.
+            const scanPanel = document.createElement('div');
+            scanPanel.id = 'gpc-mobile-scan-panel';
+            scanPanel.className = 'gpc-mobile-placeholder';
+            const uploadPanel = document.createElement('div');
+            uploadPanel.id = 'gpc-mobile-upload-panel';
+            uploadPanel.className = 'gpc-mobile-placeholder';
+            const placementPanel = document.createElement('div');
+            placementPanel.id = 'gpc-mobile-placement-panel';
+            placementPanel.className = 'gpc-mobile-placeholder';
+            group.append(scanPanel, uploadPanel, placementPanel);
 
             // Inserted where the native elements visually sit, so the rest
             // of #bottomControls (the color grid below) doesn't jump
@@ -31076,7 +31093,7 @@ applyLockState();
             stopPlaceholderLiveSync();
             restoreDropZoneForDesktop();
             returnBorrowedNodes();
-            ['gpc-mobile-placeholder-1', 'gpc-mobile-placeholder-2', 'gpc-mobile-placeholder-3'].forEach((id) => {
+            ['gpc-mobile-scan-panel', 'gpc-mobile-upload-panel', 'gpc-mobile-placement-panel'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (el) el.innerHTML = ''; // clears our own now-empty wrapper divs (button grids, checkbox stacks) left behind
             });
