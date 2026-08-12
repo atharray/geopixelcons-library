@@ -1284,6 +1284,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'changed', text: 'Mobile Painting (in development): the Manage templates button now sits in the p2 column, directly under the drop zone, instead of below Place/Unset/Go to/Preview in p3' },
                 { type: 'changed', text: 'Mobile Painting (in development): the drop zone\'s own desktop-oriented text (drag/drop + paste instructions, supported formats, "or load from a URL") is now replaced with a single "Click to upload template files" line while shown here -- mobile painters only ever tap to pick a file. The real text is restored the instant this view closes, so the actual Ghost++ modal is unaffected' },
                 { type: 'fixed', text: 'Mobile Painting (in development): fixed this row\'s buttons and the p1/p2/p3 columns staying in whichever light/dark theme was active the very first time they rendered, even after switching the GeoPixels++ extension\'s own theme setting -- the color values were baked into a stylesheet that was only ever written once per page load and never refreshed' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the control row buttons (Enable/Disable/Sort/Filter/Get hex values) were still stuck in whichever theme was active on first render even after the previous fix, because the stylesheet refresh only ever ran when the color grid itself got rebuilt from scratch (switching templates) -- an idle tick with the same template focused, by far the common case, skipped it entirely. The stylesheet now refreshes on every tick regardless, so switching the GeoPixels++ theme takes effect within about a second without needing to touch a template' },
             ]
         },
         {
@@ -31641,6 +31642,22 @@ applyLockState();
 
     function resync() {
         if (!liveState) return;
+        // Keeps the shared stylesheet (control row buttons/menus, and the
+        // #gpc-mobile-placeholder-group overrides for whatever's currently
+        // borrowed into p1/p2/p3) live-refreshed on the SAME cadence as
+        // everything else resync() already reacts to -- previously
+        // injectStyle() only ever ran from inside buildTemplatePaletteGrid,
+        // which this function only calls when the focused template or its
+        // visible order actually changed (see the `sameEverything` fast
+        // path below); on an otherwise-idle tick (the overwhelmingly common
+        // case -- same template, nothing to rebuild) that path returns
+        // early and injectStyle() never got a chance to notice a theme
+        // change. Ghost++'s own modal doesn't have this problem because
+        // every one of ITS renders re-reads t2() fresh regardless of
+        // whether anything else about that render actually changed --
+        // this matches that same behavior instead of gating the refresh on
+        // an unrelated "did the grid's own content change" check.
+        injectStyle();
         const template = getFocusedTemplateWithPalette();
 
         if (!template) {
