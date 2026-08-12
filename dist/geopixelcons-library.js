@@ -1276,6 +1276,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Mobile Painting (in development): tapping the template preview thumbnail now hides the native top bar and the control row, showing two placeholder panels in their place (scaffolding for a feature to come)' },
                 { type: 'fixed', text: 'Mobile Painting (in development): the two placeholder panels shown after tapping the preview thumbnail no longer have awkward extra spacing between them -- they now share one parent instead of each stacking its own margin on top of the surrounding layout\'s own gap' },
                 { type: 'fixed', text: 'Mobile Painting (in development): fixed a real bug where the native top bar id (#gpc-native-top-bar) could end up on the entire white bottom-bar panel instead of just the small top bar row -- tapping the preview thumbnail was hiding that whole panel\'s white background, exposing the map behind it' },
+                { type: 'changed', text: 'Mobile Painting (in development): tapping the template preview thumbnail is now a proper toggle -- tap again to switch back from the placeholder panels to the native controls, instead of it only going one way' },
             ]
         },
         {
@@ -30598,59 +30599,71 @@ applyLockState();
         if (previewCanvasTemplateId === template.id && previewCanvasEl) return previewCanvasEl;
         previewCanvasEl = (typeof gppLibraryRenderFullCanvas === 'function') ? gppLibraryRenderFullCanvas(template) : null;
         previewCanvasTemplateId = template.id;
+        // Attached HERE, only in the branch that creates a genuinely new
+        // canvas -- not in buildTemplatePaletteGrid's caller, which would
+        // re-attach on every rebuild (sort/filter/template-unchanged
+        // resyncs) since this same cached node gets reused across those.
+        // A second listener on the same node would double-fire per click,
+        // toggling state twice and netting a no-op on every other tap.
+        if (previewCanvasEl) previewCanvasEl.addEventListener('click', toggleNativeControlsForPlaceholders);
         return previewCanvasEl;
     }
 
-    // Triggered by tapping the preview-frame thumbnail (see
-    // buildTemplatePaletteGrid below). Hides #gpc-native-top-bar and
-    // .gpc-mobile-controls-row (display:none via .gpc-hidden -- neither is
-    // removed from the DOM, matching this file's own never-remove-only-hide
-    // convention elsewhere) and inserts two stacked placeholder panels in
-    // their place. Placeholder content only, for now -- scaffolding for a
-    // feature that hasn't been specified yet. Idempotent: a second tap (or
-    // a second call for any other reason) is a no-op if the panels already
-    // exist, rather than duplicating them.
-    function revealPlaceholderPanels() {
-        if (document.getElementById('gpc-mobile-placeholder-group')) return;
-
+    // Triggered by tapping .gpp-lib-thumb-canvas (the preview thumbnail
+    // itself, see getTemplatePreviewCanvas above) -- a menu switcher
+    // between two states, using this file's usual display:none-via-class
+    // convention rather than ever removing anything from the DOM:
+    //   - Native: #gpc-native-top-bar and .gpc-mobile-controls-row visible,
+    //     #gpc-mobile-placeholder-group hidden (the default/starting state).
+    //   - Placeholders: the reverse.
+    // The group is created lazily on first use (still just "placeholder 1"
+    // / "placeholder 2" -- scaffolding for a feature that hasn't been
+    // specified yet) and, once created, persists across toggles -- only
+    // its .gpc-hidden class ever changes after that, same as the native
+    // top bar and controls row. Current state is read directly off the
+    // group's own class rather than tracked in a separate flag, so this
+    // stays correct even if triggered some other way later.
+    // .gpc-mobile-palette-wrap (the color grid + preview thumbnail itself)
+    // is deliberately never touched by either direction -- it stays
+    // visible throughout, exactly as it already does; nothing here
+    // references it.
+    function toggleNativeControlsForPlaceholders() {
         const nativeTopBar = document.getElementById('gpc-native-top-bar');
         const controlsRow = document.querySelector('.gpc-mobile-controls-row');
-        if (nativeTopBar) nativeTopBar.classList.add('gpc-hidden');
-        if (controlsRow) controlsRow.classList.add('gpc-hidden');
+        let group = document.getElementById('gpc-mobile-placeholder-group');
 
-        // Both panels share ONE parent (.gpc-mobile-placeholder-group) --
-        // see its own CSS comment above for why: a shared parent is both
-        // the fix for the awkward double-spacing (innerWrapper's own
-        // flex gap-4 applies once around the group, not once per bare
-        // sibling placeholder) and a single stable anchor for this whole
-        // group going forward. .gpc-mobile-palette-wrap (the color grid +
-        // preview thumbnail) is deliberately never touched here -- it
-        // should stay visible exactly as it already does; nothing in this
-        // function references it.
-        const group = document.createElement('div');
-        group.id = 'gpc-mobile-placeholder-group';
-        group.className = 'gpc-mobile-placeholder-group';
+        if (!group) {
+            group = document.createElement('div');
+            group.id = 'gpc-mobile-placeholder-group';
+            group.className = 'gpc-mobile-placeholder-group gpc-hidden';
 
-        const placeholder1 = document.createElement('div');
-        placeholder1.id = 'gpc-mobile-placeholder-1';
-        placeholder1.className = 'gpc-mobile-placeholder';
-        placeholder1.textContent = 'placeholder 1';
+            const placeholder1 = document.createElement('div');
+            placeholder1.id = 'gpc-mobile-placeholder-1';
+            placeholder1.className = 'gpc-mobile-placeholder';
+            placeholder1.textContent = 'placeholder 1';
 
-        const placeholder2 = document.createElement('div');
-        placeholder2.id = 'gpc-mobile-placeholder-2';
-        placeholder2.className = 'gpc-mobile-placeholder';
-        placeholder2.textContent = 'placeholder 2';
+            const placeholder2 = document.createElement('div');
+            placeholder2.id = 'gpc-mobile-placeholder-2';
+            placeholder2.className = 'gpc-mobile-placeholder';
+            placeholder2.textContent = 'placeholder 2';
 
-        group.append(placeholder1, placeholder2);
+            group.append(placeholder1, placeholder2);
 
-        // Inserted where the two hidden elements used to visually sit, so
-        // the rest of #bottomControls (the color grid below) doesn't jump.
-        if (nativeTopBar) {
-            nativeTopBar.insertAdjacentElement('afterend', group);
-        } else if (controlsRow) {
-            controlsRow.insertAdjacentElement('beforebegin', group);
+            // Inserted where the native elements visually sit, so the rest
+            // of #bottomControls (the color grid below) doesn't jump
+            // whichever state ends up showing.
+            if (nativeTopBar) {
+                nativeTopBar.insertAdjacentElement('afterend', group);
+            } else if (controlsRow) {
+                controlsRow.insertAdjacentElement('beforebegin', group);
+            }
         }
-        dbgPush('Mobile Painting: preview-frame tapped -- native top bar and controls row hidden, placeholder panels shown.', { uiComponent: 'Mobile Painting' });
+
+        const switchingToPlaceholders = group.classList.contains('gpc-hidden');
+        group.classList.toggle('gpc-hidden', !switchingToPlaceholders);
+        if (nativeTopBar) nativeTopBar.classList.toggle('gpc-hidden', switchingToPlaceholders);
+        if (controlsRow) controlsRow.classList.toggle('gpc-hidden', switchingToPlaceholders);
+        dbgPush('Mobile Painting: preview thumbnail tapped -- switched to ' + (switchingToPlaceholders ? 'placeholder panels' : 'native controls') + '.', { uiComponent: 'Mobile Painting' });
     }
 
     // Builds the compact grid for `order` (a list of palette indices, already
@@ -30777,14 +30790,15 @@ applyLockState();
 
         // Small live preview of the focused template's own ghost image, to
         // the grid's right -- see the .gpc-mobile-preview-frame CSS comment
-        // above for the sizing/fidelity reasoning.
+        // above for the sizing/fidelity reasoning. The click listener lives
+        // on the canvas itself (getTemplatePreviewCanvas), not this wrapper
+        // -- see that function's own comment for why.
         const previewCanvas = getTemplatePreviewCanvas(template);
         if (previewCanvas) {
             const previewFrame = document.createElement('div');
             previewFrame.className = 'gpc-mobile-preview-frame';
             previewFrame.title = template.name || 'Template preview';
             previewFrame.appendChild(previewCanvas);
-            previewFrame.addEventListener('click', revealPlaceholderPanels);
             wrap.appendChild(previewFrame);
         }
 
@@ -31306,7 +31320,7 @@ applyLockState();
         // order, so it was winning as the "first match" instead of the
         // actual top bar div. That meant #gpc-native-top-bar ended up
         // pointing at the ENTIRE white background panel, and toggling
-        // .gpc-hidden on it (see revealPlaceholderPanels) hid that whole
+        // .gpc-hidden on it (see toggleNativeControlsForPlaceholders) hid that whole
         // panel's background -- exactly the "blue showing through" bug
         // reported, confirmed via the reporter's own DevTools inspection.
         const innerWrapperEl = bottomControls.querySelector(':scope > div');
