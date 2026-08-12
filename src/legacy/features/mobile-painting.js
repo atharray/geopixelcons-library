@@ -40,10 +40,27 @@
     // the full Ghost++ manager panel (the sort/filter EFFECTS themselves
     // still apply -- see computeVisibleOrder below -- just not their own
     // controls, which stay in the Ghost++ modal).
+    // Called on every buildTemplatePaletteGrid() rebuild (resync()'s 1s
+    // poll, every gppSubscribeUiRefresh() tick) -- NOT just once. This is
+    // load-bearing for theme reactivity: tc()/t2() are read fresh into the
+    // template literal below on every call, so re-running this is what
+    // makes a live GeoPixels++ theme change (no page reload) actually show
+    // up here, the same way every other themed surface in this codebase
+    // (Ghost++'s own modal included) just re-reads isDarkMode()/t2() fresh
+    // at its own next build/open rather than caching it. Previously this
+    // function early-returned once the <style> tag already existed, which
+    // silently froze every tc()/t2() color at whatever the theme happened
+    // to be the very first time the palette grid ever rendered (typically
+    // page load) -- the reported "buttons stayed light after switching
+    // GeoPixels++ to dark" bug. Now it reuses the same tag but always
+    // refreshes its content instead.
     function injectStyle() {
-        if (document.getElementById(MP_STYLE_ID)) return;
-        const style = document.createElement('style');
-        style.id = MP_STYLE_ID;
+        let style = document.getElementById(MP_STYLE_ID);
+        const isNew = !style;
+        if (isNew) {
+            style = document.createElement('style');
+            style.id = MP_STYLE_ID;
+        }
         style.textContent = `
             /* Row layout: the swatch grid takes the available width, and a
                small live preview of the focused template's ghost image
@@ -321,7 +338,7 @@
             .gpc-ctrl-menu-option:hover { background: ${tc('#f3f4f6', '#313244')}; }
             .gpc-ctrl-menu-option input { width: 13px; height: 13px; cursor: pointer; }
         `;
-        document.head.appendChild(style);
+        if (isNew) document.head.appendChild(style);
     }
 
     function applyFullWidthBottomControls(bottomControls) {
@@ -649,18 +666,72 @@
 
     // Placeholder 2: the real #gpp-drop-zone, wholesale (drag/drop/paste/
     // click-to-choose file wiring already attached by gpp-init.js's
-    // wireDropZone() -- nothing here re-touches any of that).
+    // wireDropZone() -- nothing here re-touches any of that), then the real
+    // "Manage templates" button (gpp-library.js) -- moved here from
+    // placeholder 3 per explicit product decision, directly under the drop
+    // zone rather than below the Place/Preview/Lock/Group-noise block.
+    //
+    // The zone's own real heading/format-list/"load from a URL" text is
+    // written for desktop (mentions drag/drop and paste, plus a URL-upload
+    // flow); per explicit product decision mobile painters only ever tap
+    // to pick a file, so those three real elements (#gpp-drop-zone-heading/
+    // -hint ids added in gpp-init.js's ensureShellBuilt specifically for
+    // this, #gpp-url-upload-btn already had one) are hidden in place --
+    // never removed -- in favor of one short line of our own, inserted as
+    // a plain child rather than borrowed (nothing here reads or writes any
+    // real Ghost++ state, so there's nothing to keep in sync). This runs
+    // on every rebuild (including live-sync ticks), which is fine --
+    // adding an already-present class / reusing an already-created element
+    // is a no-op each time. restoreDropZoneForDesktop() (called from
+    // toggleNativeControlsForPlaceholders' native-switch branch, the one
+    // point this column genuinely stops coming back) undoes this, so the
+    // real Ghost++ modal never shows the shortened mobile copy.
     function buildPlaceholder2Content(container) {
         const dropZone = document.getElementById('gpp-drop-zone');
-        if (dropZone) borrowNode(dropZone, container);
+        if (!dropZone) return;
+
+        const heading = document.getElementById('gpp-drop-zone-heading');
+        const hint = document.getElementById('gpp-drop-zone-hint');
+        const urlBtn = document.getElementById('gpp-url-upload-btn');
+        if (heading) heading.classList.add('gpc-hidden');
+        if (hint) hint.classList.add('gpc-hidden');
+        if (urlBtn) urlBtn.classList.add('gpc-hidden');
+
+        let mobileHint = document.getElementById('gpc-mobile-drop-zone-hint');
+        if (!mobileHint) {
+            mobileHint = document.createElement('div');
+            mobileHint.id = 'gpc-mobile-drop-zone-hint';
+            mobileHint.innerHTML = '<strong>Click to upload template files</strong>';
+        }
+        dropZone.insertBefore(mobileHint, dropZone.firstChild);
+
+        borrowNode(dropZone, container);
+        const manageBtn = document.getElementById('gpp-lib-manage-btn');
+        if (manageBtn) borrowNode(manageBtn, container);
+    }
+
+    // Undoes buildPlaceholder2Content's mobile-only simplification of the
+    // real drop zone -- called right before it's actually sent home (see
+    // toggleNativeControlsForPlaceholders), not on every live-sync
+    // mid-cycle churn (rebuildPlaceholderColumns re-simplifies immediately
+    // after those anyway, so there's nothing to undo there).
+    function restoreDropZoneForDesktop() {
+        const heading = document.getElementById('gpp-drop-zone-heading');
+        const hint = document.getElementById('gpp-drop-zone-hint');
+        const urlBtn = document.getElementById('gpp-url-upload-btn');
+        const mobileHint = document.getElementById('gpc-mobile-drop-zone-hint');
+        if (heading) heading.classList.remove('gpc-hidden');
+        if (hint) hint.classList.remove('gpc-hidden');
+        if (urlBtn) urlBtn.classList.remove('gpc-hidden');
+        if (mobileHint) mobileHint.remove();
     }
 
     // Placeholder 3: Place/Unset/Go to/Preview (2x2 grid, same layout
     // approach as placeholder 1's buttons) from gpp-placement.js's
     // gppRenderPositionTransform, then Lock Position / Group noise
-    // (already uniquely id'd there, no source changes needed), then the
-    // real "Manage templates" button (gpp-library.js) which already opens
-    // #gpp-lib-manage-modal on its own -- no need to reimplement that.
+    // (already uniquely id'd there, no source changes needed). The
+    // "Manage templates" button now lives in placeholder 2, under the drop
+    // zone -- see buildPlaceholder2Content.
     function buildPlaceholder3Content(container) {
         const ptContainer = document.getElementById('gpp-lib-current-pt');
         const placeBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-place') : null;
@@ -669,7 +740,6 @@
         const previewBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-preview') : null;
         const lockLabel = ptContainer ? ptContainer.querySelector('#gpp-pt-lock-label') : null;
         const groupNoiseLabel = ptContainer ? ptContainer.querySelector('#gpp-pt-group-noise-label') : null;
-        const manageBtn = document.getElementById('gpp-lib-manage-btn');
 
         const buttonsGrid = document.createElement('div');
         buttonsGrid.className = 'gpc-mobile-p-btn-grid';
@@ -681,8 +751,6 @@
         if (lockLabel) borrowNode(lockLabel, checkboxWrap);
         if (groupNoiseLabel) borrowNode(groupNoiseLabel, checkboxWrap);
         container.appendChild(checkboxWrap);
-
-        if (manageBtn) borrowNode(manageBtn, container);
     }
 
     // Triggered by tapping .gpp-lib-thumb-canvas (the preview thumbnail
@@ -745,6 +813,7 @@
             startPlaceholderLiveSync();
         } else {
             stopPlaceholderLiveSync();
+            restoreDropZoneForDesktop();
             returnBorrowedNodes();
             ['gpc-mobile-placeholder-1', 'gpc-mobile-placeholder-2', 'gpc-mobile-placeholder-3'].forEach((id) => {
                 const el = document.getElementById(id);

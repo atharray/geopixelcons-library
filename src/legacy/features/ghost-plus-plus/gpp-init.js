@@ -244,8 +244,8 @@
                     const body = document.getElementById('gpp-left-body');
                     body.innerHTML = `
                         <div id="gpp-drop-zone">
-                            <div><strong>Drop, paste, or click to choose template files</strong></div>
-                            <div class="gpp-muted" style="font-size:11px;">PNG, JPEG/JFIF, WebP, or .json (export) supported</div>
+                            <div id="gpp-drop-zone-heading"><strong>Drop, paste, or click to choose template files</strong></div>
+                            <div id="gpp-drop-zone-hint" class="gpp-muted" style="font-size:11px;">PNG, JPEG/JFIF, WebP, or .json (export) supported</div>
                             <button type="button" id="gpp-url-upload-btn">or load from a URL</button>
                             <input id="gpp-file-input" type="file" accept="image/png,image/jpeg,image/jfif,image/webp,application/json,.json" multiple style="display:none;">
                         </div>
