@@ -1274,6 +1274,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Mobile Painting (in development): a small preview of the focused template\'s ghost image now sits to the right of the color grid, sized to the grid\'s own height without distorting the image' },
                 { type: 'added', text: 'Mobile Painting (in development): the native hexDisplay/sortBtn/brush-buttons/energy row now has a stable id (gpc-native-top-bar) instead of being reachable only by class' },
                 { type: 'added', text: 'Mobile Painting (in development): tapping the template preview thumbnail now hides the native top bar and the control row, showing two placeholder panels in their place (scaffolding for a feature to come)' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the two placeholder panels shown after tapping the preview thumbnail no longer have awkward extra spacing between them -- they now share one parent instead of each stacking its own margin on top of the surrounding layout\'s own gap' },
             ]
         },
         {
@@ -30341,9 +30342,23 @@ applyLockState();
             /* Scaffolding shown in place of #gpc-native-top-bar and
                .gpc-mobile-controls-row once the preview-frame thumbnail is
                clicked -- see buildTemplatePaletteGrid's preview-frame click
-               handler. Placeholder content only, for now. */
+               handler. Placeholder content only, for now. Both panels sit
+               inside a single .gpc-mobile-placeholder-group instead of
+               being inserted as two bare siblings -- innerWrapper (their
+               parent once inserted) is itself a flex column with its own
+               gap-4 (16px) between children; a per-placeholder margin-
+               bottom stacked ON TOP of that gap between the two panels,
+               which is what actually produced the "awkward" extra spacing
+               reported. The group is the ONE flex child innerWrapper's own
+               gap applies around; spacing between the two panels inside it
+               is controlled entirely by the group's own (smaller,
+               intentional) gap below. */
+            .gpc-mobile-placeholder-group {
+                width: 100%; box-sizing: border-box;
+                display: flex; flex-direction: column; gap: 6px;
+            }
             .gpc-mobile-placeholder {
-                width: 100%; box-sizing: border-box; padding: 10px 12px; margin-bottom: 6px;
+                width: 100%; box-sizing: border-box; padding: 10px 12px;
                 border: 1px dashed ${tc('#d1d5db', '#45475a')}; border-radius: 6px;
                 color: ${tc('#111827', '#f5f5f5')}; background: ${tc('#ffffff', '#1e1e2e')};
                 font-size: 12px; text-align: center;
@@ -30595,12 +30610,25 @@ applyLockState();
     // a second call for any other reason) is a no-op if the panels already
     // exist, rather than duplicating them.
     function revealPlaceholderPanels() {
-        if (document.getElementById('gpc-mobile-placeholder-1')) return;
+        if (document.getElementById('gpc-mobile-placeholder-group')) return;
 
         const nativeTopBar = document.getElementById('gpc-native-top-bar');
         const controlsRow = document.querySelector('.gpc-mobile-controls-row');
         if (nativeTopBar) nativeTopBar.classList.add('gpc-hidden');
         if (controlsRow) controlsRow.classList.add('gpc-hidden');
+
+        // Both panels share ONE parent (.gpc-mobile-placeholder-group) --
+        // see its own CSS comment above for why: a shared parent is both
+        // the fix for the awkward double-spacing (innerWrapper's own
+        // flex gap-4 applies once around the group, not once per bare
+        // sibling placeholder) and a single stable anchor for this whole
+        // group going forward. .gpc-mobile-palette-wrap (the color grid +
+        // preview thumbnail) is deliberately never touched here -- it
+        // should stay visible exactly as it already does; nothing in this
+        // function references it.
+        const group = document.createElement('div');
+        group.id = 'gpc-mobile-placeholder-group';
+        group.className = 'gpc-mobile-placeholder-group';
 
         const placeholder1 = document.createElement('div');
         placeholder1.id = 'gpc-mobile-placeholder-1';
@@ -30612,14 +30640,14 @@ applyLockState();
         placeholder2.className = 'gpc-mobile-placeholder';
         placeholder2.textContent = 'placeholder 2';
 
+        group.append(placeholder1, placeholder2);
+
         // Inserted where the two hidden elements used to visually sit, so
         // the rest of #bottomControls (the color grid below) doesn't jump.
         if (nativeTopBar) {
-            nativeTopBar.insertAdjacentElement('afterend', placeholder1);
-            placeholder1.insertAdjacentElement('afterend', placeholder2);
+            nativeTopBar.insertAdjacentElement('afterend', group);
         } else if (controlsRow) {
-            controlsRow.insertAdjacentElement('beforebegin', placeholder1);
-            placeholder1.insertAdjacentElement('afterend', placeholder2);
+            controlsRow.insertAdjacentElement('beforebegin', group);
         }
         dbgPush('Mobile Painting: preview-frame tapped -- native top bar and controls row hidden, placeholder panels shown.', { uiComponent: 'Mobile Painting' });
     }

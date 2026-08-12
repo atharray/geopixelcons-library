@@ -1262,6 +1262,7 @@
                 { type: 'added', text: 'Mobile Painting (in development): a small preview of the focused template\'s ghost image now sits to the right of the color grid, sized to the grid\'s own height without distorting the image' },
                 { type: 'added', text: 'Mobile Painting (in development): the native hexDisplay/sortBtn/brush-buttons/energy row now has a stable id (gpc-native-top-bar) instead of being reachable only by class' },
                 { type: 'added', text: 'Mobile Painting (in development): tapping the template preview thumbnail now hides the native top bar and the control row, showing two placeholder panels in their place (scaffolding for a feature to come)' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the two placeholder panels shown after tapping the preview thumbnail no longer have awkward extra spacing between them -- they now share one parent instead of each stacking its own margin on top of the surrounding layout\'s own gap' },
             ]
         },
         {
