@@ -1278,6 +1278,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Mobile Painting (in development): fixed a real bug where the native top bar id (#gpc-native-top-bar) could end up on the entire white bottom-bar panel instead of just the small top bar row -- tapping the preview thumbnail was hiding that whole panel\'s white background, exposing the map behind it' },
                 { type: 'changed', text: 'Mobile Painting (in development): tapping the template preview thumbnail is now a proper toggle -- tap again to switch back from the placeholder panels to the native controls, instead of it only going one way' },
                 { type: 'added', text: 'Mobile Painting (in development): the placeholder panels are now three real columns instead of two placeholders -- left is Ghost++\'s own scan progress bar, summary text, and Scan/Show errors/Show missing/Nearest error buttons; middle is the real template drop zone; right is Place/Unset/Go to/Preview, Lock Position, Group noise, and a Manage templates button that opens the real template manager -- all genuine Ghost++ controls, borrowed from their real locations while this view is open and returned when switching back' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the real Ghost++ buttons/checkboxes/drop zone borrowed into the p1/p2/p3 columns now follow the same light/dark theme signal as the rest of this row instead of Ghost++\'s own, which could render them dark on a light page for the same reason the control row\'s own buttons had this bug fixed earlier' },
             ]
         },
         {
@@ -30389,6 +30390,57 @@ applyLockState();
             .gpc-mobile-p3-checkboxes {
                 display: flex; flex-direction: column; gap: 4px;
             }
+            /* Same pitfall as .gpc-mobile-controls-row's own buttons (see
+               that comment above), now on the elements borrowed into p1/p2/
+               p3: they're styled by their OWN real Ghost++ code (gpp-scan.js,
+               gpp-placement.js, gpp-library.js, gpp-ui-shell.js) via
+               t2()/isDarkMode(), which -- correctly, for their normal home
+               inside the real, independently-themed Ghost++ modal -- falls
+               back to body.dark / OS prefers-color-scheme when the other
+               "GeoPixels++" extension has no explicit theme set. That
+               fallback is wrong here for the exact same reason it was wrong
+               for this row's own buttons: #bottomControls' own wrapper never
+               itself goes dark, so an OS/body-driven dark render bakes in
+               dark colors against a background staying light regardless.
+               Re-themed with tc() instead, ID-scoped to #gpc-mobile-
+               placeholder-group (so the real Ghost++ modal's own normal
+               appearance is untouched) and !important (so it wins over
+               Ghost++'s own class rules and inline styles regardless of
+               which was written last). The 4 gpp-scan.js buttons
+               (#gpp-scan-btn-*) are handled separately in JS -- see
+               retintScanButton in buildPlaceholder1Content -- since their
+               colors are baked into inline style.cssText per-button at
+               render time, including a primary/accent variant this static
+               CSS can't distinguish from the plain one. */
+            #gpc-mobile-placeholder-group button,
+            #gpc-mobile-placeholder-group .gpp-pt-btn {
+                border: 1px solid ${tc('#d1d5db', '#45475a')} !important;
+                background: ${tc('#ffffff', '#313244')} !important;
+                color: ${tc('#111827', '#f5f5f5')} !important;
+            }
+            #gpc-mobile-placeholder-group button:hover:not(:disabled),
+            #gpc-mobile-placeholder-group .gpp-pt-btn:hover:not(:disabled) {
+                background: ${tc('#f3f4f6', '#45475a')} !important;
+            }
+            #gpc-mobile-placeholder-group .gpp-pt-btn-active {
+                border-color: ${tc('#2563eb', '#89b4fa')} !important;
+                color: ${tc('#2563eb', '#89b4fa')} !important;
+            }
+            #gpc-mobile-placeholder-group label,
+            #gpc-mobile-placeholder-group .gpp-pt-lock,
+            #gpc-mobile-placeholder-group #gpp-drop-zone {
+                color: ${tc('#111827', '#f5f5f5')} !important;
+            }
+            #gpc-mobile-placeholder-group #gpp-drop-zone {
+                border-color: ${tc('#d1d5db', '#45475a')} !important;
+            }
+            #gpc-mobile-placeholder-group .gpp-muted,
+            #gpc-mobile-placeholder-group #gpp-url-upload-btn {
+                color: ${tc('#64748b', '#a6adc8')} !important;
+            }
+            #gpc-mobile-placeholder-group #gpp-scan-bar-outer {
+                background: ${tc('#e5e7eb', '#313244')} !important;
+            }
             .gpp-swatch {
                 position: relative; aspect-ratio: 1 / 1; min-height: 15px; border-radius: 4px;
                 border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
@@ -30679,6 +30731,25 @@ applyLockState();
         if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
     }
 
+    // Mirrors gpp-scan.js's own gppScanStyleButton exactly -- same shape,
+    // same literal color values -- but keyed on tc() instead of t2() (see
+    // the #gpc-mobile-placeholder-group CSS comment above for why). Not
+    // reusable as-is since t2()/tc() aren't swappable at the call site;
+    // this specific color-assignment logic is presentation, not business
+    // logic Ghost++ itself decides (that stays entirely in gpp-scan.js --
+    // this only re-renders the SAME already-decided primary/non-primary
+    // state with different colors), so mirroring it here doesn't duplicate
+    // anything. gppScanStyleButton itself is left completely untouched.
+    function retintScanButton(button, primary) {
+        if (!button) return;
+        button.style.cssText =
+            'font:inherit; padding:3px 8px; border-radius:5px; cursor:pointer;' +
+            'border:1px solid ' + tc('#cbd5e1', '#45475a') + ';' +
+            'background:' + (primary ? tc('#2563eb', '#89b4fa') : tc('#ffffff', '#313244')) + ';' +
+            'color:' + (primary ? tc('#ffffff', '#1e1e2e') : tc('#111827', '#f5f5f5')) + ';' +
+            (button.disabled ? 'opacity:.5; cursor:default;' : '');
+    }
+
     // Placeholder 1: the real scan-progress bar + its two summary text
     // lines + 4 of its 5 real buttons (Scan progress / Show errors / Show
     // missing / Nearest error -- Clear is deliberately left behind, per
@@ -30688,6 +30759,7 @@ applyLockState();
     function buildPlaceholder1Content(container) {
         const section = document.getElementById('gpp-progress-section');
         if (!section) return;
+        const template = getFocusedTemplateWithPalette();
         const bar = section.querySelector('#gpp-scan-bar-outer');
         const summaryLine = section.querySelector('#gpp-scan-summary-line');
         const countsLine = section.querySelector('#gpp-scan-counts-line'); // only present when there's something to report
@@ -30695,6 +30767,16 @@ applyLockState();
         const showErrBtn = section.querySelector('#gpp-scan-btn-show-err');
         const showMissBtn = section.querySelector('#gpp-scan-btn-show-miss');
         const nearestBtn = section.querySelector('#gpp-scan-btn-nearest');
+
+        // Same primary/non-primary determination gpp-scan.js's own
+        // gppRenderProgressBar makes for these same 4 buttons (scanBtn
+        // always primary, nearestBtn never, the other two reflecting
+        // whether that toggle is currently on) -- re-applied here with
+        // tc()'s colors instead of t2()'s.
+        if (scanBtn) retintScanButton(scanBtn, true);
+        if (showErrBtn) retintScanButton(showErrBtn, !!(template && template._gppShowWrong));
+        if (showMissBtn) retintScanButton(showMissBtn, !!(template && template._gppShowMissing));
+        if (nearestBtn) retintScanButton(nearestBtn, false);
 
         if (bar) borrowNode(bar, container);
         if (summaryLine) borrowNode(summaryLine, container);
