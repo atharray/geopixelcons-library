@@ -1275,6 +1275,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Mobile Painting (in development): the native hexDisplay/sortBtn/brush-buttons/energy row now has a stable id (gpc-native-top-bar) instead of being reachable only by class' },
                 { type: 'added', text: 'Mobile Painting (in development): tapping the template preview thumbnail now hides the native top bar and the control row, showing two placeholder panels in their place (scaffolding for a feature to come)' },
                 { type: 'fixed', text: 'Mobile Painting (in development): the two placeholder panels shown after tapping the preview thumbnail no longer have awkward extra spacing between them -- they now share one parent instead of each stacking its own margin on top of the surrounding layout\'s own gap' },
+                { type: 'fixed', text: 'Mobile Painting (in development): fixed a real bug where the native top bar id (#gpc-native-top-bar) could end up on the entire white bottom-bar panel instead of just the small top bar row -- tapping the preview thumbnail was hiding that whole panel\'s white background, exposing the map behind it' },
             ]
         },
         {
@@ -31291,7 +31292,25 @@ applyLockState();
         // An id makes it easier to identify in DevTools and gives any
         // future code (including this file's own) a direct, stable
         // reference instead of a class-based lookup.
-        const nativeTopBar = bottomControls.querySelector('.w-full.flex');
+        //
+        // MUST be scoped through ':scope > div' (innerWrapper) first, same
+        // as hide-paint-menu.js's own lookup -- an earlier version used the
+        // unscoped bottomControls.querySelector('.w-full.flex') here, which
+        // doesn't just search topBar's own class combination
+        // (w-full flex items-center justify-between gap-3); it also matches
+        // innerWrapper ITSELF, since innerWrapper's own class list (bg-white
+        // ... flex flex-col ... gap-4 w-full) separately contains both
+        // "w-full" and "flex" too. querySelector() considers the whole
+        // subtree of descendants, and innerWrapper -- a valid descendant of
+        // bottomControls -- comes before its own children in document
+        // order, so it was winning as the "first match" instead of the
+        // actual top bar div. That meant #gpc-native-top-bar ended up
+        // pointing at the ENTIRE white background panel, and toggling
+        // .gpc-hidden on it (see revealPlaceholderPanels) hid that whole
+        // panel's background -- exactly the "blue showing through" bug
+        // reported, confirmed via the reporter's own DevTools inspection.
+        const innerWrapperEl = bottomControls.querySelector(':scope > div');
+        const nativeTopBar = innerWrapperEl ? innerWrapperEl.querySelector(':scope > .w-full.flex') : null;
         if (nativeTopBar && !nativeTopBar.id) nativeTopBar.id = 'gpc-native-top-bar';
 
         liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null, selectedHex: null, soloMode: true };
