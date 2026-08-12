@@ -84,13 +84,27 @@
                display size instead of blurring it. */
             .gpc-mobile-preview-frame {
                 flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
-                height: 60px; overflow: hidden; box-sizing: border-box;
+                height: 60px; overflow: hidden; box-sizing: border-box; cursor: pointer;
                 border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
                 border-radius: 4px; background: ${t2('rgba(0,0,0,.03)', 'rgba(255,255,255,.05)')};
             }
             .gpc-mobile-preview-frame canvas {
                 height: 100%; width: auto; display: block;
                 image-rendering: pixelated;
+            }
+            /* !important is load-bearing: #gpc-native-top-bar carries its own
+               inline style="display: flex; ..." (native markup), which beats
+               any non-!important class on specificity alone. */
+            .gpc-hidden { display: none !important; }
+            /* Scaffolding shown in place of #gpc-native-top-bar and
+               .gpc-mobile-controls-row once the preview-frame thumbnail is
+               clicked -- see buildTemplatePaletteGrid's preview-frame click
+               handler. Placeholder content only, for now. */
+            .gpc-mobile-placeholder {
+                width: 100%; box-sizing: border-box; padding: 10px 12px; margin-bottom: 6px;
+                border: 1px dashed ${tc('#d1d5db', '#45475a')}; border-radius: 6px;
+                color: ${tc('#111827', '#f5f5f5')}; background: ${tc('#ffffff', '#1e1e2e')};
+                font-size: 12px; text-align: center;
             }
             .gpp-swatch {
                 position: relative; aspect-ratio: 1 / 1; min-height: 15px; border-radius: 4px;
@@ -329,6 +343,45 @@
         return previewCanvasEl;
     }
 
+    // Triggered by tapping the preview-frame thumbnail (see
+    // buildTemplatePaletteGrid below). Hides #gpc-native-top-bar and
+    // .gpc-mobile-controls-row (display:none via .gpc-hidden -- neither is
+    // removed from the DOM, matching this file's own never-remove-only-hide
+    // convention elsewhere) and inserts two stacked placeholder panels in
+    // their place. Placeholder content only, for now -- scaffolding for a
+    // feature that hasn't been specified yet. Idempotent: a second tap (or
+    // a second call for any other reason) is a no-op if the panels already
+    // exist, rather than duplicating them.
+    function revealPlaceholderPanels() {
+        if (document.getElementById('gpc-mobile-placeholder-1')) return;
+
+        const nativeTopBar = document.getElementById('gpc-native-top-bar');
+        const controlsRow = document.querySelector('.gpc-mobile-controls-row');
+        if (nativeTopBar) nativeTopBar.classList.add('gpc-hidden');
+        if (controlsRow) controlsRow.classList.add('gpc-hidden');
+
+        const placeholder1 = document.createElement('div');
+        placeholder1.id = 'gpc-mobile-placeholder-1';
+        placeholder1.className = 'gpc-mobile-placeholder';
+        placeholder1.textContent = 'placeholder 1';
+
+        const placeholder2 = document.createElement('div');
+        placeholder2.id = 'gpc-mobile-placeholder-2';
+        placeholder2.className = 'gpc-mobile-placeholder';
+        placeholder2.textContent = 'placeholder 2';
+
+        // Inserted where the two hidden elements used to visually sit, so
+        // the rest of #bottomControls (the color grid below) doesn't jump.
+        if (nativeTopBar) {
+            nativeTopBar.insertAdjacentElement('afterend', placeholder1);
+            placeholder1.insertAdjacentElement('afterend', placeholder2);
+        } else if (controlsRow) {
+            controlsRow.insertAdjacentElement('beforebegin', placeholder1);
+            placeholder1.insertAdjacentElement('afterend', placeholder2);
+        }
+        dbgPush('Mobile Painting: preview-frame tapped -- native top bar and controls row hidden, placeholder panels shown.', { uiComponent: 'Mobile Painting' });
+    }
+
     // Builds the compact grid for `order` (a list of palette indices, already
     // filtered/sorted to match whatever the real Ghost++ panel currently
     // shows -- see computeVisibleOrder). Clicking a swatch is NOT a plain
@@ -460,6 +513,7 @@
             previewFrame.className = 'gpc-mobile-preview-frame';
             previewFrame.title = template.name || 'Template preview';
             previewFrame.appendChild(previewCanvas);
+            previewFrame.addEventListener('click', revealPlaceholderPanels);
             wrap.appendChild(previewFrame);
         }
 
@@ -959,6 +1013,16 @@
             dbgPush('Mobile Painting: no .control-container-colors found inside #bottomControls -- nothing to replace.', { uiComponent: 'Mobile Painting' });
             return;
         }
+
+        // Assigns a stable id to the native top bar (hexDisplay/sortBtn/
+        // brush buttons/energy/gpc-paint-close) -- it has none of its own,
+        // and hide-paint-menu.js already has to find it by class
+        // (':scope > .w-full.flex') alongside its own controlsRow naming.
+        // An id makes it easier to identify in DevTools and gives any
+        // future code (including this file's own) a direct, stable
+        // reference instead of a class-based lookup.
+        const nativeTopBar = bottomControls.querySelector('.w-full.flex');
+        if (nativeTopBar && !nativeTopBar.id) nativeTopBar.id = 'gpc-native-top-bar';
 
         liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null, selectedHex: null, soloMode: true };
 
