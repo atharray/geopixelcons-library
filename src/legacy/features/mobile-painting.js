@@ -476,6 +476,120 @@
         if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
     }
 
+    // Return-then-rebuild for all three columns, shared by the initial
+    // switch to placeholder mode and by the live-sync observer below.
+    // Callers are responsible for their own "should this run right now"
+    // checks (e.g. is placeholder mode even showing).
+    function rebuildPlaceholderColumns() {
+        returnBorrowedNodes();
+        const p1 = document.getElementById('gpc-mobile-placeholder-1');
+        const p2 = document.getElementById('gpc-mobile-placeholder-2');
+        const p3 = document.getElementById('gpc-mobile-placeholder-3');
+        if (p1) { p1.innerHTML = ''; buildPlaceholder1Content(p1); }
+        if (p2) { p2.innerHTML = ''; buildPlaceholder2Content(p2); }
+        if (p3) { p3.innerHTML = ''; buildPlaceholder3Content(p3); }
+    }
+
+    // Keeps p1/p2/p3 live-synced with Ghost++'s own re-renders WHILE
+    // placeholder mode is showing -- without this, any borrowed control's
+    // own interaction leaves every OTHER borrowed node permanently stale.
+    // Root cause: `onChange` (the parameter gpp-scan.js/gpp-placement.js/
+    // gpp-library.js's render functions were called with) IS gpp-init.js's
+    // refreshAll, called DIRECTLY by a borrowed checkbox/button's own
+    // handler -- refreshAll() itself never touches gppUiRefreshSubscribers
+    // (only the separate gppRequestUiRefresh() gateway does), so
+    // gppSubscribeUiRefresh() alone can't catch these. refreshAll() wipes
+    // and rebuilds #gpp-progress-section's content and (via
+    // gppRenderTemplateLibrary) #gpp-lib-current-pt on every single call --
+    // creating a fresh, invisible replacement set back in their original,
+    // now-empty-looking home, while whatever we'd already borrowed keeps
+    // its own old listeners (DOM relocation doesn't detach those) but stops
+    // receiving any further updates. Two concrete, reported symptoms of
+    // this: Lock Position / Group noise checkboxes visibly desyncing from
+    // Ghost++'s own state after the first interaction, and Place/Preview
+    // appearing dead -- gppRenderPositionTransform calls
+    // gppCancelPlacementCapture() at the START of every one of these
+    // re-renders, killing an in-progress "click the map to place" capture
+    // the instant any other borrowed control on this panel is touched.
+    //
+    // Fixed the same way the hide-paint-menu.js reorder bug was: a
+    // MutationObserver watching for externally-triggered DOM changes and
+    // reacting immediately. Watches #gpp-modal itself (the whole modal's
+    // stable, never-replaced root) with subtree:true, since the specific
+    // containers being watched have different replacement semantics
+    // (#gpp-progress-section keeps its own identity and just gets new
+    // children; #gpp-lib-current-pt gets entirely replaced by a new div
+    // with the same id, as part of gppRenderTemplateLibrary's own full
+    // rebuild) -- observing the whole modal catches both uniformly.
+    // Disconnects itself before its OWN return+rebuild mutations and
+    // reconnects after, rather than a same-tick flag (a MutationObserver
+    // callback fires as a later microtask, by which point a flag reset
+    // synchronously inside this same call would already be back to its
+    // original value) -- otherwise this rebuild would trigger itself
+    // indefinitely, since returning and re-borrowing are themselves
+    // childList mutations within the observed subtree.
+    let placeholderLiveSyncObserver = null;
+    function startPlaceholderLiveSync() {
+        if (placeholderLiveSyncObserver) return;
+        const modalEl = document.getElementById('gpp-modal');
+        if (!modalEl) return;
+        let refreshQueued = false;
+        placeholderLiveSyncObserver = new MutationObserver(() => {
+            if (refreshQueued) return;
+            refreshQueued = true;
+            Promise.resolve().then(() => {
+                refreshQueued = false;
+                const group = document.getElementById('gpc-mobile-placeholder-group');
+                if (!group || group.classList.contains('gpc-hidden')) return;
+                if (!placeholderLiveSyncObserver) return;
+                placeholderLiveSyncObserver.disconnect();
+                try {
+                    rebuildPlaceholderColumns();
+                } finally {
+                    if (placeholderLiveSyncObserver && modalEl.isConnected) {
+                        placeholderLiveSyncObserver.observe(modalEl, { childList: true, subtree: true });
+                    }
+                }
+            });
+        });
+        placeholderLiveSyncObserver.observe(modalEl, { childList: true, subtree: true });
+    }
+    function stopPlaceholderLiveSync() {
+        if (placeholderLiveSyncObserver) {
+            placeholderLiveSyncObserver.disconnect();
+            placeholderLiveSyncObserver = null;
+        }
+    }
+
+    // Paste-to-upload regression fix: gpp-init.js's wireDropZone() attaches
+    // its paste listener to #gpp-modal itself (event delegation), not to
+    // #gpp-drop-zone directly -- once the drop zone is borrowed out of the
+    // modal's subtree, a paste there no longer bubbles to that listener.
+    // Rather than reimplementing file ingestion (ingestFileList is a
+    // private closure inside gpp-init.js, not reachable from here), this
+    // reuses the drop zone's own REAL 'drop' listener -- which IS attached
+    // directly to it, not delegated, so it's unaffected by borrowing -- by
+    // dispatching a synthetic 'drop' event carrying the pasted files as its
+    // dataTransfer. Attached once, globally; the guard below makes it a
+    // no-op except while the drop zone is actually the one currently
+    // showing in our own placeholder group.
+    function handlePlaceholderPaste(event) {
+        if (!event.clipboardData) return;
+        const dropZone = document.getElementById('gpp-drop-zone');
+        if (!dropZone) return;
+        const group = document.getElementById('gpc-mobile-placeholder-group');
+        if (!group || group.classList.contains('gpc-hidden') || !group.contains(dropZone)) return;
+        const files = Array.from(event.clipboardData.items || [])
+            .filter((item) => item.kind === 'file')
+            .map((item) => item.getAsFile())
+            .filter(Boolean);
+        if (!files.length) return;
+        const dt = new DataTransfer();
+        files.forEach((file) => dt.items.add(file));
+        dropZone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    }
+    document.addEventListener('paste', handlePlaceholderPaste);
+
     // Mirrors gpp-scan.js's own gppScanStyleButton exactly -- same shape,
     // same literal color values -- but keyed on tc() instead of t2() (see
     // the #gpc-mobile-placeholder-group CSS comment above for why). Not
@@ -627,10 +741,10 @@
         const switchingToPlaceholders = group.classList.contains('gpc-hidden');
         if (switchingToPlaceholders) {
             ensureGhostPlusPlusPanelsReady();
-            buildPlaceholder1Content(document.getElementById('gpc-mobile-placeholder-1'));
-            buildPlaceholder2Content(document.getElementById('gpc-mobile-placeholder-2'));
-            buildPlaceholder3Content(document.getElementById('gpc-mobile-placeholder-3'));
+            rebuildPlaceholderColumns();
+            startPlaceholderLiveSync();
         } else {
+            stopPlaceholderLiveSync();
             returnBorrowedNodes();
             ['gpc-mobile-placeholder-1', 'gpc-mobile-placeholder-2', 'gpc-mobile-placeholder-3'].forEach((id) => {
                 const el = document.getElementById(id);
