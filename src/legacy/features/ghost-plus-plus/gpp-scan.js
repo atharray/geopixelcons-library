@@ -795,6 +795,7 @@
         const scanBusy = gppScanIsBusyFor(template);
 
         const scanBtn = document.createElement('button');
+        scanBtn.id = 'gpp-scan-btn-scan'; // exposed so mobile-painting.js can borrow this specific button without guessing by position/text
         scanBtn.type = 'button';
         scanBtn.textContent = scanBusy ? 'Scanning…' : 'Scan progress';
         scanBtn.disabled = !template || !template.position || scanBusy;
@@ -807,6 +808,7 @@
         // independent toggles (matching the native ghost menu's own wrong-
         // vs-missing distinction), not bundled into the scan action itself.
         const showErrBtn = document.createElement('button');
+        showErrBtn.id = 'gpp-scan-btn-show-err';
         showErrBtn.type = 'button';
         const wrongOn = !!(template && template._gppShowWrong);
         showErrBtn.textContent = wrongOn ? 'Hide errors' : 'Show errors';
@@ -816,6 +818,7 @@
         headRow.appendChild(showErrBtn);
 
         const showMissBtn = document.createElement('button');
+        showMissBtn.id = 'gpp-scan-btn-show-miss';
         showMissBtn.type = 'button';
         const missingOn = !!(template && template._gppShowMissing);
         showMissBtn.textContent = missingOn ? 'Hide missing' : 'Show missing';
@@ -825,6 +828,7 @@
         headRow.appendChild(showMissBtn);
 
         const nearestBtn = document.createElement('button');
+        nearestBtn.id = 'gpp-scan-btn-nearest';
         nearestBtn.type = 'button';
         nearestBtn.textContent = 'Nearest error';
         nearestBtn.disabled = !template || !template.scanSummary || scanBusy;
@@ -855,10 +859,12 @@
         wrap.appendChild(autoscanRow);
 
         const barOuter = document.createElement('div');
+        barOuter.id = 'gpp-scan-bar-outer'; // exposed so mobile-painting.js can borrow just the bar without guessing by position
         barOuter.style.cssText = 'display:flex; height:10px; border-radius:5px; overflow:hidden; background:' + t2('#e5e7eb', '#313244') + ';';
         wrap.appendChild(barOuter);
 
         const summaryLine = document.createElement('div');
+        summaryLine.id = 'gpp-scan-summary-line';
         summaryLine.style.cssText = 'font-size:11px; margin-top:4px; color:' + t2('#475569', '#a6adc8') + ';';
         wrap.appendChild(summaryLine);
 
@@ -930,6 +936,7 @@
                     if (summary.wrong > 0) parts.push(`${summary.wrong.toLocaleString()} error${summary.wrong === 1 ? '' : 's'}`);
                     if (summary.missing > 0) parts.push(`${summary.missing.toLocaleString()} missing`);
                     const countsLine = document.createElement('div');
+                    countsLine.id = 'gpp-scan-counts-line';
                     countsLine.style.cssText = 'font-size:11px; margin-top:2px; color:' + t2('#475569', '#a6adc8') + ';';
                     countsLine.textContent = parts.join(', ')
                         + ((summary.wrong > 0 && summary.missing > 0) ? ` (${(summary.wrong + summary.missing).toLocaleString()} combined)` : '');

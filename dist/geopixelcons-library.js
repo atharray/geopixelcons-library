@@ -1277,6 +1277,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Mobile Painting (in development): the two placeholder panels shown after tapping the preview thumbnail no longer have awkward extra spacing between them -- they now share one parent instead of each stacking its own margin on top of the surrounding layout\'s own gap' },
                 { type: 'fixed', text: 'Mobile Painting (in development): fixed a real bug where the native top bar id (#gpc-native-top-bar) could end up on the entire white bottom-bar panel instead of just the small top bar row -- tapping the preview thumbnail was hiding that whole panel\'s white background, exposing the map behind it' },
                 { type: 'changed', text: 'Mobile Painting (in development): tapping the template preview thumbnail is now a proper toggle -- tap again to switch back from the placeholder panels to the native controls, instead of it only going one way' },
+                { type: 'added', text: 'Mobile Painting (in development): the placeholder panels are now three real columns instead of two placeholders -- left is Ghost++\'s own scan progress bar, summary text, and Scan/Show errors/Show missing/Nearest error buttons; middle is the real template drop zone; right is Place/Unset/Go to/Preview, Lock Position, Group noise, and a Manage templates button that opens the real template manager -- all genuine Ghost++ controls, borrowed from their real locations while this view is open and returned when switching back' },
             ]
         },
         {
@@ -8928,6 +8929,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         const scanBusy = gppScanIsBusyFor(template);
 
         const scanBtn = document.createElement('button');
+        scanBtn.id = 'gpp-scan-btn-scan'; // exposed so mobile-painting.js can borrow this specific button without guessing by position/text
         scanBtn.type = 'button';
         scanBtn.textContent = scanBusy ? 'Scanning…' : 'Scan progress';
         scanBtn.disabled = !template || !template.position || scanBusy;
@@ -8940,6 +8942,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         // independent toggles (matching the native ghost menu's own wrong-
         // vs-missing distinction), not bundled into the scan action itself.
         const showErrBtn = document.createElement('button');
+        showErrBtn.id = 'gpp-scan-btn-show-err';
         showErrBtn.type = 'button';
         const wrongOn = !!(template && template._gppShowWrong);
         showErrBtn.textContent = wrongOn ? 'Hide errors' : 'Show errors';
@@ -8949,6 +8952,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         headRow.appendChild(showErrBtn);
 
         const showMissBtn = document.createElement('button');
+        showMissBtn.id = 'gpp-scan-btn-show-miss';
         showMissBtn.type = 'button';
         const missingOn = !!(template && template._gppShowMissing);
         showMissBtn.textContent = missingOn ? 'Hide missing' : 'Show missing';
@@ -8958,6 +8962,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         headRow.appendChild(showMissBtn);
 
         const nearestBtn = document.createElement('button');
+        nearestBtn.id = 'gpp-scan-btn-nearest';
         nearestBtn.type = 'button';
         nearestBtn.textContent = 'Nearest error';
         nearestBtn.disabled = !template || !template.scanSummary || scanBusy;
@@ -8988,10 +8993,12 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         wrap.appendChild(autoscanRow);
 
         const barOuter = document.createElement('div');
+        barOuter.id = 'gpp-scan-bar-outer'; // exposed so mobile-painting.js can borrow just the bar without guessing by position
         barOuter.style.cssText = 'display:flex; height:10px; border-radius:5px; overflow:hidden; background:' + t2('#e5e7eb', '#313244') + ';';
         wrap.appendChild(barOuter);
 
         const summaryLine = document.createElement('div');
+        summaryLine.id = 'gpp-scan-summary-line';
         summaryLine.style.cssText = 'font-size:11px; margin-top:4px; color:' + t2('#475569', '#a6adc8') + ';';
         wrap.appendChild(summaryLine);
 
@@ -9063,6 +9070,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                     if (summary.wrong > 0) parts.push(`${summary.wrong.toLocaleString()} error${summary.wrong === 1 ? '' : 's'}`);
                     if (summary.missing > 0) parts.push(`${summary.missing.toLocaleString()} missing`);
                     const countsLine = document.createElement('div');
+                    countsLine.id = 'gpp-scan-counts-line';
                     countsLine.style.cssText = 'font-size:11px; margin-top:2px; color:' + t2('#475569', '#a6adc8') + ';';
                     countsLine.textContent = parts.join(', ')
                         + ((summary.wrong > 0 && summary.missing > 0) ? ` (${(summary.wrong + summary.missing).toLocaleString()} combined)` : '');
@@ -11606,6 +11614,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             ? 'Loading…'
             : (templates.length === 1 ? '1 template' : (templates.length + ' templates'));
         const manageBtn = document.createElement('button');
+        manageBtn.id = 'gpp-lib-manage-btn'; // exposed so mobile-painting.js can borrow this specific button -- .gpp-lib-btn alone is shared with several buttons inside the manage modal itself
         manageBtn.type = 'button';
         manageBtn.className = 'gpp-lib-btn';
         manageBtn.textContent = '🗂️ Manage';
@@ -30341,29 +30350,44 @@ applyLockState();
                inline style="display: flex; ..." (native markup), which beats
                any non-!important class on specificity alone. */
             .gpc-hidden { display: none !important; }
-            /* Scaffolding shown in place of #gpc-native-top-bar and
-               .gpc-mobile-controls-row once the preview-frame thumbnail is
-               clicked -- see buildTemplatePaletteGrid's preview-frame click
-               handler. Placeholder content only, for now. Both panels sit
-               inside a single .gpc-mobile-placeholder-group instead of
-               being inserted as two bare siblings -- innerWrapper (their
-               parent once inserted) is itself a flex column with its own
-               gap-4 (16px) between children; a per-placeholder margin-
-               bottom stacked ON TOP of that gap between the two panels,
-               which is what actually produced the "awkward" extra spacing
-               reported. The group is the ONE flex child innerWrapper's own
-               gap applies around; spacing between the two panels inside it
-               is controlled entirely by the group's own (smaller,
-               intentional) gap below. */
+            /* Shown in place of #gpc-native-top-bar and .gpc-mobile-controls-
+               row once the preview-thumbnail canvas is tapped -- see
+               toggleNativeControlsForPlaceholders. Three equal-width columns
+               (p1/p2/p3), each holding real Ghost++ panels BORROWED (moved,
+               not cloned -- see borrowNode) from their real locations in the
+               (hidden) Ghost++ modal for as long as this view is showing,
+               and returned when switching back. Single shared parent for
+               the same reason established for the two-panel version this
+               replaced: innerWrapper (their parent once inserted) is a flex
+               column with its own gap-4 (16px) between children -- one
+               shared parent means that gap applies once around the row as
+               a whole, not once per bare sibling column. */
             .gpc-mobile-placeholder-group {
                 width: 100%; box-sizing: border-box;
-                display: flex; flex-direction: column; gap: 6px;
+                display: flex; flex-direction: row; align-items: flex-start; gap: 6px;
             }
             .gpc-mobile-placeholder {
-                width: 100%; box-sizing: border-box; padding: 10px 12px;
-                border: 1px dashed ${tc('#d1d5db', '#45475a')}; border-radius: 6px;
+                flex: 1 1 0; min-width: 0; box-sizing: border-box; padding: 8px;
+                display: flex; flex-direction: column; gap: 6px;
+                border: 1px solid ${tc('#d1d5db', '#45475a')}; border-radius: 6px;
                 color: ${tc('#111827', '#f5f5f5')}; background: ${tc('#ffffff', '#1e1e2e')};
-                font-size: 12px; text-align: center;
+                font-size: 11px;
+            }
+            /* Shared 2x2 layout for both p1's (Scan/Show errors/Show missing/
+               Nearest error) and p3's (Place/Unset/Go to/Preview) button
+               sets -- an explicit grid rather than relying on each source
+               panel's own flex-wrap (gpp-scan.js's headRow, gpp-placement.js's
+               .gpp-pt-row3), which reflows into 2x2 only incidentally at
+               certain widths, not reliably at this column's actual width. */
+            .gpc-mobile-p-btn-grid {
+                display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+            }
+            .gpc-mobile-p-btn-grid .gpp-pt-btn,
+            .gpc-mobile-p-btn-grid button {
+                width: 100%; box-sizing: border-box;
+            }
+            .gpc-mobile-p3-checkboxes {
+                display: flex; flex-direction: column; gap: 4px;
             }
             .gpp-swatch {
                 position: relative; aspect-ratio: 1 / 1; min-height: 15px; border-radius: 4px;
@@ -30609,24 +30633,139 @@ applyLockState();
         return previewCanvasEl;
     }
 
+    // Relocates (not clones) a real, singleton Ghost++ DOM node into
+    // `newParent` while placeholder mode is active, remembering exactly
+    // where it came from so returnBorrowedNodes() can put it back. These
+    // are the SAME elements the real Ghost++ modal needs in place if it's
+    // ever opened normally -- cloning would produce a visual copy with none
+    // of the original's live wiring/state, so borrowing (moving) is the
+    // only option that keeps every button/checkbox genuinely functional
+    // without reimplementing any of Ghost++'s own logic a second time.
+    let borrowedNodes = []; // [{ node, originalParent, originalNextSibling }]
+    function borrowNode(node, newParent) {
+        if (!node) return;
+        borrowedNodes.push({ node, originalParent: node.parentElement, originalNextSibling: node.nextElementSibling });
+        newParent.appendChild(node);
+    }
+    // Restored in reverse borrow order, each via insertBefore its recorded
+    // next-sibling (falling back to appendChild if that sibling itself
+    // moved/vanished in the meantime) -- puts every borrowed node back
+    // exactly where Ghost++ itself put it, not just back into the right
+    // parent.
+    function returnBorrowedNodes() {
+        for (let i = borrowedNodes.length - 1; i >= 0; i--) {
+            const { node, originalParent, originalNextSibling } = borrowedNodes[i];
+            if (!originalParent) continue;
+            if (originalNextSibling && originalNextSibling.parentElement === originalParent) {
+                originalParent.insertBefore(node, originalNextSibling);
+            } else {
+                originalParent.appendChild(node);
+            }
+        }
+        borrowedNodes = [];
+    }
+
+    // Ensures Ghost++'s real progress section, drop zone, and template
+    // library / position-transform section are all currently rendered with
+    // fresh data for the focused template, so there's something current to
+    // borrow from -- ensurePaletteControllerReady() guarantees the modal
+    // shell (and the left-panel sections within it) exists at all, even if
+    // the real Ghost++ modal was never opened this session;
+    // gppRequestUiRefresh() then populates it (and the separate right-panel
+    // library/position-transform section) for whichever template is
+    // actually focused right now.
+    function ensureGhostPlusPlusPanelsReady() {
+        ensurePaletteControllerReady();
+        if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
+    }
+
+    // Placeholder 1: the real scan-progress bar + its two summary text
+    // lines + 4 of its 5 real buttons (Scan progress / Show errors / Show
+    // missing / Nearest error -- Clear is deliberately left behind, per
+    // explicit product decision) in a 2x2 grid. All borrowed from
+    // #gpp-progress-section (gpp-scan.js's gppRenderProgressBar), which the
+    // ids added there exist specifically to make findable.
+    function buildPlaceholder1Content(container) {
+        const section = document.getElementById('gpp-progress-section');
+        if (!section) return;
+        const bar = section.querySelector('#gpp-scan-bar-outer');
+        const summaryLine = section.querySelector('#gpp-scan-summary-line');
+        const countsLine = section.querySelector('#gpp-scan-counts-line'); // only present when there's something to report
+        const scanBtn = section.querySelector('#gpp-scan-btn-scan');
+        const showErrBtn = section.querySelector('#gpp-scan-btn-show-err');
+        const showMissBtn = section.querySelector('#gpp-scan-btn-show-miss');
+        const nearestBtn = section.querySelector('#gpp-scan-btn-nearest');
+
+        if (bar) borrowNode(bar, container);
+        if (summaryLine) borrowNode(summaryLine, container);
+        if (countsLine) borrowNode(countsLine, container);
+
+        const buttonsGrid = document.createElement('div');
+        buttonsGrid.className = 'gpc-mobile-p-btn-grid';
+        [scanBtn, showErrBtn, showMissBtn, nearestBtn].forEach((btn) => { if (btn) borrowNode(btn, buttonsGrid); });
+        container.appendChild(buttonsGrid);
+    }
+
+    // Placeholder 2: the real #gpp-drop-zone, wholesale (drag/drop/paste/
+    // click-to-choose file wiring already attached by gpp-init.js's
+    // wireDropZone() -- nothing here re-touches any of that).
+    function buildPlaceholder2Content(container) {
+        const dropZone = document.getElementById('gpp-drop-zone');
+        if (dropZone) borrowNode(dropZone, container);
+    }
+
+    // Placeholder 3: Place/Unset/Go to/Preview (2x2 grid, same layout
+    // approach as placeholder 1's buttons) from gpp-placement.js's
+    // gppRenderPositionTransform, then Lock Position / Group noise
+    // (already uniquely id'd there, no source changes needed), then the
+    // real "Manage templates" button (gpp-library.js) which already opens
+    // #gpp-lib-manage-modal on its own -- no need to reimplement that.
+    function buildPlaceholder3Content(container) {
+        const ptContainer = document.getElementById('gpp-lib-current-pt');
+        const placeBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-place') : null;
+        const unsetBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-unset') : null;
+        const gotoBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-goto') : null;
+        const previewBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-preview') : null;
+        const lockLabel = ptContainer ? ptContainer.querySelector('#gpp-pt-lock-label') : null;
+        const groupNoiseLabel = ptContainer ? ptContainer.querySelector('#gpp-pt-group-noise-label') : null;
+        const manageBtn = document.getElementById('gpp-lib-manage-btn');
+
+        const buttonsGrid = document.createElement('div');
+        buttonsGrid.className = 'gpc-mobile-p-btn-grid';
+        [placeBtn, unsetBtn, gotoBtn, previewBtn].forEach((btn) => { if (btn) borrowNode(btn, buttonsGrid); });
+        container.appendChild(buttonsGrid);
+
+        const checkboxWrap = document.createElement('div');
+        checkboxWrap.className = 'gpc-mobile-p3-checkboxes';
+        if (lockLabel) borrowNode(lockLabel, checkboxWrap);
+        if (groupNoiseLabel) borrowNode(groupNoiseLabel, checkboxWrap);
+        container.appendChild(checkboxWrap);
+
+        if (manageBtn) borrowNode(manageBtn, container);
+    }
+
     // Triggered by tapping .gpp-lib-thumb-canvas (the preview thumbnail
     // itself, see getTemplatePreviewCanvas above) -- a menu switcher
     // between two states, using this file's usual display:none-via-class
-    // convention rather than ever removing anything from the DOM:
+    // convention for the two containers that just toggle visibility (never
+    // removed from the DOM), plus the borrow/return mechanism above for the
+    // real Ghost++ content that has to actually move:
     //   - Native: #gpc-native-top-bar and .gpc-mobile-controls-row visible,
     //     #gpc-mobile-placeholder-group hidden (the default/starting state).
-    //   - Placeholders: the reverse.
-    // The group is created lazily on first use (still just "placeholder 1"
-    // / "placeholder 2" -- scaffolding for a feature that hasn't been
-    // specified yet) and, once created, persists across toggles -- only
-    // its .gpc-hidden class ever changes after that, same as the native
-    // top bar and controls row. Current state is read directly off the
-    // group's own class rather than tracked in a separate flag, so this
-    // stays correct even if triggered some other way later.
+    //   - Placeholders: the reverse, with p1/p2/p3 freshly (re)populated by
+    //     borrowing from Ghost++'s real panels each time -- switching case
+    //     it back to native returns everything and empties p1/p2/p3 again,
+    //     so a later switch back to placeholders always borrows current
+    //     data rather than showing whatever was true the last time.
+    // The group and its 3 column divs are created lazily on first use and,
+    // once created, persist across toggles as stable containers -- only
+    // their contents and .gpc-hidden class change after that. Current state
+    // is read directly off the group's own class rather than tracked in a
+    // separate flag, so this stays correct even if triggered some other way
+    // later.
     // .gpc-mobile-palette-wrap (the color grid + preview thumbnail itself)
-    // is deliberately never touched by either direction -- it stays
-    // visible throughout, exactly as it already does; nothing here
-    // references it.
+    // is deliberately never touched by either direction -- it stays visible
+    // throughout, exactly as it already does; nothing here references it.
     function toggleNativeControlsForPlaceholders() {
         const nativeTopBar = document.getElementById('gpc-native-top-bar');
         const controlsRow = document.querySelector('.gpc-mobile-controls-row');
@@ -30637,17 +30776,16 @@ applyLockState();
             group.id = 'gpc-mobile-placeholder-group';
             group.className = 'gpc-mobile-placeholder-group gpc-hidden';
 
-            const placeholder1 = document.createElement('div');
-            placeholder1.id = 'gpc-mobile-placeholder-1';
-            placeholder1.className = 'gpc-mobile-placeholder';
-            placeholder1.textContent = 'placeholder 1';
-
-            const placeholder2 = document.createElement('div');
-            placeholder2.id = 'gpc-mobile-placeholder-2';
-            placeholder2.className = 'gpc-mobile-placeholder';
-            placeholder2.textContent = 'placeholder 2';
-
-            group.append(placeholder1, placeholder2);
+            const p1 = document.createElement('div');
+            p1.id = 'gpc-mobile-placeholder-1';
+            p1.className = 'gpc-mobile-placeholder';
+            const p2 = document.createElement('div');
+            p2.id = 'gpc-mobile-placeholder-2';
+            p2.className = 'gpc-mobile-placeholder';
+            const p3 = document.createElement('div');
+            p3.id = 'gpc-mobile-placeholder-3';
+            p3.className = 'gpc-mobile-placeholder';
+            group.append(p1, p2, p3);
 
             // Inserted where the native elements visually sit, so the rest
             // of #bottomControls (the color grid below) doesn't jump
@@ -30660,6 +30798,19 @@ applyLockState();
         }
 
         const switchingToPlaceholders = group.classList.contains('gpc-hidden');
+        if (switchingToPlaceholders) {
+            ensureGhostPlusPlusPanelsReady();
+            buildPlaceholder1Content(document.getElementById('gpc-mobile-placeholder-1'));
+            buildPlaceholder2Content(document.getElementById('gpc-mobile-placeholder-2'));
+            buildPlaceholder3Content(document.getElementById('gpc-mobile-placeholder-3'));
+        } else {
+            returnBorrowedNodes();
+            ['gpc-mobile-placeholder-1', 'gpc-mobile-placeholder-2', 'gpc-mobile-placeholder-3'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.innerHTML = ''; // clears our own now-empty wrapper divs (button grids, checkbox stacks) left behind
+            });
+        }
+
         group.classList.toggle('gpc-hidden', !switchingToPlaceholders);
         if (nativeTopBar) nativeTopBar.classList.toggle('gpc-hidden', switchingToPlaceholders);
         if (controlsRow) controlsRow.classList.toggle('gpc-hidden', switchingToPlaceholders);

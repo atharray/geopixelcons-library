@@ -1265,6 +1265,7 @@
                 { type: 'fixed', text: 'Mobile Painting (in development): the two placeholder panels shown after tapping the preview thumbnail no longer have awkward extra spacing between them -- they now share one parent instead of each stacking its own margin on top of the surrounding layout\'s own gap' },
                 { type: 'fixed', text: 'Mobile Painting (in development): fixed a real bug where the native top bar id (#gpc-native-top-bar) could end up on the entire white bottom-bar panel instead of just the small top bar row -- tapping the preview thumbnail was hiding that whole panel\'s white background, exposing the map behind it' },
                 { type: 'changed', text: 'Mobile Painting (in development): tapping the template preview thumbnail is now a proper toggle -- tap again to switch back from the placeholder panels to the native controls, instead of it only going one way' },
+                { type: 'added', text: 'Mobile Painting (in development): the placeholder panels are now three real columns instead of two placeholders -- left is Ghost++\'s own scan progress bar, summary text, and Scan/Show errors/Show missing/Nearest error buttons; middle is the real template drop zone; right is Place/Unset/Go to/Preview, Lock Position, Group noise, and a Manage templates button that opens the real template manager -- all genuine Ghost++ controls, borrowed from their real locations while this view is open and returned when switching back' },
             ]
         },
         {
