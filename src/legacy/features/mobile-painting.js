@@ -899,7 +899,7 @@
     const VISIBLE_ROWS_KEY = 'gpc_mobilePaletteVisibleRows';
     function getVisibleRowsSetting() {
         const n = parseInt(localStorage.getItem(VISIBLE_ROWS_KEY), 10);
-        return (Number.isInteger(n) && n >= 1 && n <= 10) ? n : 2; // 2 matches the height this grid always used before this setting existed
+        return (Number.isInteger(n) && n >= 1 && n <= 10) ? n : 3; // explicit default, per product decision
     }
     function setVisibleRowsSetting(n) {
         try { localStorage.setItem(VISIBLE_ROWS_KEY, String(n)); } catch (e) {}

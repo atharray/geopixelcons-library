@@ -1305,6 +1305,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Mobile Painting (in development): with no Ghost++ template focused yet -- most notably the very first time this feature is ever opened -- a "Click for template options" prompt now shows in place of the color grid. Tapping it opens the same template options (drop zone, Manage templates, Scan progress, and so on) placeholder mode already provides once a template exists; previously there was no way to reach any of that at all with nothing focused yet' },
                 { type: 'changed', text: 'Mobile Painting (in development): the template preview thumbnail is now a square, its width matching whatever height its own row ends up (was a plain rectangle sized to the image itself)' },
                 { type: 'fixed', text: 'Mobile Painting (in development): Enable, Sort, Filter, and Get hex values in the bottom controls row now close each other when a different one is opened, instead of leaving multiple of them visibly open on top of each other at once' },
+                { type: 'changed', text: 'Mobile Painting (in development): the "Visible rows" dropdown now defaults to 3 instead of 2' },
             ]
         },
         {
@@ -31213,7 +31214,7 @@ applyLockState();
     const VISIBLE_ROWS_KEY = 'gpc_mobilePaletteVisibleRows';
     function getVisibleRowsSetting() {
         const n = parseInt(localStorage.getItem(VISIBLE_ROWS_KEY), 10);
-        return (Number.isInteger(n) && n >= 1 && n <= 10) ? n : 2; // 2 matches the height this grid always used before this setting existed
+        return (Number.isInteger(n) && n >= 1 && n <= 10) ? n : 3; // explicit default, per product decision
     }
     function setVisibleRowsSetting(n) {
         try { localStorage.setItem(VISIBLE_ROWS_KEY, String(n)); } catch (e) {}
