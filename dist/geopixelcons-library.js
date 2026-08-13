@@ -5131,6 +5131,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             #${GPP_IDS.modal}.gpp-minified #${GPP_IDS.right},
             #${GPP_IDS.modal}.gpp-minified .gpp-edge,
             #${GPP_IDS.modal}.gpp-minified .gpp-corner { display: none !important; }
+            /* The "Ghost++" title itself is dead weight in the already-cramped
+               260px minified strip -- the editing-name label next to it (see
+               gppTruncateEditingName above) already identifies the panel,
+               so drop the title to leave it more room before truncating. */
+            #${GPP_IDS.modal}.gpp-minified .gpp-head-title { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-left-body { overflow: hidden; }
             #${GPP_IDS.modal}.gpp-minified #gpp-left-body > *:not(#gpp-palette-section) { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > summary,
@@ -5576,7 +5581,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             <div class="gpp-corner se" data-gpp-resize="se"></div>
             <div id="${GPP_IDS.left}">
                 <div class="gpp-head" data-gpp-drag>
-                    <strong>Ghost++</strong>
+                    <strong class="gpp-head-title">Ghost++</strong>
                     <span id="${GPP_IDS.editingLabel}"></span>
                     <span class="gpp-spacer"></span>
                     <button type="button" data-gpp-action="minify" aria-label="Minified view" title="Compact view: just Enable all / Disable all and the color grid">▭</button>
