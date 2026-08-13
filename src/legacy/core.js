@@ -1279,6 +1279,7 @@
                 { type: 'added', text: 'Mobile Painting (in development): pressing Place now temporarily switches into Inspect mode for as long as the click-to-place capture is active, and switches back the instant it ends -- placed, Escape-cancelled, or superseded -- so aiming a tap at the map doesn\'t fight with paint mode' },
                 { type: 'added', text: 'Mobile Painting (in development): the real left/up/down/right nudge arrows now sit to the right of Lock Position/Group noise in the placement column, with the real opacity slider below both' },
                 { type: 'added', text: 'Mobile Painting (in development): color swatches now show the same completion badge Ghost++\'s own grid does once a scan has run -- a white circle with a green check when a color is fully placed, a black ring before it\'s started, and a red-to-green ring while in progress' },
+                { type: 'fixed', text: 'Mobile Painting (in development): fixed a real regression from the palette view toggle addition that froze the entire page on tapping the template preview thumbnail -- two independent MutationObservers ended up watching the same Ghost++ modal, and each one\'s own disconnect-before-mutate-reconnect-after guard only ever covered ITS OWN mutations, not the other observer\'s, so each one\'s reconnect kept re-triggering the other forever. Merged into a single shared observer, which is the only way one disconnect can actually cover both concerns at once' },
             ]
         },
         {

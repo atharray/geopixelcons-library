@@ -582,59 +582,31 @@
 
     // Palette view toggle (Grid/List, gpp-view-settings.js), borrowed into
     // buildTemplatePaletteGrid's own .gpc-mobile-palette-wrap, directly left
-    // of .gpc-mobile-preview-frame. Kept live-synced INDEPENDENTLY of p1/p2/
-    // p3's own placeholder-mode-scoped observer below -- .gpc-mobile-
-    // palette-wrap is always visible, not just during placeholder mode, and
-    // #gpp-view-settings-section is wiped and rebuilt by refreshAll() on
-    // EVERY gppRequestUiRefresh() call, including the one this file's own
-    // soloColor()/toggleColor() already fire after every single swatch tap
-    // -- without this, the toggle would go stale after the very first color
-    // click, not just in some rare alongside-the-real-modal scenario.
-    // Started once (the first time buildTemplatePaletteGrid borrows it) and
-    // never stopped, for the same reason #gpp-modal itself is a stable,
-    // permanent root built at Ghost++ init regardless of whether its own
-    // modal has ever been opened: there's no "leaving" event to stop on the
-    // way placeholder mode has one.
+    // of .gpc-mobile-preview-frame. Kept live-synced by the SAME shared
+    // observer as p1/p2/p3 (startGhostModalLiveSync, below) -- an EARLIER
+    // version of this used a second, independent MutationObserver instead,
+    // which caused a real, shipped freeze-the-page bug: two separate
+    // observers both watching #gpp-modal, each disconnecting only ITSELF
+    // before its own mutation and reconnecting only ITSELF after, still see
+    // each OTHER's mutations (disconnecting observer A doesn't stop B from
+    // reacting to A's own DOM changes) -- so A's reconnect-after-mutation
+    // gets seen by B, which mutates and reconnects, which A (already back
+    // on again) sees and reacts to, forever. A single shared observer's
+    // disconnect covers BOTH concerns' own mutations at once, which is the
+    // only way to actually break a loop like that.
     //
     // Note: toggling Grid/List here only changes Ghost++'s OWN real
     // gppSettings.paletteViewMode (so it's remembered correctly if the real
     // modal is ever opened) -- it does not switch THIS file's own compact
     // grid (buildTemplatePaletteGrid) to a list layout, which always renders
     // as a grid regardless of this setting.
-    let viewToggleBorrowedNodes = []; // separate from borrowedNodes -- see that block's own comment for why
-    let paletteViewToggleObserver = null;
+    let viewToggleBorrowedNodes = []; // separate from borrowedNodes -- its lifecycle (borrowed for as long as the compact grid exists at all, not scoped to placeholder mode) is independent of p1/p2/p3's, so a plain "return everything" call for one must never also catch the other.
     function borrowPaletteViewToggle(hostEl) {
         const row = document.getElementById('gpp-vs-palette-view-row');
         if (row && hostEl) {
             row.classList.add('gpc-mobile-view-toggle-row');
             borrowNode(row, hostEl, viewToggleBorrowedNodes);
         }
-    }
-    function startPaletteViewToggleLiveSync() {
-        if (paletteViewToggleObserver) return;
-        const modalEl = document.getElementById('gpp-modal');
-        if (!modalEl) return;
-        let refreshQueued = false;
-        paletteViewToggleObserver = new MutationObserver(() => {
-            if (refreshQueued) return;
-            refreshQueued = true;
-            Promise.resolve().then(() => {
-                refreshQueued = false;
-                const wrap = document.querySelector('.gpc-mobile-palette-wrap');
-                if (!wrap) return; // no compact grid currently shown -- nothing to keep in sync
-                if (!paletteViewToggleObserver) return;
-                paletteViewToggleObserver.disconnect();
-                try {
-                    returnBorrowedNodes(viewToggleBorrowedNodes);
-                    borrowPaletteViewToggle(wrap);
-                } finally {
-                    if (paletteViewToggleObserver && modalEl.isConnected) {
-                        paletteViewToggleObserver.observe(modalEl, { childList: true, subtree: true });
-                    }
-                }
-            });
-        });
-        paletteViewToggleObserver.observe(modalEl, { childList: true, subtree: true });
     }
 
     // Ensures Ghost++'s real progress section, drop zone, and template
@@ -665,75 +637,93 @@
         if (placementPanel) { placementPanel.innerHTML = ''; buildPlaceholder3Content(placementPanel); }
     }
 
-    // Keeps p1/p2/p3 live-synced with Ghost++'s own re-renders WHILE
-    // placeholder mode is showing -- without this, any borrowed control's
-    // own interaction leaves every OTHER borrowed node permanently stale.
-    // Root cause: `onChange` (the parameter gpp-scan.js/gpp-placement.js/
-    // gpp-library.js's render functions were called with) IS gpp-init.js's
-    // refreshAll, called DIRECTLY by a borrowed checkbox/button's own
-    // handler -- refreshAll() itself never touches gppUiRefreshSubscribers
-    // (only the separate gppRequestUiRefresh() gateway does), so
+    // Keeps everything borrowed from the real Ghost++ modal live-synced
+    // with its own re-renders: the palette-view toggle above (borrowed for
+    // as long as the compact grid exists at all -- .gpc-mobile-palette-wrap
+    // is always visible, not just during placeholder mode) AND p1/p2/p3
+    // (borrowed only while placeholder mode is showing). Without this, any
+    // borrowed control's own interaction leaves every OTHER borrowed node
+    // permanently stale. Root cause: `onChange` (the parameter
+    // gpp-scan.js/gpp-placement.js/gpp-library.js/gpp-view-settings.js's
+    // render functions were called with) IS gpp-init.js's refreshAll,
+    // called DIRECTLY by a borrowed checkbox/button's own handler --
+    // refreshAll() itself never touches gppUiRefreshSubscribers (only the
+    // separate gppRequestUiRefresh() gateway does), so
     // gppSubscribeUiRefresh() alone can't catch these. refreshAll() wipes
-    // and rebuilds #gpp-progress-section's content and (via
-    // gppRenderTemplateLibrary) #gpp-lib-current-pt on every single call --
-    // creating a fresh, invisible replacement set back in their original,
-    // now-empty-looking home, while whatever we'd already borrowed keeps
-    // its own old listeners (DOM relocation doesn't detach those) but stops
-    // receiving any further updates. Two concrete, reported symptoms of
-    // this: Lock Position / Group noise checkboxes visibly desyncing from
-    // Ghost++'s own state after the first interaction, and Place/Preview
-    // appearing dead -- gppRenderPositionTransform calls
-    // gppCancelPlacementCapture() at the START of every one of these
-    // re-renders, killing an in-progress "click the map to place" capture
-    // the instant any other borrowed control on this panel is touched.
+    // and rebuilds #gpp-progress-section's content, #gpp-view-settings-
+    // section's content, and (via gppRenderTemplateLibrary)
+    // #gpp-lib-current-pt on every single call -- creating fresh, invisible
+    // replacement sets back in their original, now-empty-looking homes,
+    // while whatever we'd already borrowed keeps its own old listeners (DOM
+    // relocation doesn't detach those) but stops receiving any further
+    // updates. Concrete, reported symptoms of this: Lock Position / Group
+    // noise checkboxes visibly desyncing from Ghost++'s own state after the
+    // first interaction, Place/Preview appearing dead
+    // (gppRenderPositionTransform calls gppCancelPlacementCapture() at the
+    // START of every one of these re-renders, killing an in-progress
+    // capture the instant any other borrowed control is touched), and the
+    // palette-view toggle going stale after the very first color tap (this
+    // file's own soloColor()/toggleColor() already call
+    // gppRequestUiRefresh() themselves).
     //
     // Fixed the same way the hide-paint-menu.js reorder bug was: a
     // MutationObserver watching for externally-triggered DOM changes and
     // reacting immediately. Watches #gpp-modal itself (the whole modal's
-    // stable, never-replaced root) with subtree:true, since the specific
-    // containers being watched have different replacement semantics
-    // (#gpp-progress-section keeps its own identity and just gets new
-    // children; #gpp-lib-current-pt gets entirely replaced by a new div
-    // with the same id, as part of gppRenderTemplateLibrary's own full
-    // rebuild) -- observing the whole modal catches both uniformly.
-    // Disconnects itself before its OWN return+rebuild mutations and
-    // reconnects after, rather than a same-tick flag (a MutationObserver
-    // callback fires as a later microtask, by which point a flag reset
-    // synchronously inside this same call would already be back to its
-    // original value) -- otherwise this rebuild would trigger itself
-    // indefinitely, since returning and re-borrowing are themselves
-    // childList mutations within the observed subtree.
-    let placeholderLiveSyncObserver = null;
-    function startPlaceholderLiveSync() {
-        if (placeholderLiveSyncObserver) return;
+    // stable, never-replaced root, built at Ghost++ init regardless of
+    // whether its own modal has ever been opened) with subtree:true, since
+    // the specific containers being watched have different replacement
+    // semantics (#gpp-progress-section keeps its own identity and just gets
+    // new children; #gpp-lib-current-pt and gpp-view-settings.js's own row
+    // get entirely replaced by fresh elements, as part of their render
+    // functions' own full rebuild) -- observing the whole modal catches all
+    // of these uniformly.
+    //
+    // ONE shared observer, started once and never stopped -- there's no
+    // "leaving" event to stop on, since the palette-view toggle concern is
+    // permanent for as long as the compact grid exists at all, well beyond
+    // any single placeholder-mode session (see the comment above the
+    // palette-view toggle borrow functions for why an earlier, separate-
+    // observer version of this caused a real, shipped freeze bug: two
+    // observers each disconnecting only themselves before their own
+    // mutation still see each OTHER's mutations, so each one's reconnect
+    // re-triggers the other, forever). Disconnects itself before its OWN
+    // mutations and reconnects after, rather than a same-tick flag (a
+    // MutationObserver callback fires as a later microtask, by which point
+    // a flag reset synchronously inside this same call would already be
+    // back to its original value) -- otherwise THIS rebuild would trigger
+    // itself indefinitely too, since returning and re-borrowing are
+    // themselves childList mutations within the observed subtree.
+    let ghostModalLiveSyncObserver = null;
+    function startGhostModalLiveSync() {
+        if (ghostModalLiveSyncObserver) return;
         const modalEl = document.getElementById('gpp-modal');
         if (!modalEl) return;
         let refreshQueued = false;
-        placeholderLiveSyncObserver = new MutationObserver(() => {
+        ghostModalLiveSyncObserver = new MutationObserver(() => {
             if (refreshQueued) return;
             refreshQueued = true;
             Promise.resolve().then(() => {
                 refreshQueued = false;
-                const group = document.getElementById('gpc-mobile-placeholder-group');
-                if (!group || group.classList.contains('gpc-hidden')) return;
-                if (!placeholderLiveSyncObserver) return;
-                placeholderLiveSyncObserver.disconnect();
+                if (!ghostModalLiveSyncObserver) return;
+                ghostModalLiveSyncObserver.disconnect();
                 try {
-                    rebuildPlaceholderColumns();
+                    const wrap = document.querySelector('.gpc-mobile-palette-wrap');
+                    if (wrap) {
+                        returnBorrowedNodes(viewToggleBorrowedNodes);
+                        borrowPaletteViewToggle(wrap);
+                    }
+                    const group = document.getElementById('gpc-mobile-placeholder-group');
+                    if (group && !group.classList.contains('gpc-hidden')) {
+                        rebuildPlaceholderColumns();
+                    }
                 } finally {
-                    if (placeholderLiveSyncObserver && modalEl.isConnected) {
-                        placeholderLiveSyncObserver.observe(modalEl, { childList: true, subtree: true });
+                    if (ghostModalLiveSyncObserver && modalEl.isConnected) {
+                        ghostModalLiveSyncObserver.observe(modalEl, { childList: true, subtree: true });
                     }
                 }
             });
         });
-        placeholderLiveSyncObserver.observe(modalEl, { childList: true, subtree: true });
-    }
-    function stopPlaceholderLiveSync() {
-        if (placeholderLiveSyncObserver) {
-            placeholderLiveSyncObserver.disconnect();
-            placeholderLiveSyncObserver = null;
-        }
+        ghostModalLiveSyncObserver.observe(modalEl, { childList: true, subtree: true });
     }
 
     // Paste-to-upload regression fix: gpp-init.js's wireDropZone() attaches
@@ -1020,9 +1010,15 @@
         if (switchingToPlaceholders) {
             ensureGhostPlusPlusPanelsReady();
             rebuildPlaceholderColumns();
-            startPlaceholderLiveSync();
+            startGhostModalLiveSync();
         } else {
-            stopPlaceholderLiveSync();
+            // No stopGhostModalLiveSync() call here -- the shared observer
+            // (see its own comment) stays running permanently; its callback
+            // already gates the p1/p2/p3 rebuild on the group actually being
+            // visible, so leaving it connected while native controls are
+            // showing just means it keeps the palette-view toggle in sync
+            // (its own separate, always-relevant concern) and no-ops on the
+            // p1/p2/p3 half.
             restoreDropZoneForDesktop();
             returnBorrowedNodes();
             ['gpc-mobile-scan-panel', 'gpc-mobile-upload-panel', 'gpc-mobile-placement-panel'].forEach((id) => {
@@ -1188,7 +1184,7 @@
         wrap.appendChild(grid);
 
         // Palette view toggle (Grid/List) -- see the borrowPaletteViewToggle/
-        // startPaletteViewToggleLiveSync block above for the full picture.
+        // startGhostModalLiveSync blocks above for the full picture.
         // Returned-then-reborrowed on every call here (a template switch),
         // same discipline as rebuildPlaceholderColumns uses for p1/p2/p3 --
         // the OLD wrap (and whatever it's currently holding) is about to be
@@ -1196,7 +1192,7 @@
         // to be reclaimed before that happens, not left to go down with it.
         returnBorrowedNodes(viewToggleBorrowedNodes);
         borrowPaletteViewToggle(wrap);
-        startPaletteViewToggleLiveSync();
+        startGhostModalLiveSync();
 
         // Small live preview of the focused template's own ghost image, to
         // the grid's right -- see the .gpc-mobile-preview-frame CSS comment
