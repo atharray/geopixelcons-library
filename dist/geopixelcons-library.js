@@ -1292,6 +1292,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Mobile Painting (in development): the real left/up/down/right nudge arrows now sit to the right of Lock Position/Group noise in the placement column, with the real opacity slider below both' },
                 { type: 'added', text: 'Mobile Painting (in development): color swatches now show the same completion badge Ghost++\'s own grid does once a scan has run -- a white circle with a green check when a color is fully placed, a black ring before it\'s started, and a red-to-green ring while in progress' },
                 { type: 'fixed', text: 'Mobile Painting (in development): fixed a real regression from the palette view toggle addition that froze the entire page on tapping the template preview thumbnail -- two independent MutationObservers ended up watching the same Ghost++ modal, and each one\'s own disconnect-before-mutate-reconnect-after guard only ever covered ITS OWN mutations, not the other observer\'s, so each one\'s reconnect kept re-triggering the other forever. Merged into a single shared observer, which is the only way one disconnect can actually cover both concerns at once' },
+                { type: 'added', text: 'Mobile Painting (in development): the color grid now actually switches to the same compact list layout (color chip, hex, "<placed>/<total>", and a mini progress bar per row) Ghost++\'s own grid does when the borrowed Grid/List toggle is set to List -- previously only the real Ghost++ panel changed layout; this grid stayed a tiled grid regardless of which mode was selected' },
+                { type: 'fixed', text: 'Mobile Painting (in development): switching Grid/List without also switching templates now actually updates this grid -- it only ever rebuilt on a template or visible-color-order change, so toggling the view mode alone silently did nothing until something else happened to trigger a rebuild' },
             ]
         },
         {
@@ -30629,6 +30631,38 @@ applyLockState();
             #gpc-mobile-palette-grid .gpp-swatch.gpp-swatch-off::after {
                 content: none;
             }
+            /* List mode (buildTemplatePaletteGrid mirrors gpp-palette.js's
+               own .gpp-swatch-list row exactly, via the SAME real
+               gppPaletteApplyListLayout() call it uses -- see that
+               function's call site below). Its background/text/bar colors
+               are Ghost++'s own, via t2()/isDarkMode() -- correct for the
+               real, independently-themed Ghost++ modal, wrong here for the
+               exact same reason it's wrong everywhere else in this file:
+               #bottomControls' own wrapper never itself goes dark, so an
+               OS/body-driven dark render would paint these rows dark
+               against a background staying light regardless. Re-themed
+               with tc(), ID-scoped to #gpc-mobile-palette-grid so Ghost++'s
+               own real grid (list mode there too) is untouched, and
+               !important so it wins over Ghost++'s own rules regardless of
+               which was written last. */
+            #gpc-mobile-palette-grid .gpp-swatch.gpp-swatch-list {
+                background: ${tc('#ffffff', '#181825')} !important;
+            }
+            #gpc-mobile-palette-grid .gpp-swatch.gpp-swatch-list:hover {
+                background: ${tc('#f3f4f6', '#232336')} !important;
+            }
+            #gpc-mobile-palette-grid .gpp-palette-list-chip {
+                border-color: ${tc('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')} !important;
+            }
+            #gpc-mobile-palette-grid .gpp-palette-list-hex {
+                color: ${tc('#111827', '#f5f5f5')} !important;
+            }
+            #gpc-mobile-palette-grid .gpp-palette-list-progress-text {
+                color: ${tc('#64748b', '#a6adc8')} !important;
+            }
+            #gpc-mobile-palette-grid .gpp-palette-list-bar-outer {
+                background: ${tc('#e5e7eb', '#313244')} !important;
+            }
             /* "Currently selected" indicator: a plain black square border
                with a white glow around it. Replaced the earlier rotating
                (then stationary) dashed mask-composite frame per explicit
@@ -31352,15 +31386,31 @@ applyLockState();
         const core = gppCreateCore();
         const colourLookup = (typeof gppPaletteBuildColourLookup === 'function') ? gppPaletteBuildColourLookup(template) : null;
         const hasProgress = !!template.scanSummary;
+        // Mirrors gpp-palette.js's own buildSwatch check exactly -- the SAME
+        // gppSettings.paletteViewMode the borrowed Grid/List toggle (see
+        // borrowPaletteViewToggle) writes to, so this grid switches to list
+        // mode in lockstep with it. Re-read fresh on every call here (every
+        // template switch, same as everything else in this function), not
+        // cached -- resync()'s own "sameEverything" fast path already
+        // leaves an existing grid's DOM alone between rebuilds, same as it
+        // does for every other per-template detail this function decides.
+        const listMode = gppSettings.paletteViewMode === 'list';
 
         const wrap = document.createElement('div');
         wrap.className = 'gpc-mobile-palette-wrap';
 
         // Distinct id from Ghost++'s own (class-only, no id) .gpp-palette-grid
-        // so the two are unambiguous to refer to separately.
+        // so the two are unambiguous to refer to separately. The list-mode
+        // modifier class is Ghost++'s own real one
+        // (.gpp-palette-grid.gpp-palette-list-mode, injected by
+        // gppInjectPaletteStyle -- display:flex/column instead of the
+        // tiled display:grid); its rule isn't scoped to any one container
+        // id, so reusing the class here is enough to pick it up, no new
+        // CSS needed for the container itself.
         const grid = document.createElement('div');
         grid.id = 'gpc-mobile-palette-grid';
         grid.className = 'gpp-palette-grid';
+        grid.classList.toggle('gpp-palette-list-mode', listMode);
 
         function soloColor(targetIndex, hex) {
             for (let index = 0; index < template.palette.length; index++) {
@@ -31430,42 +31480,73 @@ applyLockState();
         order.forEach((index) => {
             const hex = core.packedToHex(template.palette[index]);
             const enabled = core.maskHas(template.mask, index);
-            const stats = colourLookup ? gppPaletteStats(template, index, colourLookup) : null;
+            // Called unconditionally now (matches gpp-palette.js's own
+            // buildSwatch, which does the same) -- gppPaletteStats already
+            // safely handles a null/undefined colourLookup on its own
+            // (falls back to no per-color progress entry, same as the
+            // no-scan state), so the extra null-guard around the outer
+            // call here was redundant, and list mode below needs a real
+            // stats object unconditionally (gppPaletteApplyListLayout
+            // reads stats.total even when hasProgress is false, for its
+            // "<total> px" fallback text).
+            const stats = gppPaletteStats(template, index, colourLookup);
 
             const swatch = document.createElement('button');
             swatch.type = 'button';
-            swatch.className = 'gpp-swatch';
-            swatch.style.backgroundColor = hex;
+            swatch.className = 'gpp-swatch' + (listMode ? ' gpp-swatch-list' : '');
             swatch.dataset.hex = hex;
             swatch.dataset.index = String(index);
             setSwatchState(swatch, hex, enabled);
-            // Per-swatch completion badge -- mirrors gpp-palette.js's own
-            // grid-mode badge exactly (same classes, same real
-            // gppPaletteProgressColor() call for the in-progress
-            // interpolation, not reimplemented) so it reads identically to
-            // the real Ghost++ grid: white circle + green check once
-            // complete, a black unfilled ring before any of that color is
-            // placed, a red-to-green interpolated ring while in progress.
-            // .gpp-swatch-progress's own CSS (injected by Ghost++'s real
-            // gppInjectPaletteStyle, already triggered by
-            // ensurePaletteControllerReady elsewhere in this file) is reused
-            // as-is -- nothing scoped/overridden here, since it's
-            // data-driven rather than a light/dark theme concern. Only
-            // shown once a scan has actually run for this template
-            // (progress is otherwise unknown, not "0%") -- same
-            // hasProgress/stats.total>0 gate gpp-palette.js itself uses.
-            if (hasProgress && stats && stats.total > 0) {
-                const badge = document.createElement('span');
-                if (stats.completed >= stats.total) {
-                    badge.className = 'gpp-swatch-progress gpp-swatch-progress-complete';
-                } else if (stats.completed <= 0) {
-                    badge.className = 'gpp-swatch-progress gpp-swatch-progress-unstarted';
+
+            if (listMode) {
+                // Real Ghost++ function, called directly rather than
+                // reimplemented -- builds the exact same chip/hex/progress-
+                // text/mini-bar row gpp-palette.js's own buildSwatch does
+                // in list mode (see that function and its shared
+                // gppPaletteApplyListLayout helper). Defensively typeof-
+                // guarded, matching how gppPaletteShowTooltip is handled
+                // below, with a plain colored square as the fallback rather
+                // than an unstyled blank button if gpp-palette.js somehow
+                // hasn't loaded.
+                if (typeof gppPaletteApplyListLayout === 'function') {
+                    gppPaletteApplyListLayout(swatch, hex, stats, hasProgress);
                 } else {
-                    badge.className = 'gpp-swatch-progress gpp-swatch-progress-inprogress';
-                    badge.style.background = gppPaletteProgressColor(stats.completed / stats.total);
+                    swatch.style.backgroundColor = hex;
                 }
-                badge.setAttribute('aria-hidden', 'true');
-                swatch.appendChild(badge);
+            } else {
+                swatch.style.backgroundColor = hex;
+                // Per-swatch completion badge -- mirrors gpp-palette.js's
+                // own grid-mode badge exactly (same classes, same real
+                // gppPaletteProgressColor() call for the in-progress
+                // interpolation, not reimplemented) so it reads identically
+                // to the real Ghost++ grid: white circle + green check once
+                // complete, a black unfilled ring before any of that color
+                // is placed, a red-to-green interpolated ring while in
+                // progress. List mode skips this entirely, same as
+                // gpp-palette.js's own buildSwatch does -- the row's own
+                // progress text/bar already conveys the same thing, spelled
+                // out instead of iconified.
+                // .gpp-swatch-progress's own CSS (injected by Ghost++'s real
+                // gppInjectPaletteStyle, already triggered by
+                // ensurePaletteControllerReady elsewhere in this file) is
+                // reused as-is -- nothing scoped/overridden here, since
+                // it's data-driven rather than a light/dark theme concern.
+                // Only shown once a scan has actually run for this template
+                // (progress is otherwise unknown, not "0%") -- same
+                // hasProgress/stats.total>0 gate gpp-palette.js itself uses.
+                if (hasProgress && stats.total > 0) {
+                    const badge = document.createElement('span');
+                    if (stats.completed >= stats.total) {
+                        badge.className = 'gpp-swatch-progress gpp-swatch-progress-complete';
+                    } else if (stats.completed <= 0) {
+                        badge.className = 'gpp-swatch-progress gpp-swatch-progress-unstarted';
+                    } else {
+                        badge.className = 'gpp-swatch-progress gpp-swatch-progress-inprogress';
+                        badge.style.background = gppPaletteProgressColor(stats.completed / stats.total);
+                    }
+                    badge.setAttribute('aria-hidden', 'true');
+                    swatch.appendChild(badge);
+                }
             }
             swatch.addEventListener('click', () => {
                 if (liveState && liveState.soloMode === false) toggleColor(index, hex);
@@ -31474,7 +31555,7 @@ applyLockState();
             // Same custom mouse-following tooltip as Ghost++'s real grid,
             // not a native title attribute -- see gppPaletteShowTooltip's own
             // comment in gpp-palette.js for why.
-            if (stats && typeof gppPaletteShowTooltip === 'function') {
+            if (typeof gppPaletteShowTooltip === 'function') {
                 swatch.addEventListener('mouseenter', (event) => gppPaletteShowTooltip(event, hex, stats, hasProgress));
                 swatch.addEventListener('mousemove', (event) => gppPaletteMoveTooltip(event));
                 swatch.addEventListener('mouseleave', () => gppPaletteHideTooltip());
@@ -31923,7 +32004,7 @@ applyLockState();
     //      performFilterSort() directly -- neither reaches subscribers.
     //      Polling is the only reliable way to catch either without patching
     //      more of Ghost++'s own code than the one renderState hook above.
-    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, selectedHex, soloMode }
+    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, selectedHex, soloMode }
 
     function resync() {
         if (!liveState) return;
@@ -31971,6 +32052,7 @@ applyLockState();
                 liveState.grid = null;
                 liveState.templateId = null;
                 liveState.orderKey = null;
+                liveState.paletteViewMode = null;
                 liveState.selectedHex = null;
                 liveState.soloMode = true;
             }
@@ -31979,7 +32061,18 @@ applyLockState();
 
         const order = computeVisibleOrder(template);
         const orderKey = order.join(',');
-        const sameEverything = liveState.grid && liveState.templateId === template.id && liveState.orderKey === orderKey;
+        // Mirrors gpp-palette.js's own listMode check (gppSettings.
+        // paletteViewMode === 'list') -- included in sameEverything on
+        // purpose: toggling the borrowed Grid/List button (see
+        // borrowPaletteViewToggle) doesn't touch the template or its
+        // visible order, so without this a Grid<->List switch with no
+        // accompanying template switch would silently stay on the fast
+        // path below forever and this grid would never actually pick up
+        // the new mode -- same class of gap the injectStyle() reactivity
+        // fix above addressed, just for a full rebuild's worth of state
+        // instead of a stylesheet.
+        const paletteViewMode = gppSettings.paletteViewMode === 'list' ? 'list' : 'grid';
+        const sameEverything = liveState.grid && liveState.templateId === template.id && liveState.orderKey === orderKey && liveState.paletteViewMode === paletteViewMode;
 
         if (sameEverything) {
             const core = gppCreateCore();
@@ -32000,6 +32093,7 @@ applyLockState();
         liveState.grid = replacement.querySelector('.gpp-palette-grid');
         liveState.templateId = template.id;
         liveState.orderKey = orderKey;
+        liveState.paletteViewMode = paletteViewMode;
         dbgPush('Mobile Painting: (re)built palette grid for template "' + template.id + '" (' + order.length + '/' + template.palette.length + ' colors visible).', { uiComponent: 'Mobile Painting' });
     }
 
@@ -32057,7 +32151,7 @@ applyLockState();
         const nativeTopBar = innerWrapperEl ? innerWrapperEl.querySelector(':scope > .w-full.flex') : null;
         if (nativeTopBar && !nativeTopBar.id) nativeTopBar.id = 'gpc-native-top-bar';
 
-        liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null, selectedHex: null, soloMode: true };
+        liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null, paletteViewMode: null, selectedHex: null, soloMode: true };
 
         // The native Sort button (sortAndSetColors()) is redundant with our
         // own Sort control below -- hidden in place, same reasoning as
