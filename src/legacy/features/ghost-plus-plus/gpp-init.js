@@ -241,12 +241,16 @@
                 function refreshAll() {
                     const template = gppState.getFocusedTemplate();
                     const editingLabel = document.getElementById(GPP_IDS.editingLabel);
+                    const editingNameEl = editingLabel.querySelector('.gpp-editing-name');
+                    const editingCoordsEl = editingLabel.querySelector('.gpp-editing-coords');
                     if (!template) {
-                        editingLabel.textContent = '';
-                    } else if (template.position) {
-                        editingLabel.textContent = template.name + ' — X: ' + template.position.gridX + ', Y: ' + template.position.gridY;
+                        editingNameEl.textContent = '';
+                        editingCoordsEl.textContent = '';
                     } else {
-                        editingLabel.textContent = template.name + ' — not placed';
+                        editingNameEl.textContent = gppTruncateEditingName(template.name);
+                        editingCoordsEl.textContent = template.position
+                            ? 'X: ' + template.position.gridX + ', Y: ' + template.position.gridY
+                            : 'not placed';
                     }
 
                     // Single choke point every state-changing action already flows through
