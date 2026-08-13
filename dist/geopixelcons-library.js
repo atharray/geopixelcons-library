@@ -1303,6 +1303,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'changed', text: 'Mobile Painting (in development): the preview thumbnail\'s larger-preview button is now an info icon instead of an eye' },
                 { type: 'changed', text: 'Mobile Painting (in development): the larger-preview modal (and its own bigger preview image) is now about 40% larger' },
                 { type: 'added', text: 'Mobile Painting (in development): with no Ghost++ template focused yet -- most notably the very first time this feature is ever opened -- a "Click for template options" prompt now shows in place of the color grid. Tapping it opens the same template options (drop zone, Manage templates, Scan progress, and so on) placeholder mode already provides once a template exists; previously there was no way to reach any of that at all with nothing focused yet' },
+                { type: 'changed', text: 'Mobile Painting (in development): the template preview thumbnail is now a square, its width matching whatever height its own row ends up (was a plain rectangle sized to the image itself)' },
+                { type: 'fixed', text: 'Mobile Painting (in development): Enable, Sort, Filter, and Get hex values in the bottom controls row now close each other when a different one is opened, instead of leaving multiple of them visibly open on top of each other at once' },
             ]
         },
         {
@@ -30448,7 +30450,23 @@ applyLockState();
                with max-width) measurably distorted the image; two caps
                together, with neither dimension fixed, doesn't have that
                problem. image-rendering: pixelated keeps pixel art crisp at
-               a small display size instead of blurring it. */
+               a small display size instead of blurring it.
+               Per explicit product decision, the frame should also be a
+               SQUARE -- width matching whatever its own (now variable)
+               height ends up. CSS aspect-ratio can't do this on its own
+               here: flexbox resolves a row-direction item's main-axis size
+               (width) BEFORE cross-axis stretch determines its height, so
+               aspect-ratio (evaluated during that same earlier pass) has
+               no stretched height yet to derive from -- confirmed this
+               doesn't work by testing it directly (width stayed pinned at
+               min-width regardless of how tall the row actually became).
+               ensurePreviewFrameStaysSquare's ResizeObserver instead
+               reacts AFTER layout has already resolved a real height, so
+               there's nothing circular about reading it then and setting
+               width to match. min-width here is now just the pre-first-
+               observation fallback (that callback fires asynchronously,
+               not synchronously on observe()), not the frame's normal
+               resting width. */
             .gpc-mobile-preview-frame {
                 position: relative;
                 flex: 0 0 auto; min-width: 40px;
@@ -31068,6 +31086,37 @@ applyLockState();
         const order = [];
         for (let index = 0; index < template.palette.length; index++) order.push(index);
         return order;
+    }
+
+    // Keeps .gpc-mobile-preview-frame a SQUARE -- see that CSS rule's own
+    // comment for why this has to be a ResizeObserver rather than CSS
+    // aspect-ratio. ONE persistent observer, re-pointed at whichever frame
+    // is current rather than a new observer per rebuild -- disconnecting
+    // before each re-observe means an old, about-to-be-discarded frame
+    // (buildTemplatePaletteGrid makes a new one on every template switch)
+    // never lingers as an observed target. The >0.5 guard is what makes
+    // this convergent instead of a runaway loop: the write below itself
+    // changes the frame's box, which the browser re-notifies for, but that
+    // second notification finds width already matching height and does
+    // nothing further -- confirmed by calling this same reaction logic
+    // repeatedly against a real element and checking it stops writing
+    // after exactly one correction per genuine height change.
+    let previewFrameSquareObserver = null;
+    function ensurePreviewFrameStaysSquare(frame) {
+        if (!previewFrameSquareObserver) {
+            previewFrameSquareObserver = new ResizeObserver((entries) => {
+                for (const entry of entries) {
+                    const target = entry.target;
+                    const height = target.getBoundingClientRect().height;
+                    const width = target.getBoundingClientRect().width;
+                    if (Math.abs(width - height) > 0.5) {
+                        target.style.width = height + 'px';
+                    }
+                }
+            });
+        }
+        previewFrameSquareObserver.disconnect();
+        previewFrameSquareObserver.observe(frame);
     }
 
     // Cache for the ghost-image preview canvas (see buildTemplatePaletteGrid
@@ -32156,6 +32205,13 @@ applyLockState();
             previewFrame.appendChild(infoBtn);
 
             wrap.appendChild(previewFrame);
+            // Safe to call here even though `wrap` itself isn't inserted
+            // into the document until showCompactGrid runs right after
+            // this function returns -- ResizeObserver.observe() doesn't
+            // require a connected target; it just won't have anything to
+            // report until the frame actually gets a real layout box. See
+            // ensurePreviewFrameStaysSquare's own comment for the rest.
+            ensurePreviewFrameStaysSquare(previewFrame);
         }
 
         return wrap;
@@ -32370,6 +32426,26 @@ applyLockState();
     // .gpc-mobile-controls-row there for why this uses this codebase's own
     // theme signal rather than native Tailwind dark: classes.
 
+    // Shared across all 4 of this row's dropdowns (Enable/Sort/Filter/Get
+    // hex values -- 3 via buildDropdownButton below, Filter via its own
+    // near-identical buildFilterControl) -- without this, each one only
+    // ever closed ITSELF (via its own document-level outside-click
+    // listener, or picking one of its own options) and had no way to know
+    // about, let alone close, any of the OTHERS. Opening dropdown A while
+    // dropdown B was already open left both visibly open at once: A's own
+    // button click calls event.stopPropagation() (needed so the SAME
+    // click that opens A doesn't also immediately close A via A's own
+    // outside-click listener) -- but that ALSO means the click never
+    // reaches document, so B's own independent outside-click listener
+    // never fires either. Populated once, at buildControlsRow()'s own
+    // one-time build (never rebuilt afterward, so no accumulation risk).
+    let openControlsRowMenus = [];
+    function closeOtherControlsRowMenus(exceptCloseFn) {
+        openControlsRowMenus.forEach((closeFn) => {
+            if (closeFn !== exceptCloseFn) closeFn();
+        });
+    }
+
     // Generic small popup-menu button. Used for both the "Enable" and
     // "Get hex values" menus -- Ghost++'s own filter-dropdown DOM pattern
     // (trigger button + absolutely-positioned menu) without reusing its
@@ -32392,6 +32468,7 @@ applyLockState();
         const menu = document.createElement('div');
         menu.className = 'gpc-ctrl-menu';
         const closeMenu = () => menu.classList.remove('gpc-open');
+        openControlsRowMenus.push(closeMenu);
         optionDefs.forEach(({ text, onClick }) => {
             const option = document.createElement('div');
             option.className = 'gpc-ctrl-menu-option';
@@ -32404,6 +32481,8 @@ applyLockState();
         });
         button.addEventListener('click', (event) => {
             event.stopPropagation();
+            const opening = !menu.classList.contains('gpc-open');
+            if (opening) closeOtherControlsRowMenus(closeMenu);
             menu.classList.toggle('gpc-open');
         });
         menu.addEventListener('click', (event) => event.stopPropagation());
@@ -32476,6 +32555,7 @@ applyLockState();
         const menu = document.createElement('div');
         menu.className = 'gpc-ctrl-menu';
         const closeMenu = () => menu.classList.remove('gpc-open');
+        openControlsRowMenus.push(closeMenu);
         optionDefs.forEach(({ value, text, checked }) => {
             const label = document.createElement('label');
             label.className = 'gpc-ctrl-menu-option';
@@ -32500,6 +32580,8 @@ applyLockState();
 
         button.addEventListener('click', (event) => {
             event.stopPropagation();
+            const opening = !menu.classList.contains('gpc-open');
+            if (opening) closeOtherControlsRowMenus(closeMenu);
             menu.classList.toggle('gpc-open');
         });
         menu.addEventListener('click', (event) => event.stopPropagation());
