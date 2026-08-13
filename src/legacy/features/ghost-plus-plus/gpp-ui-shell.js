@@ -20,6 +20,31 @@
     // somewhat above the bare 480px floor, not only exactly at it.
     const GPP_NARROW_SWAP_MARGIN = 80;
 
+    // .gpp-head is a plain flex row (Ghost++ label, editing name, spacer,
+    // minify/close buttons) with no wrap -- a long ingested filename (image
+    // hashes, camera exports, etc. routinely run 40+ characters) grows the
+    // name span wide enough to shove the minify/close buttons straight off
+    // the modal's right edge. With the panel then stuck in minified mode
+    // (only Enable all/Disable all + the color grid shown, per that view's
+    // own CSS below) there was no other control left to toggle it back off
+    // -- reported by ReaCreations, 2026-08-13. Truncate the display copy
+    // here rather than the modal's overflow: hidden alone, so the name
+    // stays readable instead of just clipping mid-character.
+    // Ingested template names never actually carry an extension by this
+    // point -- gppIngestImageFile strips it before template.name is ever
+    // set (gpp-runtime.js), and JSON re-imports inherit that already-bare
+    // name -- but this still preserves one defensively in case a future
+    // ingest path ever sets a dotted name.
+    const GPP_EDITING_NAME_MAX = 10;
+    function gppTruncateEditingName(name) {
+        const safe = name || 'Untitled template';
+        const extMatch = /\.[a-z0-9]{2,4}$/i.exec(safe);
+        const ext = extMatch ? extMatch[0] : '';
+        const base = ext ? safe.slice(0, -ext.length) : safe;
+        if (base.length <= GPP_EDITING_NAME_MAX) return safe;
+        return base.slice(0, GPP_EDITING_NAME_MAX) + '...' + ext;
+    }
+
     // Rewrites the tag's content every call rather than no-op-ing once it
     // exists — t2()/isDarkMode() are evaluated fresh each time this runs, so
     // re-calling it (see gpp-init.js's theme-change observer) is how the UI
@@ -121,6 +146,14 @@
             #${GPP_IDS.editingLabel} {
                 font-size: 11px; font-weight: 600;
                 color: ${t2('#475569', '#a6adc8')};
+                /* Belt-and-suspenders alongside gppTruncateEditingName(): even
+                   if some future caller ever sets this span's text directly
+                   without truncating, min-width: 0 lets it actually shrink
+                   inside the flex row (flex items default to min-width: auto
+                   -- content width -- which is exactly what let a long name
+                   push the minify/close buttons off the modal before), and
+                   the ellipsis keeps it from clipping mid-character. */
+                min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
             }
             /* No overflow-y/scrollbar-gutter here — #gpp-left-body (its
                child, below) is the one that actually scrolls (.gpp-head

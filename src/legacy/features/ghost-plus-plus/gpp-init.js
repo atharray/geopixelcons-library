@@ -244,9 +244,9 @@
                     if (!template) {
                         editingLabel.textContent = '';
                     } else if (template.position) {
-                        editingLabel.textContent = template.name + ' — X: ' + template.position.gridX + ', Y: ' + template.position.gridY;
+                        editingLabel.textContent = gppTruncateEditingName(template.name) + ' — X: ' + template.position.gridX + ', Y: ' + template.position.gridY;
                     } else {
-                        editingLabel.textContent = template.name + ' — not placed';
+                        editingLabel.textContent = gppTruncateEditingName(template.name) + ' — not placed';
                     }
 
                     // Single choke point every state-changing action already flows through
