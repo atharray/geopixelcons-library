@@ -5182,17 +5182,32 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             #${GPP_IDS.modal} .gpp-head button {
                 border: none; background: transparent; color: inherit; cursor: pointer; font-size: 14px;
             }
+            /* Two stacked lines (name, then position) rather than one run-on
+               string -- a single-line version had the whole thing (name AND
+               the X/Y coordinates after it) subject to the same nowrap +
+               ellipsis rule below, so on anything narrower than the full
+               string's width the coordinates themselves got silently
+               ellipsis-clipped along with the name, not just the name (per
+               user follow-up on the original overflow fix). Splitting into
+               two lines lets each be truncated independently -- only
+               .gpp-editing-name (backstopping gppTruncateEditingName()) ever
+               needs to clip; .gpp-editing-coords is always short and fixed-
+               format ("X: n, Y: n") so it is never truncated. */
             #${GPP_IDS.editingLabel} {
+                display: flex; flex-direction: column; gap: 1px;
                 font-size: 11px; font-weight: 600;
                 color: ${t2('#475569', '#a6adc8')};
-                /* Belt-and-suspenders alongside gppTruncateEditingName(): even
-                   if some future caller ever sets this span's text directly
-                   without truncating, min-width: 0 lets it actually shrink
-                   inside the flex row (flex items default to min-width: auto
-                   -- content width -- which is exactly what let a long name
-                   push the minify/close buttons off the modal before), and
-                   the ellipsis keeps it from clipping mid-character. */
+                /* min-width: 0 lets this actually shrink inside the flex row
+                   (flex items default to min-width: auto -- content width --
+                   which is exactly what let a long name push the minify/close
+                   buttons off the modal before). */
+                min-width: 0;
+            }
+            #${GPP_IDS.editingLabel} .gpp-editing-name {
                 min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+            }
+            #${GPP_IDS.editingLabel} .gpp-editing-coords {
+                font-weight: 400; opacity: .85;
             }
             /* No overflow-y/scrollbar-gutter here — #gpp-left-body (its
                child, below) is the one that actually scrolls (.gpp-head
@@ -5582,7 +5597,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             <div id="${GPP_IDS.left}">
                 <div class="gpp-head" data-gpp-drag>
                     <strong class="gpp-head-title">Ghost++</strong>
-                    <span id="${GPP_IDS.editingLabel}"></span>
+                    <span id="${GPP_IDS.editingLabel}">
+                        <span class="gpp-editing-name"></span>
+                        <span class="gpp-editing-coords"></span>
+                    </span>
                     <span class="gpp-spacer"></span>
                     <button type="button" data-gpp-action="minify" aria-label="Minified view" title="Compact view: just Enable all / Disable all and the color grid">▭</button>
                     <button type="button" data-gpp-action="close" aria-label="Close">✕</button>
@@ -12919,12 +12937,16 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 function refreshAll() {
                     const template = gppState.getFocusedTemplate();
                     const editingLabel = document.getElementById(GPP_IDS.editingLabel);
+                    const editingNameEl = editingLabel.querySelector('.gpp-editing-name');
+                    const editingCoordsEl = editingLabel.querySelector('.gpp-editing-coords');
                     if (!template) {
-                        editingLabel.textContent = '';
-                    } else if (template.position) {
-                        editingLabel.textContent = gppTruncateEditingName(template.name) + ' — X: ' + template.position.gridX + ', Y: ' + template.position.gridY;
+                        editingNameEl.textContent = '';
+                        editingCoordsEl.textContent = '';
                     } else {
-                        editingLabel.textContent = gppTruncateEditingName(template.name) + ' — not placed';
+                        editingNameEl.textContent = gppTruncateEditingName(template.name);
+                        editingCoordsEl.textContent = template.position
+                            ? 'X: ' + template.position.gridX + ', Y: ' + template.position.gridY
+                            : 'not placed';
                     }
 
                     // Single choke point every state-changing action already flows through
