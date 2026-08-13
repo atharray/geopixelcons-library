@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/atharray/geopixelcons-library/compare/v2.0.0...v2.0.1) (2026-08-13)
+
+
+### Bug Fixes
+
+* **ghost-plus-plus:** stop minified-view header overflow from blocking controls ([c6bec00](https://github.com/atharray/geopixelcons-library/commit/c6bec0017dc77f5a216509998d2488f545f76425))
+
 ## [2.0.0](https://github.com/atharray/geopixelcons-library/compare/v1.0.2...v2.0.0) (2026-08-11)
 
 
