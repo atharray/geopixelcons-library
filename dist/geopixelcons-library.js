@@ -1294,6 +1294,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Mobile Painting (in development): fixed a real regression from the palette view toggle addition that froze the entire page on tapping the template preview thumbnail -- two independent MutationObservers ended up watching the same Ghost++ modal, and each one\'s own disconnect-before-mutate-reconnect-after guard only ever covered ITS OWN mutations, not the other observer\'s, so each one\'s reconnect kept re-triggering the other forever. Merged into a single shared observer, which is the only way one disconnect can actually cover both concerns at once' },
                 { type: 'added', text: 'Mobile Painting (in development): the color grid now actually switches to the same compact list layout (color chip, hex, "<placed>/<total>", and a mini progress bar per row) Ghost++\'s own grid does when the borrowed Grid/List toggle is set to List -- previously only the real Ghost++ panel changed layout; this grid stayed a tiled grid regardless of which mode was selected' },
                 { type: 'fixed', text: 'Mobile Painting (in development): switching Grid/List without also switching templates now actually updates this grid -- it only ever rebuilt on a template or visible-color-order change, so toggling the view mode alone silently did nothing until something else happened to trigger a rebuild' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the opacity slider was nearly unusable on a phone-width screen -- its row packed the label, the slider, the percentage, and the reset button into one line, leaving almost no width for the actual draggable track. The label/percentage/reset now share one line and the slider gets a full line to itself below them' },
+                { type: 'fixed', text: 'Mobile Painting (in development): fixed the palette-view toggle drifting to the right of the preview thumbnail over time instead of staying to its left -- borrowing always re-appends at the end of whatever it\'s given, and by the time a live-sync tick fires the thumbnail is already there too. It now borrows into its own stable column instead, which never moves once placed' },
+                { type: 'added', text: 'Mobile Painting (in development): a new "Visible rows" dropdown (1-10, default 2) below the Grid/List toggle controls how many rows show in the color grid before it scrolls' },
+                { type: 'added', text: 'Mobile Painting (in development): an eye icon on the template preview thumbnail opens a larger preview -- a bigger image, the same progress bar and summary text, every color in the template in a copyable list, and a Buy all colors button that opens the real purchase flow pre-filled with whatever you don\'t already own' },
+                { type: 'added', text: 'Mobile Painting (in development): pressing Place now also shows a reminder toast pointing at where to actually tap to place the template' },
             ]
         },
         {
@@ -30403,6 +30408,7 @@ applyLockState();
                image-rendering: pixelated keeps pixel art crisp at a small
                display size instead of blurring it. */
             .gpc-mobile-preview-frame {
+                position: relative;
                 flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
                 height: 60px; overflow: hidden; box-sizing: border-box; cursor: pointer;
                 border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
@@ -30412,6 +30418,109 @@ applyLockState();
                 height: 100%; width: auto; display: block;
                 image-rendering: pixelated;
             }
+            /* Eye icon, top-right corner of the preview frame -- opens the
+               larger-preview modal (see openTemplatePreviewModal). A small
+               semi-opaque backing circle so the glyph stays legible over
+               any preview image color, light or dark alike -- not
+               t2()/tc()-themed on purpose, same reasoning either way (dark
+               translucent circle, white glyph) reads fine over both. Own
+               click listener with stopPropagation -- sits inside the frame,
+               which itself is the placeholder-mode toggle's click target
+               (getTemplatePreviewCanvas), so a tap here must not ALSO
+               trigger that. */
+            .gpc-mobile-preview-eye-btn {
+                position: absolute; top: 2px; right: 2px; z-index: 1;
+                width: 16px; height: 16px; padding: 0; border: none; border-radius: 50%;
+                background: rgba(0,0,0,.55); color: #fff;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 10px; line-height: 1; cursor: pointer;
+            }
+            .gpc-mobile-preview-eye-btn:hover { background: rgba(0,0,0,.75); }
+            /* Larger-preview modal (openTemplatePreviewModal) -- a genuine
+               standalone overlay appended to document.body, NOT nested
+               inside #bottomControls, so t2() (not tc()) is the CORRECT
+               signal here, same as every other real modal in this codebase
+               (Ghost++'s own, core.js's #gpc-settings-modal) -- tc() exists
+               specifically to work around #bottomControls' own wrapper
+               never going dark, which doesn't apply to a modal this file
+               builds and positions itself. z-index matches core.js's own
+               #gpc-settings-modal convention (100000). */
+            .gpc-preview-modal-overlay {
+                position: fixed; inset: 0; z-index: 100000;
+                background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center;
+                padding: 16px; box-sizing: border-box;
+            }
+            .gpc-preview-modal-box {
+                width: 100%; max-width: 380px; max-height: 90vh; overflow-y: auto;
+                box-sizing: border-box; padding: 14px; border-radius: 10px;
+                background: ${t2('#ffffff', '#1e1e2e')}; color: ${t2('#111827', '#f5f5f5')};
+                box-shadow: 0 12px 32px rgba(0,0,0,.4);
+                display: flex; flex-direction: column; gap: 10px;
+            }
+            .gpc-preview-modal-header {
+                display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            }
+            .gpc-preview-modal-title {
+                font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            }
+            .gpc-preview-modal-close-btn {
+                flex-shrink: 0; border: none; background: transparent; cursor: pointer;
+                font-size: 14px; color: ${t2('#64748b', '#a6adc8')}; padding: 2px 4px;
+            }
+            /* Fresh gppLibraryRenderFullCanvas() call, independent of the
+               small thumbnail's own cached canvas (getTemplatePreviewCanvas)
+               -- a second call returns a second, unrelated <canvas>, so
+               there's no node-sharing conflict with the thumbnail still
+               showing behind this modal. max-width+max-height BOTH set as
+               caps (neither one FIXED) with width/height:auto is the
+               standard "fit within bounds, keep aspect ratio" CSS pattern
+               -- a different situation from the small thumbnail's own
+               comment (which warns against a FIXED height paired with
+               max-width, not two caps together). Verified in a real DOM
+               regardless, given that comment's own history. */
+            .gpc-preview-modal-canvas-frame {
+                display: flex; align-items: center; justify-content: center;
+                max-height: 40vh; overflow: hidden;
+                border: 1px solid ${t2('#d1d5db', '#45475a')}; border-radius: 6px;
+                background: ${t2('rgba(0,0,0,.03)', 'rgba(255,255,255,.05)')};
+            }
+            .gpc-preview-modal-canvas-frame canvas {
+                max-width: 100%; max-height: 40vh; width: auto; height: auto;
+                display: block; image-rendering: pixelated;
+            }
+            .gpc-preview-modal-progress-wrap { display: flex; flex-direction: column; gap: 4px; }
+            .gpc-preview-modal-bar-outer {
+                display: flex; height: 10px; border-radius: 5px; overflow: hidden;
+                background: ${t2('#e5e7eb', '#313244')};
+            }
+            .gpc-preview-modal-summary-line {
+                font-size: 11px; color: ${t2('#475569', '#a6adc8')};
+            }
+            .gpc-preview-modal-colors-wrap { display: flex; flex-direction: column; gap: 4px; }
+            .gpc-preview-modal-colors-wrap label {
+                font-size: 11px; font-weight: 600; color: ${t2('#1f2937', '#e2e2f5')};
+            }
+            .gpc-preview-modal-colors-row { display: flex; gap: 6px; align-items: stretch; }
+            .gpc-preview-modal-colors-row textarea {
+                flex: 1 1 auto; min-width: 0; height: 70px; resize: vertical;
+                font: 11px ui-monospace, Menlo, Consolas, monospace;
+                padding: 6px; border-radius: 6px; box-sizing: border-box;
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+                background: ${t2('#f9fafb', '#181825')}; color: ${t2('#111827', '#f5f5f5')};
+            }
+            .gpc-preview-modal-copy-btn {
+                flex-shrink: 0; width: 32px; border-radius: 6px; cursor: pointer;
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+                background: ${t2('#ffffff', '#313244')}; color: ${t2('#111827', '#f5f5f5')};
+                font-size: 14px;
+            }
+            .gpc-preview-modal-copy-btn:hover { background: ${t2('#f3f4f6', '#45475a')}; }
+            .gpc-preview-modal-buy-btn {
+                font: inherit; font-weight: 600; padding: 8px; border-radius: 6px; cursor: pointer;
+                border: 1px solid ${t2('#2563eb', '#89b4fa')};
+                background: ${t2('#2563eb', '#89b4fa')}; color: ${t2('#ffffff', '#1e1e2e')};
+            }
+            .gpc-preview-modal-buy-btn:hover { opacity: .9; }
             /* Palette view toggle (Grid/List), borrowed from gpp-view-
                settings.js -- see borrowPaletteViewToggle's own comment.
                Ghost++'s own .gpp-vs-row is a horizontal label-then-toggle
@@ -30436,11 +30545,43 @@ applyLockState();
                alone can't be trusted to win the tie). flex:0 0 auto matches
                .gpc-mobile-preview-frame's own sizing choice -- a fixed-
                content-width column, not growing/shrinking with the grid. */
+            /* Stable container for the toggle row above AND our own
+               "Visible rows" row below it (see ensureViewControlsColumn) --
+               THIS is what actually sits in .gpc-mobile-palette-wrap, not
+               the toggle row directly. Matters for more than just stacking
+               the two: borrowNode always APPENDS at the end of whatever
+               parent it's given, so re-borrowing the toggle row straight
+               into .gpc-mobile-palette-wrap on a live-sync tick (which by
+               then already holds the grid AND the preview frame) landed it
+               AFTER the preview frame instead of back between the grid and
+               the frame where it started -- a real, reported drift bug.
+               This container persists across live-sync ticks unchanged
+               (only the real row inside it gets returned+reborrowed), so
+               its own position in the wrap -- set once, correctly, when the
+               wrap itself is built -- never drifts. */
+            .gpc-mobile-view-controls-col {
+                flex: 0 0 auto; display: flex; flex-direction: column;
+                align-items: center; justify-content: center; gap: 5px;
+            }
             .gpc-mobile-view-toggle-row {
                 flex: 0 0 auto !important;
                 display: flex !important; flex-direction: column !important;
                 align-items: center !important; justify-content: center !important;
                 gap: 3px !important; margin: 0 !important;
+            }
+            /* Our own control, never Ghost++'s -- no borrow/restore
+               discipline needed, unlike everything else in this column. */
+            .gpc-mobile-visible-rows-row {
+                display: flex; flex-direction: column; align-items: center; gap: 2px;
+            }
+            .gpc-mobile-visible-rows-row label {
+                font-size: 9px; white-space: nowrap; color: ${tc('#64748b', '#a6adc8')};
+            }
+            .gpc-mobile-visible-rows-row select {
+                font: inherit; font-size: 11px; padding: 1px 3px; border-radius: 4px;
+                border: 1px solid ${tc('#d1d5db', '#45475a')};
+                background: ${tc('#ffffff', '#313244')}; color: ${tc('#111827', '#f5f5f5')};
+                cursor: pointer;
             }
             .gpc-mobile-view-toggle-row .gpp-vs-label {
                 min-width: 0 !important; font-size: 9px !important; white-space: nowrap !important;
@@ -30464,6 +30605,16 @@ applyLockState();
                inline style="display: flex; ..." (native markup), which beats
                any non-!important class on specificity alone. */
             .gpc-hidden { display: none !important; }
+            /* The native page's own top-of-screen toast (js/index151.js's
+               showAlert/#alertBox, real markup: fixed top-16 ... z-50) --
+               z-50 is far below this file's own modals (see
+               openTemplatePreviewModal, z-index:100000, matching core.js's
+               own #gpc-settings-modal convention), so an alert triggered
+               while one of those is open would silently render BEHIND it,
+               invisible. Alerts should always be the topmost thing on
+               screen regardless of what else is open -- bumped above every
+               modal this codebase uses, not just this file's own. */
+            #alertBox { z-index: 100050 !important; }
             /* Shown in place of #gpc-native-top-bar and .gpc-mobile-controls-
                row once the preview-thumbnail canvas is tapped -- see
                toggleNativeControlsForPlaceholders. Three equal-width columns
@@ -30583,6 +30734,30 @@ applyLockState();
             #gpc-mobile-placeholder-group #gpp-url-upload-btn,
             #gpc-mobile-placeholder-group .gpp-pt-opacity-value {
                 color: ${tc('#64748b', '#a6adc8')} !important;
+            }
+            /* #gpp-pt-opacity-row's real CSS packs label+slider+value+reset
+               into one nowrap flex row with a 50px-min-width label -- fine
+               in the real modal's much wider Template Settings panel, but
+               in this column (roughly a third of a phone screen) that
+               leaves almost no width for the slider's own draggable track.
+               Reordered onto two lines instead: label+value+reset stay
+               together on line one, the slider gets the full second line
+               (flex-basis 100% forces the wrap). order values are just
+               sequence numbers, not meaningful outside this rule. */
+            #gpc-mobile-placeholder-group #gpp-pt-opacity-row {
+                flex-wrap: wrap;
+            }
+            #gpc-mobile-placeholder-group #gpp-pt-opacity-row label {
+                order: 1; min-width: 0 !important; flex: 1 1 auto !important;
+            }
+            #gpc-mobile-placeholder-group #gpp-pt-opacity-row .gpp-pt-opacity-value {
+                order: 2;
+            }
+            #gpc-mobile-placeholder-group #gpp-pt-opacity-row .gpp-pt-reset-btn {
+                order: 3;
+            }
+            #gpc-mobile-placeholder-group #gpp-pt-opacity-row #gpp-pt-opacity {
+                order: 4; flex: 1 1 100% !important;
             }
             /* .gpp-pt-reset-btn is a <button>, so it'd otherwise also match
                the generic button rule above -- its real CSS deliberately
@@ -30936,12 +31111,103 @@ applyLockState();
     // grid (buildTemplatePaletteGrid) to a list layout, which always renders
     // as a grid regardless of this setting.
     let viewToggleBorrowedNodes = []; // separate from borrowedNodes -- its lifecycle (borrowed for as long as the compact grid exists at all, not scoped to placeholder mode) is independent of p1/p2/p3's, so a plain "return everything" call for one must never also catch the other.
-    function borrowPaletteViewToggle(hostEl) {
-        const row = document.getElementById('gpp-vs-palette-view-row');
-        if (row && hostEl) {
-            row.classList.add('gpc-mobile-view-toggle-row');
-            borrowNode(row, hostEl, viewToggleBorrowedNodes);
+
+    // "Visible rows" -- purely a THIS-file preference (how tall
+    // #gpc-mobile-palette-grid's own scroll area is), nothing Ghost++ has
+    // any concept of, so it's not gppSettings -- a dedicated localStorage
+    // key instead, same direct-localStorage approach isControlsRowDark()
+    // already uses for a similar reason.
+    const VISIBLE_ROWS_KEY = 'gpc_mobilePaletteVisibleRows';
+    function getVisibleRowsSetting() {
+        const n = parseInt(localStorage.getItem(VISIBLE_ROWS_KEY), 10);
+        return (Number.isInteger(n) && n >= 1 && n <= 10) ? n : 2; // 2 matches the height this grid always used before this setting existed
+    }
+    function setVisibleRowsSetting(n) {
+        try { localStorage.setItem(VISIBLE_ROWS_KEY, String(n)); } catch (e) {}
+    }
+    // Matches .gpp-palette-grid's own real metrics exactly (26px rows, 3px
+    // gap between them, 2px padding on each of the top/bottom edges) --
+    // see that rule's own comment for where those numbers come from. Not
+    // pixel-exact for every possible row count (grid-auto-rows' own
+    // minmax(26px, 1fr) can still let the LAST partial row stretch to fill
+    // any few leftover pixels), which is fine -- this is a scrollable area
+    // either way, so "approximately N rows before scrolling" is the actual
+    // goal, not a hard guarantee.
+    function computeGridMaxHeight(rows) {
+        return rows * 26 + (rows - 1) * 3 + 4;
+    }
+
+    // Our own control, appended alongside the borrowed toggle row inside
+    // ensureViewControlsColumn's container -- built once per compact-grid
+    // instance (guarded against the container already having one, since
+    // borrowPaletteViewToggle -- and so this -- runs again on every
+    // live-sync tick) and never touches any real Ghost++ state, so unlike
+    // everything else in this file there's no borrow/restore discipline
+    // needed for it at all.
+    function ensureVisibleRowsControl(col) {
+        if (col.querySelector('#gpc-mobile-visible-rows-row')) return;
+        const row = document.createElement('div');
+        row.id = 'gpc-mobile-visible-rows-row';
+        row.className = 'gpc-mobile-visible-rows-row';
+        const label = document.createElement('label');
+        label.htmlFor = 'gpc-mobile-visible-rows';
+        label.textContent = 'Visible rows';
+        const select = document.createElement('select');
+        select.id = 'gpc-mobile-visible-rows';
+        for (let n = 1; n <= 10; n++) {
+            const option = document.createElement('option');
+            option.value = String(n);
+            option.textContent = String(n);
+            select.appendChild(option);
         }
+        select.value = String(getVisibleRowsSetting());
+        select.addEventListener('change', () => {
+            const n = parseInt(select.value, 10) || 2;
+            setVisibleRowsSetting(n);
+            const liveGrid = document.getElementById('gpc-mobile-palette-grid');
+            if (liveGrid) liveGrid.style.maxHeight = computeGridMaxHeight(n) + 'px';
+        });
+        row.append(label, select);
+        col.appendChild(row);
+    }
+
+    // Shared, stable container for the borrowed toggle row AND
+    // ensureVisibleRowsControl's own row, stacked together -- see this
+    // container's own CSS comment (.gpc-mobile-view-controls-col) for why
+    // it has to exist as a separate, persistent element rather than
+    // borrowing the toggle row directly into .gpc-mobile-palette-wrap.
+    // Scoped to hostEl (NOT a bare document.getElementById) on purpose: at
+    // the moment buildTemplatePaletteGrid calls this, the OLD wrap (with
+    // its own #gpc-mobile-view-controls, about to be discarded via
+    // showCompactGrid's replaceWith) can still be in the document
+    // alongside the brand new one being built -- an unscoped lookup could
+    // find and reuse the wrong one.
+    function ensureViewControlsColumn(hostEl) {
+        let col = hostEl.querySelector('#gpc-mobile-view-controls');
+        if (!col) {
+            col = document.createElement('div');
+            col.id = 'gpc-mobile-view-controls';
+            col.className = 'gpc-mobile-view-controls-col';
+            hostEl.appendChild(col);
+        }
+        return col;
+    }
+    function borrowPaletteViewToggle(hostEl) {
+        if (!hostEl) return;
+        const col = ensureViewControlsColumn(hostEl);
+        const row = document.getElementById('gpp-vs-palette-view-row');
+        if (row) {
+            row.classList.add('gpc-mobile-view-toggle-row');
+            // Recorded manually rather than via the shared borrowNode
+            // helper -- pinned to always be col's FIRST child (insertBefore
+            // col.firstChild, safe even when row already IS the first
+            // child -- see borrowNode's own precedent for why that self-
+            // reference case is spec-safe) so a later re-borrow can never
+            // reorder it after ensureVisibleRowsControl's row below.
+            viewToggleBorrowedNodes.push({ node: row, originalParent: row.parentElement, originalNextSibling: row.nextElementSibling });
+            col.insertBefore(row, col.firstChild);
+        }
+        ensureVisibleRowsControl(col);
     }
 
     // Ensures Ghost++'s real progress section, drop zone, and template
@@ -31115,8 +31381,21 @@ applyLockState();
         const win = pageWindow();
         if (win && typeof win.togglePrimaryMode === 'function') win.togglePrimaryMode();
     }
+    // Start-only: tells the user where to actually tap now that the page
+    // just switched into Inspect mode for them. showAlert(title, body) is
+    // the native page's own top-of-screen toast (js/index151.js) -- same
+    // function, same 'Info'/'Success' title convention, and same
+    // pageWindow()-guarded call shape already used for it elsewhere in this
+    // codebase (gpp-scan.js's gppScanAlertEnabledCount, gpp-native-shim.js).
+    function handlePlacementCaptureStart() {
+        togglePagePrimaryMode();
+        const win = pageWindow();
+        if (win && typeof win.showAlert === 'function') {
+            win.showAlert('Info', 'Click on top right corner to place template on map.');
+        }
+    }
     if (typeof gppSubscribePlacementCaptureStart === 'function') {
-        gppSubscribePlacementCaptureStart(togglePagePrimaryMode);
+        gppSubscribePlacementCaptureStart(handlePlacementCaptureStart);
     }
     if (typeof gppSubscribePlacementCaptureEnd === 'function') {
         gppSubscribePlacementCaptureEnd(togglePagePrimaryMode);
@@ -31368,6 +31647,226 @@ applyLockState();
         dbgPush('Mobile Painting: preview thumbnail tapped -- switched to ' + (switchingToPlaceholders ? 'placeholder panels' : 'native controls') + '.', { uiComponent: 'Mobile Painting' });
     }
 
+    // ── Larger-preview modal (eye icon on .gpc-mobile-preview-frame) ───────
+    // A genuine standalone modal, built fresh on every open and torn down on
+    // close -- unlike everything else this file borrows from the real
+    // Ghost++ modal, nothing here is borrowed DOM. Two reasons: (1) this can
+    // be opened while placeholder mode is ALSO showing (with the real
+    // #gpp-scan-bar-outer/#gpp-scan-summary-line already borrowed into p1),
+    // and borrowing the same singleton elements a second place at once would
+    // either rip them out of p1 or require yet another live-sync concern --
+    // exactly the kind of observer/borrow proliferation that caused the
+    // real page-freeze regression earlier in this feature's history; (2)
+    // everything shown here (a progress bar's segment widths, its summary
+    // text, the color list) is pure, stateless formatting of already-real
+    // data (template.scanSummary, template.palette), the same category of
+    // thing gppPaletteStats/gppPaletteProgressColor already are -- not
+    // Ghost++ business logic being duplicated, just display of it.
+
+    function closeTemplatePreviewModal() {
+        const existing = document.getElementById('gpc-mobile-preview-modal');
+        if (existing) existing.remove();
+    }
+
+    // Mirrors gpp-scan.js's own gppRenderProgressBar readout exactly (same
+    // 3-segment correct/wrong/not-yet-placed bar, same summary text
+    // including gppScanFormatRelativeTime's real relative-time formatting,
+    // called directly rather than reimplemented) for whichever of its
+    // states currently applies -- not placed yet, not scanned yet, no
+    // opaque pixels, or a real scan result.
+    function buildModalProgressReadout(template) {
+        const wrap = document.createElement('div');
+        wrap.className = 'gpc-preview-modal-progress-wrap';
+
+        const barOuter = document.createElement('div');
+        barOuter.className = 'gpc-preview-modal-bar-outer';
+        wrap.appendChild(barOuter);
+
+        const summaryLine = document.createElement('div');
+        summaryLine.className = 'gpc-preview-modal-summary-line';
+        wrap.appendChild(summaryLine);
+
+        const neutralSeg = () => {
+            const seg = document.createElement('div');
+            seg.style.cssText = 'width:100%; background:' + t2('#cbd5e1', '#45475a') + ';';
+            barOuter.appendChild(seg);
+        };
+
+        if (!template.position) {
+            barOuter.style.opacity = '0.4';
+            summaryLine.textContent = 'Place the template on the map, then scan to see progress.';
+        } else if (!template.scanSummary) {
+            neutralSeg();
+            summaryLine.textContent = 'Not scanned yet.';
+        } else {
+            const summary = template.scanSummary;
+            const total = summary.total;
+            if (total <= 0) {
+                neutralSeg();
+                summaryLine.textContent = 'Template has no opaque pixels -- nothing to show.';
+            } else {
+                const notPlaced = Math.max(0, total - summary.correct - summary.wrong);
+                const pct = (value) => (value / total) * 100;
+
+                const correctSeg = document.createElement('div');
+                correctSeg.style.cssText = `width:${pct(summary.correct)}%; background:${t2('#16a34a', '#a6e3a1')};`;
+                correctSeg.title = `Correct: ${summary.correct.toLocaleString()} px`;
+                barOuter.appendChild(correctSeg);
+
+                const wrongSeg = document.createElement('div');
+                wrongSeg.style.cssText = `width:${pct(summary.wrong)}%; background:${t2('#dc2626', '#f38ba8')};`;
+                wrongSeg.title = `Wrong color: ${summary.wrong.toLocaleString()} px`;
+                barOuter.appendChild(wrongSeg);
+
+                const notPlacedSeg = document.createElement('div');
+                notPlacedSeg.style.cssText = `width:${pct(notPlaced)}%; background:${t2('#94a3b8', '#6c7086')};`;
+                notPlacedSeg.title = `Not yet placed: ${notPlaced.toLocaleString()} px`;
+                barOuter.appendChild(notPlacedSeg);
+
+                const donePct = Math.round(pct(summary.correct));
+                summaryLine.textContent = `${summary.correct.toLocaleString()} completed of ${total.toLocaleString()} total (${donePct}%)`
+                    + (summary.scannedAt ? ` — scanned ${gppScanFormatRelativeTime(summary.scannedAt)}` : '');
+            }
+        }
+        return wrap;
+    }
+
+    // Textarea with every color in the template (matches
+    // copyHexValuesForScope's own 'all'-scope order/format exactly, since
+    // that's what the copy button below actually copies) plus a clipboard
+    // button that reuses copyHexValuesForScope directly for the real
+    // copy-with-fallback behavior -- only the confirmation on top
+    // (showAlert with the returned count) is new here.
+    function buildModalColorsSection(template, core) {
+        const wrap = document.createElement('div');
+        wrap.className = 'gpc-preview-modal-colors-wrap';
+
+        const label = document.createElement('label');
+        label.htmlFor = 'gpc-preview-modal-colors-textarea';
+        label.textContent = 'Colors in this template';
+        wrap.appendChild(label);
+
+        const row = document.createElement('div');
+        row.className = 'gpc-preview-modal-colors-row';
+
+        const textarea = document.createElement('textarea');
+        textarea.id = 'gpc-preview-modal-colors-textarea';
+        textarea.readOnly = true;
+        const hexes = [];
+        for (let index = 0; index < template.palette.length; index++) {
+            hexes.push(core.packedToHex(template.palette[index]));
+        }
+        textarea.value = hexes.join(', ');
+        row.appendChild(textarea);
+
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'gpc-preview-modal-copy-btn';
+        copyBtn.title = 'Copy to clipboard';
+        copyBtn.textContent = '📋';
+        copyBtn.addEventListener('click', () => {
+            const count = copyHexValuesForScope(template, core, 'all');
+            const win = pageWindow();
+            if (win && typeof win.showAlert === 'function') {
+                win.showAlert('Success', `${count.toLocaleString()} color${count === 1 ? '' : 's'} copied to clipboard.`);
+            }
+        });
+        row.appendChild(copyBtn);
+
+        wrap.appendChild(row);
+        return wrap;
+    }
+
+    // Mirrors gpp-palette.js's own buyBtn click handler exactly (same
+    // owned-check + dedup + needed-list computation, same disabled/all-
+    // owned guard messages) -- duplicated rather than called since it's
+    // inline inside that file's own private closure, not a reachable
+    // function, but the ACTUAL "reveal profile panel, scroll, populate
+    // textarea" behavior still goes through the one real function
+    // (gppBulkPurchaseOpenProfilePanel), not reimplemented. Closes this
+    // modal afterward so it doesn't sit on top of the profile panel it
+    // just opened.
+    function buildModalBuyAllButton(template, core) {
+        const buyBtn = document.createElement('button');
+        buyBtn.type = 'button';
+        buyBtn.className = 'gpc-preview-modal-buy-btn';
+        buyBtn.textContent = 'Buy all colors';
+        buyBtn.title = "Reveal the profile panel's Bulk Purchase Colors card, pre-filled with every color in this template you don't already own";
+        buyBtn.addEventListener('click', () => {
+            if (typeof gppBulkPurchaseOpenProfilePanel !== 'function') {
+                alert('Bulk Purchase Colors is disabled in GeoPixelcons++ settings.');
+                return;
+            }
+            const ownedHex = new Set(((typeof gppReadGamePalette === 'function') ? gppReadGamePalette() : []).map((row) => String(row.hex).toUpperCase()));
+            const seen = new Set();
+            const needed = [];
+            for (let index = 0; index < template.palette.length; index++) {
+                const hex = core.packedToHex(template.palette[index]);
+                if (ownedHex.has(hex) || seen.has(hex)) continue;
+                seen.add(hex);
+                needed.push(hex);
+            }
+            if (!needed.length) {
+                alert('Every color in this template is already owned.');
+                return;
+            }
+            gppBulkPurchaseOpenProfilePanel(needed);
+            closeTemplatePreviewModal();
+        });
+        return buyBtn;
+    }
+
+    // Fresh gppLibraryRenderFullCanvas() call -- independent of
+    // getTemplatePreviewCanvas's own cached canvas for the small thumbnail,
+    // so there's no node-sharing conflict with the thumbnail still showing
+    // behind this modal.
+    function buildModalPreviewCanvas(template) {
+        const frame = document.createElement('div');
+        frame.className = 'gpc-preview-modal-canvas-frame';
+        if (typeof gppLibraryRenderFullCanvas === 'function') {
+            const canvas = gppLibraryRenderFullCanvas(template);
+            if (canvas) frame.appendChild(canvas);
+        }
+        return frame;
+    }
+
+    function openTemplatePreviewModal(template) {
+        closeTemplatePreviewModal(); // always rebuilt fresh, never reused stale
+        const core = gppCreateCore();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'gpc-mobile-preview-modal';
+        overlay.className = 'gpc-preview-modal-overlay';
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) closeTemplatePreviewModal();
+        });
+
+        const box = document.createElement('div');
+        box.className = 'gpc-preview-modal-box';
+        overlay.appendChild(box);
+
+        const headerRow = document.createElement('div');
+        headerRow.className = 'gpc-preview-modal-header';
+        const title = document.createElement('div');
+        title.className = 'gpc-preview-modal-title';
+        title.textContent = template.name || 'Template preview';
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'gpc-preview-modal-close-btn';
+        closeBtn.textContent = '✖';
+        closeBtn.title = 'Close';
+        closeBtn.addEventListener('click', closeTemplatePreviewModal);
+        headerRow.append(title, closeBtn);
+        box.appendChild(headerRow);
+
+        box.appendChild(buildModalPreviewCanvas(template));
+        box.appendChild(buildModalProgressReadout(template));
+        box.appendChild(buildModalColorsSection(template, core));
+        box.appendChild(buildModalBuyAllButton(template, core));
+
+        document.body.appendChild(overlay);
+    }
+
     // Builds the compact grid for `order` (a list of palette indices, already
     // filtered/sorted to match whatever the real Ghost++ panel currently
     // shows -- see computeVisibleOrder). Clicking a swatch is NOT a plain
@@ -31411,6 +31910,13 @@ applyLockState();
         grid.id = 'gpc-mobile-palette-grid';
         grid.className = 'gpp-palette-grid';
         grid.classList.toggle('gpp-palette-list-mode', listMode);
+        // Overrides the class rule's own hardcoded max-height:60px (inline
+        // beats class, no !important needed) with the user's own "Visible
+        // rows" preference -- see ensureVisibleRowsControl/
+        // computeGridMaxHeight. Applied here so a template switch (this
+        // function's own rebuild trigger) picks up the current setting,
+        // not just the dropdown's own change handler.
+        grid.style.maxHeight = computeGridMaxHeight(getVisibleRowsSetting()) + 'px';
 
         function soloColor(targetIndex, hex) {
             for (let index = 0; index < template.palette.length; index++) {
@@ -31587,6 +32093,24 @@ applyLockState();
             previewFrame.className = 'gpc-mobile-preview-frame';
             previewFrame.title = template.name || 'Template preview';
             previewFrame.appendChild(previewCanvas);
+
+            // Opens the larger-preview modal -- see openTemplatePreviewModal
+            // above. stopPropagation is load-bearing: this button sits
+            // inside the frame, which is ITSELF the click target that
+            // toggles placeholder mode (the listener lives on previewCanvas,
+            // attached in getTemplatePreviewCanvas) -- without it, tapping
+            // the eye would also fire that toggle underneath it.
+            const eyeBtn = document.createElement('button');
+            eyeBtn.type = 'button';
+            eyeBtn.className = 'gpc-mobile-preview-eye-btn';
+            eyeBtn.title = 'Larger preview';
+            eyeBtn.textContent = '👁';
+            eyeBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                openTemplatePreviewModal(template);
+            });
+            previewFrame.appendChild(eyeBtn);
+
             wrap.appendChild(previewFrame);
         }
 
