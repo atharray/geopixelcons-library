@@ -1287,6 +1287,10 @@
                 { type: 'added', text: 'Mobile Painting (in development): a new "Visible rows" dropdown (1-10, default 2) below the Grid/List toggle controls how many rows show in the color grid before it scrolls' },
                 { type: 'added', text: 'Mobile Painting (in development): an eye icon on the template preview thumbnail opens a larger preview -- a bigger image, the same progress bar and summary text, every color in the template in a copyable list, and a Buy all colors button that opens the real purchase flow pre-filled with whatever you don\'t already own' },
                 { type: 'added', text: 'Mobile Painting (in development): pressing Place now also shows a reminder toast pointing at where to actually tap to place the template' },
+                { type: 'changed', text: 'Mobile Painting (in development): the template preview thumbnail now stretches to fill and center within whatever height its row actually ends up (which can vary now that Visible rows exists), instead of always staying a fixed 60px tall regardless' },
+                { type: 'changed', text: 'Mobile Painting (in development): the preview thumbnail\'s larger-preview button is now an info icon instead of an eye' },
+                { type: 'changed', text: 'Mobile Painting (in development): the larger-preview modal (and its own bigger preview image) is now about 40% larger' },
+                { type: 'added', text: 'Mobile Painting (in development): with no Ghost++ template focused yet -- most notably the very first time this feature is ever opened -- a "Click for template options" prompt now shows in place of the color grid. Tapping it opens the same template options (drop zone, Manage templates, Scan progress, and so on) placeholder mode already provides once a template exists; previously there was no way to reach any of that at all with nothing focused yet' },
             ]
         },
         {

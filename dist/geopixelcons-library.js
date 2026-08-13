@@ -1299,6 +1299,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Mobile Painting (in development): a new "Visible rows" dropdown (1-10, default 2) below the Grid/List toggle controls how many rows show in the color grid before it scrolls' },
                 { type: 'added', text: 'Mobile Painting (in development): an eye icon on the template preview thumbnail opens a larger preview -- a bigger image, the same progress bar and summary text, every color in the template in a copyable list, and a Buy all colors button that opens the real purchase flow pre-filled with whatever you don\'t already own' },
                 { type: 'added', text: 'Mobile Painting (in development): pressing Place now also shows a reminder toast pointing at where to actually tap to place the template' },
+                { type: 'changed', text: 'Mobile Painting (in development): the template preview thumbnail now stretches to fill and center within whatever height its row actually ends up (which can vary now that Visible rows exists), instead of always staying a fixed 60px tall regardless' },
+                { type: 'changed', text: 'Mobile Painting (in development): the preview thumbnail\'s larger-preview button is now an info icon instead of an eye' },
+                { type: 'changed', text: 'Mobile Painting (in development): the larger-preview modal (and its own bigger preview image) is now about 40% larger' },
+                { type: 'added', text: 'Mobile Painting (in development): with no Ghost++ template focused yet -- most notably the very first time this feature is ever opened -- a "Click for template options" prompt now shows in place of the color grid. Tapping it opens the same template options (drop zone, Manage templates, Scan progress, and so on) placeholder mode already provides once a template exists; previously there was no way to reach any of that at all with nothing focused yet' },
             ]
         },
         {
@@ -30375,6 +30379,21 @@ applyLockState();
                (see .gpc-mobile-preview-frame below) sits to its right,
                sized to the grid's own height. */
             .gpc-mobile-palette-wrap { width: 100%; box-sizing: border-box; display: flex; flex-direction: row; align-items: stretch; gap: 6px; }
+            /* Shown in .gpc-mobile-palette-wrap's place whenever no Ghost++
+               template is focused -- see ensureNoTemplatePrompt's own
+               comment for why this exists at all (without it, a user who
+               hasn't focused a template yet has no way to reach placeholder
+               mode -- its own trigger normally lives inside
+               .gpc-mobile-palette-wrap, which doesn't exist without one). */
+            .gpc-mobile-no-template-prompt {
+                width: 100%; box-sizing: border-box; margin-bottom: 6px; padding: 10px;
+                display: flex; align-items: center; justify-content: center;
+                border: 1px dashed ${tc('#d1d5db', '#45475a')}; border-radius: 6px;
+                color: ${tc('#64748b', '#a6adc8')}; font-size: 12px; cursor: pointer;
+            }
+            .gpc-mobile-no-template-prompt:hover {
+                background: ${tc('#f3f4f6', '#313244')};
+            }
             .gpp-palette-grid {
                 display: grid; grid-template-columns: repeat(auto-fill, minmax(26px, 1fr));
                 grid-auto-rows: minmax(26px, 1fr);
@@ -30390,35 +30409,59 @@ applyLockState();
                (same source gpp-lib-current-canvas-wrap uses in the real
                Ghost++ Library panel -- gppLibraryRenderFullCanvas -- not a
                separate lower-res thumbnail, so nothing about the image
-               itself is downsampled/compressed). The frame's height matches
-               the grid's own (60px); the canvas gets ONLY 'height' set (not
-               'width', and deliberately no 'max-width' either -- that was
-               tried and measured to distort the image: clamping the
-               auto-computed width while height stayed fixed squashed a
-               200x100 test canvas down to 88x58 instead of the correct
-               116x58, exactly the compression this is meant to avoid), so
-               the browser derives width purely from the canvas's own real
-               aspect ratio. No cap on the frame's own width either, for the
-               same reason -- for any reasonably square-ish or moderately
-               wide template this stays small on its own since height alone
-               is already capped to the grid's height; an unusually
-               wide/panoramic template will make the frame wider rather than
-               distorting its image, which is the explicit priority order
-               ("don't compress... but constrain to match the height").
-               image-rendering: pixelated keeps pixel art crisp at a small
-               display size instead of blurring it. */
+               itself is downsampled/compressed).
+               No explicit height here -- per explicit product decision, the
+               frame should fill and center within whatever height the row
+               actually ends up (now variable, since #gpc-mobile-palette-grid's
+               own height depends on the "Visible rows" setting), via the
+               row's own align-items:stretch. That can't be done with the
+               canvas sized directly by the frame's flow the way it used to
+               be, though: measured for real, a canvas using height:100% with
+               NO explicit frame height creates a genuine circular
+               dependency -- the frame's own pre-stretch hypothetical height
+               (used to help decide how tall the ROW even is) would be
+               computed FROM the canvas's own intrinsic pixel size (since a
+               height:100% child can't resolve against an indeterminate
+               auto-height parent, so browsers fall right back to the
+               canvas's raw width/height attributes) -- confirmed this by
+               measuring it directly: a realistic 500x300 canvas blew the
+               entire row up to 300px tall instead of the ~80px the OTHER
+               siblings actually need. Fixed by taking the canvas out of
+               normal flow entirely (position:absolute, centered via
+               top/left 50% + a translate) so it can no longer contribute to
+               the frame's own hypothetical size at all -- the frame's
+               (and so the row's) height is then decided purely by the OTHER
+               siblings (the grid, the view-controls column), stretch gives
+               the now-content-independent frame a real definite height, and
+               ONLY THEN does the absolutely-positioned canvas's own
+               max-width/max-height:100% resolve against that. Confirmed
+               this actually breaks the cycle (not just look right once) by
+               re-measuring the same 500x300 canvas afterward: row height
+               came from the OTHER siblings as intended, canvas correctly
+               shrank to fit within the resulting frame without distortion,
+               and stayed correctly centered. max-width+max-height BOTH as
+               caps (neither one fixed), same pattern already verified
+               correct for the larger-preview modal's own canvas -- a
+               DIFFERENT situation from this rule's own prior height:100%-
+               only approach, which was deliberately avoiding max-width
+               specifically because THAT combination (a FIXED height paired
+               with max-width) measurably distorted the image; two caps
+               together, with neither dimension fixed, doesn't have that
+               problem. image-rendering: pixelated keeps pixel art crisp at
+               a small display size instead of blurring it. */
             .gpc-mobile-preview-frame {
                 position: relative;
-                flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
-                height: 60px; overflow: hidden; box-sizing: border-box; cursor: pointer;
+                flex: 0 0 auto; min-width: 40px;
+                overflow: hidden; box-sizing: border-box; cursor: pointer;
                 border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
                 border-radius: 4px; background: ${t2('rgba(0,0,0,.03)', 'rgba(255,255,255,.05)')};
             }
             .gpc-mobile-preview-frame canvas {
-                height: 100%; width: auto; display: block;
-                image-rendering: pixelated;
+                position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                max-width: 100%; max-height: 100%; width: auto; height: auto;
+                display: block; image-rendering: pixelated;
             }
-            /* Eye icon, top-right corner of the preview frame -- opens the
+            /* Info icon, top-right corner of the preview frame -- opens the
                larger-preview modal (see openTemplatePreviewModal). A small
                semi-opaque backing circle so the glyph stays legible over
                any preview image color, light or dark alike -- not
@@ -30427,15 +30470,16 @@ applyLockState();
                click listener with stopPropagation -- sits inside the frame,
                which itself is the placeholder-mode toggle's click target
                (getTemplatePreviewCanvas), so a tap here must not ALSO
-               trigger that. */
-            .gpc-mobile-preview-eye-btn {
+               trigger that. z-index:1 keeps it above the frame's own
+               absolutely-positioned canvas. */
+            .gpc-mobile-preview-info-btn {
                 position: absolute; top: 2px; right: 2px; z-index: 1;
                 width: 16px; height: 16px; padding: 0; border: none; border-radius: 50%;
                 background: rgba(0,0,0,.55); color: #fff;
                 display: flex; align-items: center; justify-content: center;
                 font-size: 10px; line-height: 1; cursor: pointer;
             }
-            .gpc-mobile-preview-eye-btn:hover { background: rgba(0,0,0,.75); }
+            .gpc-mobile-preview-info-btn:hover { background: rgba(0,0,0,.75); }
             /* Larger-preview modal (openTemplatePreviewModal) -- a genuine
                standalone overlay appended to document.body, NOT nested
                inside #bottomControls, so t2() (not tc()) is the CORRECT
@@ -30451,7 +30495,7 @@ applyLockState();
                 padding: 16px; box-sizing: border-box;
             }
             .gpc-preview-modal-box {
-                width: 100%; max-width: 380px; max-height: 90vh; overflow-y: auto;
+                width: 100%; max-width: 532px; max-height: 90vh; overflow-y: auto;
                 box-sizing: border-box; padding: 14px; border-radius: 10px;
                 background: ${t2('#ffffff', '#1e1e2e')}; color: ${t2('#111827', '#f5f5f5')};
                 box-shadow: 0 12px 32px rgba(0,0,0,.4);
@@ -30480,12 +30524,12 @@ applyLockState();
                regardless, given that comment's own history. */
             .gpc-preview-modal-canvas-frame {
                 display: flex; align-items: center; justify-content: center;
-                max-height: 40vh; overflow: hidden;
+                max-height: 56vh; overflow: hidden;
                 border: 1px solid ${t2('#d1d5db', '#45475a')}; border-radius: 6px;
                 background: ${t2('rgba(0,0,0,.03)', 'rgba(255,255,255,.05)')};
             }
             .gpc-preview-modal-canvas-frame canvas {
-                max-width: 100%; max-height: 40vh; width: auto; height: auto;
+                max-width: 100%; max-height: 56vh; width: auto; height: auto;
                 display: block; image-rendering: pixelated;
             }
             .gpc-preview-modal-progress-wrap { display: flex; flex-direction: column; gap: 4px; }
@@ -32099,17 +32143,17 @@ applyLockState();
             // inside the frame, which is ITSELF the click target that
             // toggles placeholder mode (the listener lives on previewCanvas,
             // attached in getTemplatePreviewCanvas) -- without it, tapping
-            // the eye would also fire that toggle underneath it.
-            const eyeBtn = document.createElement('button');
-            eyeBtn.type = 'button';
-            eyeBtn.className = 'gpc-mobile-preview-eye-btn';
-            eyeBtn.title = 'Larger preview';
-            eyeBtn.textContent = '👁';
-            eyeBtn.addEventListener('click', (event) => {
+            // this button would also fire that toggle underneath it.
+            const infoBtn = document.createElement('button');
+            infoBtn.type = 'button';
+            infoBtn.className = 'gpc-mobile-preview-info-btn';
+            infoBtn.title = 'Larger preview';
+            infoBtn.textContent = 'ℹ️';
+            infoBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
                 openTemplatePreviewModal(template);
             });
-            previewFrame.appendChild(eyeBtn);
+            previewFrame.appendChild(infoBtn);
 
             wrap.appendChild(previewFrame);
         }
@@ -32530,6 +32574,41 @@ applyLockState();
     //      more of Ghost++'s own code than the one renderState hook above.
     let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, selectedHex, soloMode }
 
+    // Shown in .gpc-mobile-palette-wrap's usual spot whenever no Ghost++
+    // template is focused -- most notably the very first time a mobile
+    // painter ever opens this feature, before they've selected or imported
+    // anything. Without this, they'd have NO way to reach placeholder mode
+    // at all: its own trigger (the click listener in
+    // getTemplatePreviewCanvas) lives on the preview thumbnail, which is
+    // itself inside .gpc-mobile-palette-wrap -- and that wrap only exists
+    // once resync() has something to build it FOR. toggleNativeControls
+    // ForPlaceholders itself was already fully independent of template
+    // state (its own insertion point is #gpc-native-top-bar/
+    // .gpc-mobile-controls-row, neither of which are template-scoped), and
+    // Ghost++'s own real p1/p2/p3 content already renders its own "Select
+    // or import a template"-style messaging with nothing focused, same as
+    // the real desktop modal would -- this prompt is the only genuinely
+    // missing piece, not a new code path into placeholder mode itself.
+    // Anchored to the SAME insertion point showCompactGrid uses for the
+    // real wrap (savedNativeContainer, afterend) so the rest of
+    // #bottomControls doesn't jump depending on which of the two is
+    // currently showing. Idempotent (checked via getElementById) so
+    // resync() can call this on every no-template tick, not just the
+    // transition into that state.
+    function ensureNoTemplatePrompt() {
+        if (document.getElementById('gpc-mobile-no-template-prompt')) return;
+        const prompt = document.createElement('div');
+        prompt.id = 'gpc-mobile-no-template-prompt';
+        prompt.className = 'gpc-mobile-no-template-prompt';
+        prompt.textContent = 'Click for template options';
+        prompt.addEventListener('click', toggleNativeControlsForPlaceholders);
+        liveState.savedNativeContainer.insertAdjacentElement('afterend', prompt);
+    }
+    function removeNoTemplatePrompt() {
+        const prompt = document.getElementById('gpc-mobile-no-template-prompt');
+        if (prompt) prompt.remove();
+    }
+
     function resync() {
         if (!liveState) return;
         // Keeps the shared stylesheet (control row buttons/menus, and the
@@ -32580,9 +32659,11 @@ applyLockState();
                 liveState.selectedHex = null;
                 liveState.soloMode = true;
             }
+            ensureNoTemplatePrompt();
             return;
         }
 
+        removeNoTemplatePrompt(); // a template just became focused (or already was) -- the real wrap is about to take (or already takes) its place
         const order = computeVisibleOrder(template);
         const orderKey = order.join(',');
         // Mirrors gpp-palette.js's own listMode check (gppSettings.
