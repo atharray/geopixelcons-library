@@ -1287,6 +1287,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Mobile Painting (in development): the control row buttons (Enable/Disable/Sort/Filter/Get hex values) were still stuck in whichever theme was active on first render even after the previous fix, because the stylesheet refresh only ever ran when the color grid itself got rebuilt from scratch (switching templates) -- an idle tick with the same template focused, by far the common case, skipped it entirely. The stylesheet now refreshes on every tick regardless, so switching the GeoPixels++ theme takes effect within about a second without needing to touch a template' },
                 { type: 'changed', text: 'Mobile Painting (in development): the three columns\' ids now describe what they actually hold (#gpc-mobile-scan-panel / #gpc-mobile-upload-panel / #gpc-mobile-placement-panel) instead of their leftover scaffolding-era gpc-mobile-placeholder-1/2/3 names, from back when they held nothing but literal "placeholder 1"/"placeholder 2" text' },
                 { type: 'fixed', text: 'Mobile Painting (in development): the three columns no longer size to their own content\'s height independently -- since p1\'s counts line only shows once there\'s something to report and the drop zone/scan bar can wrap differently, they could end up visibly uneven heights. All three now stretch to match whichever one is tallest' },
+                { type: 'added', text: 'Mobile Painting (in development): a real Palette view (Grid/List) toggle from Ghost++ now sits directly left of the template preview thumbnail, with its label stacked above the toggle instead of beside it -- toggling it updates Ghost++\'s own real view-mode setting (so it\'s remembered if the real modal is ever opened), though this row\'s own compact grid always stays a grid regardless' },
+                { type: 'added', text: 'Mobile Painting (in development): pressing Place now temporarily switches into Inspect mode for as long as the click-to-place capture is active, and switches back the instant it ends -- placed, Escape-cancelled, or superseded -- so aiming a tap at the map doesn\'t fight with paint mode' },
+                { type: 'added', text: 'Mobile Painting (in development): the real left/up/down/right nudge arrows now sit to the right of Lock Position/Group noise in the placement column, with the real opacity slider below both' },
+                { type: 'added', text: 'Mobile Painting (in development): color swatches now show the same completion badge Ghost++\'s own grid does once a scan has run -- a white circle with a green check when a color is fully placed, a black ring before it\'s started, and a red-to-green ring while in progress' },
             ]
         },
         {
@@ -7636,6 +7640,31 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // (scripts/geopixels-ghost-template-overhaul/1.0.0.js) placementPreview.
     let gppPlacementPreview = null;
 
+    // Lets code outside this file (mobile-painting.js's temporary-inspect-
+    // mode wrapper around the Place button) know exactly when a REAL
+    // placement capture starts and ends, without needing to duplicate
+    // gppIsPositionLocked's own gate (the "start" hook only ever fires once
+    // a capture is genuinely about to begin, past every guard below -- a
+    // click that was actually a no-op never fires it) or reach into this
+    // file's own private gppPlacementCaptureCleanup/gppPlacementPreview
+    // state. "End" covers every real teardown path uniformly (a successful
+    // click-to-place, an Escape-cancel, and a fresh render tearing down a
+    // stale capture) since it's called from cleanup() itself, the one
+    // function all three paths already funnel through. Mirrors gpp-init.js's
+    // own gppSubscribeUiRefresh/gppUiRefreshSubscribers shape.
+    const gppPlacementCaptureStartSubscribers = new Set();
+    const gppPlacementCaptureEndSubscribers = new Set();
+    function gppSubscribePlacementCaptureStart(listener) {
+        if (typeof listener !== 'function') return () => {};
+        gppPlacementCaptureStartSubscribers.add(listener);
+        return () => gppPlacementCaptureStartSubscribers.delete(listener);
+    }
+    function gppSubscribePlacementCaptureEnd(listener) {
+        if (typeof listener !== 'function') return () => {};
+        gppPlacementCaptureEndSubscribers.add(listener);
+        return () => gppPlacementCaptureEndSubscribers.delete(listener);
+    }
+
     function gppCancelPlacementCapture() {
         if (gppPlacementCaptureCleanup) {
             try { gppPlacementCaptureCleanup(); } catch (_) { /* ignore */ }
@@ -7688,6 +7717,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         const grid = gppReadGridConstants();
         const previousCursor = mapContainer.style.cursor;
         mapContainer.style.cursor = 'crosshair';
+        gppPlacementCaptureStartSubscribers.forEach(listener => {
+            try { listener(); } catch (err) { console.error('[GeoPixelcons++] Ghost++ placement capture start listener failed.', err); }
+        });
 
         function cleanup() {
             mapContainer.removeEventListener('click', handleClick, true);
@@ -7696,6 +7728,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             document.removeEventListener('keydown', handleKeyDown, true);
             mapContainer.style.cursor = previousCursor;
             gppPlacementCaptureCleanup = null;
+            gppPlacementCaptureEndSubscribers.forEach(listener => {
+                try { listener(); } catch (err) { console.error('[GeoPixelcons++] Ghost++ placement capture end listener failed.', err); }
+            });
             if (gppPlacementPreview && gppPlacementPreview.templateId === template.id) {
                 gppPlacementPreview = null;
                 gppNotifyRendererSchedule();
@@ -7858,13 +7893,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 <button type="button" id="gpp-pt-goto" class="gpp-pt-btn" ${template.position ? '' : 'disabled'}>Go to</button>
                 <button type="button" id="gpp-pt-preview" class="gpp-pt-btn" title="Temporarily show this template at 100% opacity with no cell gaps, without changing its actual Opacity setting">Preview</button>
             </div>
-            <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:6px;">
+            <div id="gpp-pt-nudge-row" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:6px;">
                 <button type="button" id="gpp-pt-nudge-left" class="gpp-pt-btn" title="Nudge left" ${disabledAttr}>&larr;</button>
                 <button type="button" id="gpp-pt-nudge-up" class="gpp-pt-btn" title="Nudge up" ${disabledAttr}>&uarr;</button>
                 <button type="button" id="gpp-pt-nudge-down" class="gpp-pt-btn" title="Nudge down" ${disabledAttr}>&darr;</button>
                 <button type="button" id="gpp-pt-nudge-right" class="gpp-pt-btn" title="Nudge right" ${disabledAttr}>&rarr;</button>
             </div>
-            <div class="gpp-pt-opacity-row">
+            <div id="gpp-pt-opacity-row" class="gpp-pt-opacity-row">
                 <label for="gpp-pt-opacity">Opacity</label>
                 <input id="gpp-pt-opacity" type="range" min="0" max="100" step="1" title="Template overlay opacity. 0% is fully invisible.">
                 <span id="gpp-pt-opacity-value" class="gpp-pt-opacity-value"></span>
@@ -12579,8 +12614,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         // on every refresh, same live-toggle pattern as Gray unselected
         // color boxes above — no template switch needed to see it apply).
         const viewModeRow = document.createElement('div');
+        viewModeRow.id = 'gpp-vs-palette-view-row';
         viewModeRow.className = 'gpp-vs-row';
         const viewModeLabel = document.createElement('span');
+        viewModeLabel.id = 'gpp-vs-palette-view-label';
         viewModeLabel.className = 'gpp-vs-label';
         viewModeLabel.textContent = 'Palette view';
         const viewModeToggle = document.createElement('div');
@@ -30372,6 +30409,54 @@ applyLockState();
                 height: 100%; width: auto; display: block;
                 image-rendering: pixelated;
             }
+            /* Palette view toggle (Grid/List), borrowed from gpp-view-
+               settings.js -- see borrowPaletteViewToggle's own comment.
+               Ghost++'s own .gpp-vs-row is a horizontal label-then-toggle
+               row (display:flex, no direction set); per explicit product
+               decision this reads better stacked (label above the toggle)
+               in the narrow slot between the grid and the preview frame, so
+               flex-direction is overridden to column here -- the row's own
+               child order (label, then the toggle div) already puts the
+               label first, so no DOM reordering is needed, just a re-flow.
+               Same pitfall as every other borrowed-into-mobile-view element
+               (see the #gpc-mobile-placeholder-group CSS comment further
+               below): Ghost++'s own .gpp-vs-label/.gpp-vs-view-btn/-active
+               are styled via t2()/isDarkMode(), correct for their normal
+               home inside the real, independently-themed Ghost++ modal but
+               wrong here for the same reason -- #bottomControls' own
+               wrapper never itself goes dark. Re-themed with tc() instead,
+               scoped to this row's own marker class (added by
+               borrowPaletteViewToggle, so the real settings panel's normal
+               appearance is untouched) and !important, matching that same
+               block's own precedent (two separate <style> tags whose
+               relative order in <head> isn't guaranteed, so specificity
+               alone can't be trusted to win the tie). flex:0 0 auto matches
+               .gpc-mobile-preview-frame's own sizing choice -- a fixed-
+               content-width column, not growing/shrinking with the grid. */
+            .gpc-mobile-view-toggle-row {
+                flex: 0 0 auto !important;
+                display: flex !important; flex-direction: column !important;
+                align-items: center !important; justify-content: center !important;
+                gap: 3px !important; margin: 0 !important;
+            }
+            .gpc-mobile-view-toggle-row .gpp-vs-label {
+                min-width: 0 !important; font-size: 9px !important; white-space: nowrap !important;
+                color: ${tc('#64748b', '#a6adc8')} !important;
+            }
+            .gpc-mobile-view-toggle-row .gpp-vs-view-toggle {
+                border-color: ${tc('#d1d5db', '#45475a')} !important;
+            }
+            .gpc-mobile-view-toggle-row .gpp-vs-view-btn {
+                background: ${tc('#ffffff', '#313244')} !important;
+                color: ${tc('#64748b', '#a6adc8')} !important;
+            }
+            .gpc-mobile-view-toggle-row .gpp-vs-view-btn:hover {
+                background: ${tc('#f3f4f6', '#45475a')} !important;
+            }
+            .gpc-mobile-view-toggle-row .gpp-vs-view-btn-active {
+                background: ${tc('#2563eb', '#89b4fa')} !important;
+                color: ${tc('#ffffff', '#1e1e2e')} !important;
+            }
             /* !important is load-bearing: #gpc-native-top-bar carries its own
                inline style="display: flex; ..." (native markup), which beats
                any non-!important class on specificity alone. */
@@ -30425,6 +30510,28 @@ applyLockState();
             .gpc-mobile-p3-checkboxes {
                 display: flex; flex-direction: column; gap: 4px;
             }
+            /* Lock Position/Group noise (.gpc-mobile-p3-checkboxes) on the
+               left, the real nudge-arrow cluster (#gpp-pt-nudge-row,
+               borrowed wholesale -- its own inline flex-wrap:wrap;gap:6px
+               already arranges the 4 arrows the way Ghost++ itself designed
+               them) to the right, per explicit product decision. wrap: if
+               this column gets too narrow for both side by side, the
+               (single, since it's borrowed as one unit) nudge cluster drops
+               to its own line below the checkboxes rather than overflowing. */
+            .gpc-mobile-p3-checkbox-nudge-row {
+                display: flex; flex-direction: row; align-items: center;
+                flex-wrap: wrap; gap: 10px; margin-bottom: 6px;
+            }
+            /* #gpp-pt-nudge-row carries its own inline margin-bottom:6px,
+               sized for Ghost++'s normal vertical stacking -- redundant
+               (and, since it's a row-direction flex item now, a source of
+               slight vertical misalignment against .gpc-mobile-p3-
+               checkboxes next to it) in this side-by-side layout, so it's
+               zeroed out here. !important since it's overriding an inline
+               style. */
+            #gpc-mobile-placeholder-group #gpp-pt-nudge-row {
+                margin-bottom: 0 !important;
+            }
             /* Same pitfall as .gpc-mobile-controls-row's own buttons (see
                that comment above), now on the elements borrowed into p1/p2/
                p3: they're styled by their OWN real Ghost++ code (gpp-scan.js,
@@ -30470,7 +30577,19 @@ applyLockState();
                 border-color: ${tc('#d1d5db', '#45475a')} !important;
             }
             #gpc-mobile-placeholder-group .gpp-muted,
-            #gpc-mobile-placeholder-group #gpp-url-upload-btn {
+            #gpc-mobile-placeholder-group #gpp-url-upload-btn,
+            #gpc-mobile-placeholder-group .gpp-pt-opacity-value {
+                color: ${tc('#64748b', '#a6adc8')} !important;
+            }
+            /* .gpp-pt-reset-btn is a <button>, so it'd otherwise also match
+               the generic button rule above -- its real CSS deliberately
+               has NO border/background (a plain icon button), which that
+               rule's border/background would clobber. More specific
+               (tag+class beats the plain button rule's tag-only selector)
+               so this wins regardless of declaration order, restoring the
+               borderless look and only actually re-theming its color. */
+            #gpc-mobile-placeholder-group button.gpp-pt-reset-btn {
+                border: none !important; background: transparent !important;
                 color: ${tc('#64748b', '#a6adc8')} !important;
             }
             #gpc-mobile-placeholder-group #gpp-scan-bar-outer {
@@ -30728,10 +30847,18 @@ applyLockState();
     // of the original's live wiring/state, so borrowing (moving) is the
     // only option that keeps every button/checkbox genuinely functional
     // without reimplementing any of Ghost++'s own logic a second time.
+    //
+    // Both functions take an optional `list` to track against, defaulting
+    // to `borrowedNodes` (p1/p2/p3's own, returned only while placeholder
+    // mode is showing). The palette-view toggle below uses its OWN separate
+    // list instead -- its lifecycle is genuinely independent (borrowed for
+    // as long as the compact grid exists at all, not scoped to placeholder
+    // mode), so a plain "return everything" call for one must never also
+    // catch the other.
     let borrowedNodes = []; // [{ node, originalParent, originalNextSibling }]
-    function borrowNode(node, newParent) {
+    function borrowNode(node, newParent, list) {
         if (!node) return;
-        borrowedNodes.push({ node, originalParent: node.parentElement, originalNextSibling: node.nextElementSibling });
+        (list || borrowedNodes).push({ node, originalParent: node.parentElement, originalNextSibling: node.nextElementSibling });
         newParent.appendChild(node);
     }
     // Restored in reverse borrow order, each via insertBefore its recorded
@@ -30739,9 +30866,10 @@ applyLockState();
     // moved/vanished in the meantime) -- puts every borrowed node back
     // exactly where Ghost++ itself put it, not just back into the right
     // parent.
-    function returnBorrowedNodes() {
-        for (let i = borrowedNodes.length - 1; i >= 0; i--) {
-            const { node, originalParent, originalNextSibling } = borrowedNodes[i];
+    function returnBorrowedNodes(list) {
+        const target = list || borrowedNodes;
+        for (let i = target.length - 1; i >= 0; i--) {
+            const { node, originalParent, originalNextSibling } = target[i];
             if (!originalParent) continue;
             if (originalNextSibling && originalNextSibling.parentElement === originalParent) {
                 originalParent.insertBefore(node, originalNextSibling);
@@ -30749,7 +30877,64 @@ applyLockState();
                 originalParent.appendChild(node);
             }
         }
-        borrowedNodes = [];
+        target.length = 0;
+    }
+
+    // Palette view toggle (Grid/List, gpp-view-settings.js), borrowed into
+    // buildTemplatePaletteGrid's own .gpc-mobile-palette-wrap, directly left
+    // of .gpc-mobile-preview-frame. Kept live-synced INDEPENDENTLY of p1/p2/
+    // p3's own placeholder-mode-scoped observer below -- .gpc-mobile-
+    // palette-wrap is always visible, not just during placeholder mode, and
+    // #gpp-view-settings-section is wiped and rebuilt by refreshAll() on
+    // EVERY gppRequestUiRefresh() call, including the one this file's own
+    // soloColor()/toggleColor() already fire after every single swatch tap
+    // -- without this, the toggle would go stale after the very first color
+    // click, not just in some rare alongside-the-real-modal scenario.
+    // Started once (the first time buildTemplatePaletteGrid borrows it) and
+    // never stopped, for the same reason #gpp-modal itself is a stable,
+    // permanent root built at Ghost++ init regardless of whether its own
+    // modal has ever been opened: there's no "leaving" event to stop on the
+    // way placeholder mode has one.
+    //
+    // Note: toggling Grid/List here only changes Ghost++'s OWN real
+    // gppSettings.paletteViewMode (so it's remembered correctly if the real
+    // modal is ever opened) -- it does not switch THIS file's own compact
+    // grid (buildTemplatePaletteGrid) to a list layout, which always renders
+    // as a grid regardless of this setting.
+    let viewToggleBorrowedNodes = []; // separate from borrowedNodes -- see that block's own comment for why
+    let paletteViewToggleObserver = null;
+    function borrowPaletteViewToggle(hostEl) {
+        const row = document.getElementById('gpp-vs-palette-view-row');
+        if (row && hostEl) {
+            row.classList.add('gpc-mobile-view-toggle-row');
+            borrowNode(row, hostEl, viewToggleBorrowedNodes);
+        }
+    }
+    function startPaletteViewToggleLiveSync() {
+        if (paletteViewToggleObserver) return;
+        const modalEl = document.getElementById('gpp-modal');
+        if (!modalEl) return;
+        let refreshQueued = false;
+        paletteViewToggleObserver = new MutationObserver(() => {
+            if (refreshQueued) return;
+            refreshQueued = true;
+            Promise.resolve().then(() => {
+                refreshQueued = false;
+                const wrap = document.querySelector('.gpc-mobile-palette-wrap');
+                if (!wrap) return; // no compact grid currently shown -- nothing to keep in sync
+                if (!paletteViewToggleObserver) return;
+                paletteViewToggleObserver.disconnect();
+                try {
+                    returnBorrowedNodes(viewToggleBorrowedNodes);
+                    borrowPaletteViewToggle(wrap);
+                } finally {
+                    if (paletteViewToggleObserver && modalEl.isConnected) {
+                        paletteViewToggleObserver.observe(modalEl, { childList: true, subtree: true });
+                    }
+                }
+            });
+        });
+        paletteViewToggleObserver.observe(modalEl, { childList: true, subtree: true });
     }
 
     // Ensures Ghost++'s real progress section, drop zone, and template
@@ -30880,6 +31065,38 @@ applyLockState();
     }
     document.addEventListener('paste', handlePlaceholderPaste);
 
+    // gpp-pt-place -> togglePrimaryMode(): per explicit product decision,
+    // pressing Place should temporarily switch the native page into
+    // Inspect mode for the duration of the click-to-place capture (easier
+    // to aim a tap with) and switch back the instant that capture ends --
+    // however it ends: placed successfully, Escape-cancelled, or torn down
+    // by an unrelated fresh render. gpp-placement.js's
+    // gppSubscribePlacementCaptureStart/-End (added specifically for this)
+    // fire on exactly those two transitions, so this never needs to know
+    // WHY a capture ended, only that it did -- and the start hook only
+    // ever fires once a capture is genuinely about to begin (past
+    // gppIsPositionLocked's own gate), so a click that was actually a
+    // no-op can't mis-toggle this. togglePrimaryMode() is the NATIVE
+    // page's own function (js/index151.js) -- called via pageWindow(),
+    // same reasoning as soloColor()/toggleColor()'s changeColor() call
+    // (bare `window` isn't reliably the same object as the page's own in a
+    // sandboxed userscript realm). Subscribed once, globally, exactly like
+    // handlePlaceholderPaste above -- the real #gpp-pt-place button is a
+    // singleton regardless of whether it's currently borrowed into this
+    // view or sitting in the real (possibly desktop-opened) Ghost++ modal,
+    // so this applies uniformly either way, not just while this view is
+    // showing.
+    function togglePagePrimaryMode() {
+        const win = pageWindow();
+        if (win && typeof win.togglePrimaryMode === 'function') win.togglePrimaryMode();
+    }
+    if (typeof gppSubscribePlacementCaptureStart === 'function') {
+        gppSubscribePlacementCaptureStart(togglePagePrimaryMode);
+    }
+    if (typeof gppSubscribePlacementCaptureEnd === 'function') {
+        gppSubscribePlacementCaptureEnd(togglePagePrimaryMode);
+    }
+
     // Mirrors gpp-scan.js's own gppScanStyleButton exactly -- same shape,
     // same literal color values -- but keyed on tc() instead of t2() (see
     // the #gpc-mobile-placeholder-group CSS comment above for why). Not
@@ -31001,10 +31218,13 @@ applyLockState();
 
     // Placeholder 3: Place/Unset/Go to/Preview (2x2 grid, same layout
     // approach as placeholder 1's buttons) from gpp-placement.js's
-    // gppRenderPositionTransform, then Lock Position / Group noise
-    // (already uniquely id'd there, no source changes needed). The
-    // "Manage templates" button now lives in placeholder 2, under the drop
-    // zone -- see buildPlaceholder2Content.
+    // gppRenderPositionTransform, then Lock Position / Group noise side by
+    // side with the real left/up/down/right nudge-arrow cluster (all
+    // already uniquely id'd there, no further source changes needed beyond
+    // this session's own #gpp-pt-nudge-row/#gpp-pt-opacity-row additions),
+    // then the real opacity slider below both. The "Manage templates"
+    // button lives in placeholder 2, under the drop zone -- see
+    // buildPlaceholder2Content.
     function buildPlaceholder3Content(container) {
         const ptContainer = document.getElementById('gpp-lib-current-pt');
         const placeBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-place') : null;
@@ -31013,17 +31233,29 @@ applyLockState();
         const previewBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-preview') : null;
         const lockLabel = ptContainer ? ptContainer.querySelector('#gpp-pt-lock-label') : null;
         const groupNoiseLabel = ptContainer ? ptContainer.querySelector('#gpp-pt-group-noise-label') : null;
+        const nudgeRow = ptContainer ? ptContainer.querySelector('#gpp-pt-nudge-row') : null;
+        const opacityRow = ptContainer ? ptContainer.querySelector('#gpp-pt-opacity-row') : null;
 
         const buttonsGrid = document.createElement('div');
         buttonsGrid.className = 'gpc-mobile-p-btn-grid';
         [placeBtn, unsetBtn, gotoBtn, previewBtn].forEach((btn) => { if (btn) borrowNode(btn, buttonsGrid); });
         container.appendChild(buttonsGrid);
 
+        // Nudge arrows are borrowed WHOLESALE as one unit (not picked apart
+        // into a new grid like the buttons above) -- #gpp-pt-nudge-row's own
+        // inline flex-wrap:wrap;gap:6px already arranges the 4 of them
+        // exactly the way Ghost++ itself designed, nothing to reconstruct.
+        const checkboxAndNudgeRow = document.createElement('div');
+        checkboxAndNudgeRow.className = 'gpc-mobile-p3-checkbox-nudge-row';
         const checkboxWrap = document.createElement('div');
         checkboxWrap.className = 'gpc-mobile-p3-checkboxes';
         if (lockLabel) borrowNode(lockLabel, checkboxWrap);
         if (groupNoiseLabel) borrowNode(groupNoiseLabel, checkboxWrap);
-        container.appendChild(checkboxWrap);
+        checkboxAndNudgeRow.appendChild(checkboxWrap);
+        if (nudgeRow) borrowNode(nudgeRow, checkboxAndNudgeRow);
+        container.appendChild(checkboxAndNudgeRow);
+
+        if (opacityRow) borrowNode(opacityRow, container);
     }
 
     // Triggered by tapping .gpp-lib-thumb-canvas (the preview thumbnail
@@ -31210,6 +31442,34 @@ applyLockState();
             swatch.dataset.hex = hex;
             swatch.dataset.index = String(index);
             setSwatchState(swatch, hex, enabled);
+            // Per-swatch completion badge -- mirrors gpp-palette.js's own
+            // grid-mode badge exactly (same classes, same real
+            // gppPaletteProgressColor() call for the in-progress
+            // interpolation, not reimplemented) so it reads identically to
+            // the real Ghost++ grid: white circle + green check once
+            // complete, a black unfilled ring before any of that color is
+            // placed, a red-to-green interpolated ring while in progress.
+            // .gpp-swatch-progress's own CSS (injected by Ghost++'s real
+            // gppInjectPaletteStyle, already triggered by
+            // ensurePaletteControllerReady elsewhere in this file) is reused
+            // as-is -- nothing scoped/overridden here, since it's
+            // data-driven rather than a light/dark theme concern. Only
+            // shown once a scan has actually run for this template
+            // (progress is otherwise unknown, not "0%") -- same
+            // hasProgress/stats.total>0 gate gpp-palette.js itself uses.
+            if (hasProgress && stats && stats.total > 0) {
+                const badge = document.createElement('span');
+                if (stats.completed >= stats.total) {
+                    badge.className = 'gpp-swatch-progress gpp-swatch-progress-complete';
+                } else if (stats.completed <= 0) {
+                    badge.className = 'gpp-swatch-progress gpp-swatch-progress-unstarted';
+                } else {
+                    badge.className = 'gpp-swatch-progress gpp-swatch-progress-inprogress';
+                    badge.style.background = gppPaletteProgressColor(stats.completed / stats.total);
+                }
+                badge.setAttribute('aria-hidden', 'true');
+                swatch.appendChild(badge);
+            }
             swatch.addEventListener('click', () => {
                 if (liveState && liveState.soloMode === false) toggleColor(index, hex);
                 else soloColor(index, hex);
@@ -31226,6 +31486,17 @@ applyLockState();
         });
 
         wrap.appendChild(grid);
+
+        // Palette view toggle (Grid/List) -- see the borrowPaletteViewToggle/
+        // startPaletteViewToggleLiveSync block above for the full picture.
+        // Returned-then-reborrowed on every call here (a template switch),
+        // same discipline as rebuildPlaceholderColumns uses for p1/p2/p3 --
+        // the OLD wrap (and whatever it's currently holding) is about to be
+        // discarded via showCompactGrid's replaceWith, so the toggle needs
+        // to be reclaimed before that happens, not left to go down with it.
+        returnBorrowedNodes(viewToggleBorrowedNodes);
+        borrowPaletteViewToggle(wrap);
+        startPaletteViewToggleLiveSync();
 
         // Small live preview of the focused template's own ghost image, to
         // the grid's right -- see the .gpc-mobile-preview-frame CSS comment
@@ -31679,6 +31950,13 @@ applyLockState();
 
         if (!template) {
             if (liveState.wrap) {
+                // Reclaim the borrowed palette-view toggle BEFORE the wrap
+                // holding it gets removed -- otherwise it would silently go
+                // down with it (detached, not returned to its real gpp-
+                // view-settings-section home), leaving that section missing
+                // its Grid/List row if the real Ghost++ modal is ever opened
+                // afterward.
+                returnBorrowedNodes(viewToggleBorrowedNodes);
                 liveState.wrap.remove();
                 // Restore visibility rather than re-inserting the node --
                 // it was never removed from the DOM (see showCompactGrid

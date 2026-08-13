@@ -61,6 +61,31 @@
     // (scripts/geopixels-ghost-template-overhaul/1.0.0.js) placementPreview.
     let gppPlacementPreview = null;
 
+    // Lets code outside this file (mobile-painting.js's temporary-inspect-
+    // mode wrapper around the Place button) know exactly when a REAL
+    // placement capture starts and ends, without needing to duplicate
+    // gppIsPositionLocked's own gate (the "start" hook only ever fires once
+    // a capture is genuinely about to begin, past every guard below -- a
+    // click that was actually a no-op never fires it) or reach into this
+    // file's own private gppPlacementCaptureCleanup/gppPlacementPreview
+    // state. "End" covers every real teardown path uniformly (a successful
+    // click-to-place, an Escape-cancel, and a fresh render tearing down a
+    // stale capture) since it's called from cleanup() itself, the one
+    // function all three paths already funnel through. Mirrors gpp-init.js's
+    // own gppSubscribeUiRefresh/gppUiRefreshSubscribers shape.
+    const gppPlacementCaptureStartSubscribers = new Set();
+    const gppPlacementCaptureEndSubscribers = new Set();
+    function gppSubscribePlacementCaptureStart(listener) {
+        if (typeof listener !== 'function') return () => {};
+        gppPlacementCaptureStartSubscribers.add(listener);
+        return () => gppPlacementCaptureStartSubscribers.delete(listener);
+    }
+    function gppSubscribePlacementCaptureEnd(listener) {
+        if (typeof listener !== 'function') return () => {};
+        gppPlacementCaptureEndSubscribers.add(listener);
+        return () => gppPlacementCaptureEndSubscribers.delete(listener);
+    }
+
     function gppCancelPlacementCapture() {
         if (gppPlacementCaptureCleanup) {
             try { gppPlacementCaptureCleanup(); } catch (_) { /* ignore */ }
@@ -113,6 +138,9 @@
         const grid = gppReadGridConstants();
         const previousCursor = mapContainer.style.cursor;
         mapContainer.style.cursor = 'crosshair';
+        gppPlacementCaptureStartSubscribers.forEach(listener => {
+            try { listener(); } catch (err) { console.error('[GeoPixelcons++] Ghost++ placement capture start listener failed.', err); }
+        });
 
         function cleanup() {
             mapContainer.removeEventListener('click', handleClick, true);
@@ -121,6 +149,9 @@
             document.removeEventListener('keydown', handleKeyDown, true);
             mapContainer.style.cursor = previousCursor;
             gppPlacementCaptureCleanup = null;
+            gppPlacementCaptureEndSubscribers.forEach(listener => {
+                try { listener(); } catch (err) { console.error('[GeoPixelcons++] Ghost++ placement capture end listener failed.', err); }
+            });
             if (gppPlacementPreview && gppPlacementPreview.templateId === template.id) {
                 gppPlacementPreview = null;
                 gppNotifyRendererSchedule();
@@ -283,13 +314,13 @@
                 <button type="button" id="gpp-pt-goto" class="gpp-pt-btn" ${template.position ? '' : 'disabled'}>Go to</button>
                 <button type="button" id="gpp-pt-preview" class="gpp-pt-btn" title="Temporarily show this template at 100% opacity with no cell gaps, without changing its actual Opacity setting">Preview</button>
             </div>
-            <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:6px;">
+            <div id="gpp-pt-nudge-row" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:6px;">
                 <button type="button" id="gpp-pt-nudge-left" class="gpp-pt-btn" title="Nudge left" ${disabledAttr}>&larr;</button>
                 <button type="button" id="gpp-pt-nudge-up" class="gpp-pt-btn" title="Nudge up" ${disabledAttr}>&uarr;</button>
                 <button type="button" id="gpp-pt-nudge-down" class="gpp-pt-btn" title="Nudge down" ${disabledAttr}>&darr;</button>
                 <button type="button" id="gpp-pt-nudge-right" class="gpp-pt-btn" title="Nudge right" ${disabledAttr}>&rarr;</button>
             </div>
-            <div class="gpp-pt-opacity-row">
+            <div id="gpp-pt-opacity-row" class="gpp-pt-opacity-row">
                 <label for="gpp-pt-opacity">Opacity</label>
                 <input id="gpp-pt-opacity" type="range" min="0" max="100" step="1" title="Template overlay opacity. 0% is fully invisible.">
                 <span id="gpp-pt-opacity-value" class="gpp-pt-opacity-value"></span>
