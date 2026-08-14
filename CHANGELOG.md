@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.0](https://github.com/atharray/geopixelcons-library/compare/v2.0.1...v2.1.0) (2026-08-14)
+
+
+### Features
+
+* **profile:** collapse large user color lists ([#15](https://github.com/atharray/geopixelcons-library/issues/15)) ([a144916](https://github.com/atharray/geopixelcons-library/commit/a14491630220f11489dbd9520540daf165235260))
+
+
+### Bug Fixes
+
+* **ci:** detect stable tags through GitHub API ([#16](https://github.com/atharray/geopixelcons-library/issues/16)) ([87916bb](https://github.com/atharray/geopixelcons-library/commit/87916bb7ef9aa554cac11d3feacd30325b30c07d))
+
 ## [2.0.1](https://github.com/atharray/geopixelcons-library/compare/v2.0.0...v2.0.1) (2026-08-13)
 
 
