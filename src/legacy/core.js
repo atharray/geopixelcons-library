@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.1.0';
+    const VERSION = '2.2.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1229,6 +1229,13 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.2.0',
+            date: '2026-08-13',
+            items: [
+                { type: 'added', text: 'Ghost++ compact view now includes the Palette view Grid/List toggle directly below Enable all and Disable all' },
+            ]
+        },
         {
             version: '2.1.0',
             date: '2026-08-13',

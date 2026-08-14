@@ -85,8 +85,9 @@
             #${GPP_IDS.modal}.gpp-hidden { display: none; }
             /* ── Minified view (per explicit user feedback) ──────────────
                Pure CSS toggle (see the minify button's click handler below)
-               -- hides everything except the Enable all/Disable all row and
-               the color grid itself, and shrinks the modal down to a small
+               -- hides everything except the Enable all/Disable all row, the
+               palette Grid/List control, and the color grid itself, and
+               shrinks the modal down to a small
                floating strip. The real sections/controllers underneath stay
                fully mounted and functional; only their visibility changes,
                so nothing needs to be re-rendered when toggling in or out. */
@@ -568,7 +569,7 @@
                         <span class="gpp-editing-coords"></span>
                     </span>
                     <span class="gpp-spacer"></span>
-                    <button type="button" data-gpp-action="minify" aria-label="Minified view" title="Compact view: just Enable all / Disable all and the color grid">▭</button>
+                    <button type="button" data-gpp-action="minify" aria-label="Minified view" title="Compact view: Enable/Disable all, palette view, and the color grid">▭</button>
                     <button type="button" data-gpp-action="close" aria-label="Close">✕</button>
                 </div>
                 <div id="gpp-left-body" style="flex:1; overflow-y:auto;"></div>
@@ -793,7 +794,8 @@
         // the box is now" / "would it be possible to make it collapsible...
         // or at least some type of minified view with only what you need to
         // paint"): a compact mode showing ONLY the Enable all/Disable all
-        // buttons and the color grid (height-capped to ~2 rows, scrollable)
+        // buttons, the palette Grid/List control, and the color grid
+        // (height-capped to ~2 rows, scrollable)
         // -- everything else (ingest, Progress, Error Settings, View
         // Settings, Template Settings, the whole right panel/library) is
         // hidden via the .gpp-minified CSS below. Pure CSS toggle, not a
@@ -835,7 +837,7 @@
                 if (event.target !== modal || event.propertyName !== 'opacity') return;
                 modal.removeEventListener('transitionend', onFadeOut);
                 const minified = modal.classList.toggle('gpp-minified'); // the actual (instant) layout swap, now hidden by the low opacity above
-                btn.title = minified ? 'Exit compact view' : 'Compact view: just Enable all / Disable all and the color grid';
+                btn.title = minified ? 'Exit compact view' : 'Compact view: Enable/Disable all, palette view, and the color grid';
                 btn.setAttribute('aria-label', minified ? 'Exit minified view' : 'Minified view');
                 modal.style.opacity = '1';
                 const onFadeIn = event2 => {
