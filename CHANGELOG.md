@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/atharray/geopixelcons-library/compare/v2.1.0...v2.2.0) (2026-08-14)
+
+
+### Features
+
+* **ghost:** add palette view toggle to compact mode ([#18](https://github.com/atharray/geopixelcons-library/issues/18)) ([dd034b5](https://github.com/atharray/geopixelcons-library/commit/dd034b57d25993e376f827b28c81a090ecc68ba7))
+
 ## [2.1.0](https://github.com/atharray/geopixelcons-library/compare/v2.0.1...v2.1.0) (2026-08-14)
 
 
