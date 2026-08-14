@@ -38,4 +38,5 @@ test('includes the profile color list collapse feature', () => {
     assert.match(artifact, /MAX_VISIBLE_COLORS = 100/);
     assert.match(artifact, /Show All/);
     assert.match(artifact, /Show Less/);
+    assert.match(artifact, /bodyObserver\.disconnect\(\)/);
 });

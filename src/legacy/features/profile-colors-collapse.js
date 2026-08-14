@@ -13,6 +13,7 @@ if (_settings.profileColorsCollapse) {
             let isExpanded = false;
             let watchedContainer = null;
             let containerObserver = null;
+            let bodyObserver = null;
             let refreshQueued = false;
 
             function getColorSwatches(container) {
@@ -111,6 +112,10 @@ if (_settings.profileColorsCollapse) {
                 const container = document.getElementById(COLOR_CONTAINER_ID);
                 if (container) {
                     watchContainer(container);
+                    if (bodyObserver) {
+                        bodyObserver.disconnect();
+                        bodyObserver = null;
+                    }
                 } else if (containerObserver) {
                     containerObserver.disconnect();
                     containerObserver = null;
@@ -120,8 +125,9 @@ if (_settings.profileColorsCollapse) {
 
             function init() {
                 syncContainer();
+                if (watchedContainer) return;
 
-                const bodyObserver = new MutationObserver(syncContainer);
+                bodyObserver = new MutationObserver(syncContainer);
                 bodyObserver.observe(document.body, { childList: true, subtree: true });
             }
 

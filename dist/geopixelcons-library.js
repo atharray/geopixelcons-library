@@ -1246,6 +1246,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             date: '2026-08-13',
             items: [
                 { type: 'added', text: 'Profile overlay: owned-color lists over 100 colors now start compact with a Show All button, and can be collapsed again with Show Less' },
+                { type: 'fixed', text: 'Profile color list: the new enhancement no longer watches every page mutation after the native profile container is found, preventing unnecessary background work' },
             ]
         },
         {
@@ -30231,6 +30232,7 @@ if (_settings.profileColorsCollapse) {
             let isExpanded = false;
             let watchedContainer = null;
             let containerObserver = null;
+            let bodyObserver = null;
             let refreshQueued = false;
 
             function getColorSwatches(container) {
@@ -30329,6 +30331,10 @@ if (_settings.profileColorsCollapse) {
                 const container = document.getElementById(COLOR_CONTAINER_ID);
                 if (container) {
                     watchContainer(container);
+                    if (bodyObserver) {
+                        bodyObserver.disconnect();
+                        bodyObserver = null;
+                    }
                 } else if (containerObserver) {
                     containerObserver.disconnect();
                     containerObserver = null;
@@ -30338,8 +30344,9 @@ if (_settings.profileColorsCollapse) {
 
             function init() {
                 syncContainer();
+                if (watchedContainer) return;
 
-                const bodyObserver = new MutationObserver(syncContainer);
+                bodyObserver = new MutationObserver(syncContainer);
                 bodyObserver.observe(document.body, { childList: true, subtree: true });
             }
 

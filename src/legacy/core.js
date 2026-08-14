@@ -1234,6 +1234,7 @@
             date: '2026-08-13',
             items: [
                 { type: 'added', text: 'Profile overlay: owned-color lists over 100 colors now start compact with a Show All button, and can be collapsed again with Show Less' },
+                { type: 'fixed', text: 'Profile color list: the new enhancement no longer watches every page mutation after the native profile container is found, preventing unnecessary background work' },
             ]
         },
         {
