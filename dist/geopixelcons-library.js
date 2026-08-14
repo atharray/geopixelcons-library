@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.0.1 - readable release bundle */
+/* GeoPixelcons Library v2.1.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.1.0'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.1.0';
+    const VERSION = '2.2.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1241,6 +1241,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.2.0',
+            date: '2026-08-13',
+            items: [
+                { type: 'added', text: 'Ghost++ compact view now includes the Palette view Grid/List toggle directly below Enable all and Disable all' },
+            ]
+        },
         {
             version: '2.1.0',
             date: '2026-08-13',
@@ -5135,8 +5142,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             #${GPP_IDS.modal}.gpp-hidden { display: none; }
             /* ── Minified view (per explicit user feedback) ──────────────
                Pure CSS toggle (see the minify button's click handler below)
-               -- hides everything except the Enable all/Disable all row and
-               the color grid itself, and shrinks the modal down to a small
+               -- hides everything except the Enable all/Disable all row, the
+               palette Grid/List control, and the color grid itself, and
+               shrinks the modal down to a small
                floating strip. The real sections/controllers underneath stay
                fully mounted and functional; only their visibility changes,
                so nothing needs to be re-rendered when toggling in or out. */
@@ -5618,7 +5626,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                         <span class="gpp-editing-coords"></span>
                     </span>
                     <span class="gpp-spacer"></span>
-                    <button type="button" data-gpp-action="minify" aria-label="Minified view" title="Compact view: just Enable all / Disable all and the color grid">▭</button>
+                    <button type="button" data-gpp-action="minify" aria-label="Minified view" title="Compact view: Enable/Disable all, palette view, and the color grid">▭</button>
                     <button type="button" data-gpp-action="close" aria-label="Close">✕</button>
                 </div>
                 <div id="gpp-left-body" style="flex:1; overflow-y:auto;"></div>
@@ -5843,7 +5851,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         // the box is now" / "would it be possible to make it collapsible...
         // or at least some type of minified view with only what you need to
         // paint"): a compact mode showing ONLY the Enable all/Disable all
-        // buttons and the color grid (height-capped to ~2 rows, scrollable)
+        // buttons, the palette Grid/List control, and the color grid
+        // (height-capped to ~2 rows, scrollable)
         // -- everything else (ingest, Progress, Error Settings, View
         // Settings, Template Settings, the whole right panel/library) is
         // hidden via the .gpp-minified CSS below. Pure CSS toggle, not a
@@ -5885,7 +5894,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 if (event.target !== modal || event.propertyName !== 'opacity') return;
                 modal.removeEventListener('transitionend', onFadeOut);
                 const minified = modal.classList.toggle('gpp-minified'); // the actual (instant) layout swap, now hidden by the low opacity above
-                btn.title = minified ? 'Exit compact view' : 'Compact view: just Enable all / Disable all and the color grid';
+                btn.title = minified ? 'Exit compact view' : 'Compact view: Enable/Disable all, palette view, and the color grid';
                 btn.setAttribute('aria-label', minified ? 'Exit minified view' : 'Minified view');
                 modal.style.opacity = '1';
                 const onFadeIn = event2 => {
@@ -9363,6 +9372,29 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         style.textContent = `
             .gpp-palette-empty { font-size: 12px; color: ${t2('#64748b', '#a6adc8')}; padding: 6px 2px; }
             .gpp-palette-panel { display: flex; flex-direction: column; gap: 7px; margin: 8px 0; }
+            /* The compact panel gets the same Grid/List control as View
+               Settings, but it stays out of the normal palette layout so
+               the two controls never appear as duplicate rows. */
+            .gpp-palette-view-row.gpp-vs-row {
+                display: none; align-items: center; gap: 8px; margin: 0;
+            }
+            .gpp-minified .gpp-palette-view-row.gpp-vs-row { display: flex; }
+            .gpp-palette-view-row .gpp-vs-label {
+                flex: 1 1 auto; min-width: 0; font-size: 11px;
+                color: ${t2('#1f2937', '#e2e2f5')};
+            }
+            .gpp-palette-view-row .gpp-vs-view-toggle {
+                display: flex; border-radius: 6px; overflow: hidden; flex-shrink: 0;
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+            }
+            .gpp-palette-view-row .gpp-vs-view-btn {
+                font: inherit; font-size: 12px; line-height: 1; cursor: pointer; border: none; padding: 4px 8px;
+                background: ${t2('#ffffff', '#313244')}; color: ${t2('#64748b', '#a6adc8')};
+            }
+            .gpp-palette-view-row .gpp-vs-view-btn:hover { background: ${t2('#f3f4f6', '#45475a')}; }
+            .gpp-palette-view-row .gpp-vs-view-btn-active {
+                background: ${t2('#2563eb', '#89b4fa')}; color: ${t2('#ffffff', '#1e1e2e')};
+            }
             .gpp-gnc-group {
                 padding: 6px 0; border-bottom: 1px solid ${t2('#e5e7eb', '#313244')};
             }
@@ -9906,10 +9938,57 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 target.setGhostColorsAsActivePalette();
             }
         });
+
+        // Compact-mode palette view — the same persisted Grid/List choice as
+        // View Settings, placed directly below Enable all / Disable all.
+        // These controls intentionally have no ids because the full View
+        // Settings section already owns the stable ids for its own pair.
+        const paletteViewRow = document.createElement('div');
+        paletteViewRow.className = 'gpp-vs-row gpp-palette-view-row';
+        const paletteViewLabel = document.createElement('span');
+        paletteViewLabel.className = 'gpp-vs-label';
+        paletteViewLabel.textContent = 'Palette view';
+        const paletteViewToggle = document.createElement('div');
+        paletteViewToggle.className = 'gpp-vs-view-toggle';
+        const compactGridBtn = document.createElement('button');
+        compactGridBtn.type = 'button';
+        compactGridBtn.className = 'gpp-vs-view-btn';
+        compactGridBtn.dataset.gppPaletteView = 'grid';
+        compactGridBtn.textContent = '▦';
+        compactGridBtn.title = 'Grid view';
+        compactGridBtn.setAttribute('aria-label', 'Grid view');
+        const compactListBtn = document.createElement('button');
+        compactListBtn.type = 'button';
+        compactListBtn.className = 'gpp-vs-view-btn';
+        compactListBtn.dataset.gppPaletteView = 'list';
+        compactListBtn.textContent = '☰';
+        compactListBtn.title = 'List view';
+        compactListBtn.setAttribute('aria-label', 'List view');
+        function syncCompactPaletteViewButtons() {
+            const mode = gppSettings.paletteViewMode === 'list' ? 'list' : 'grid';
+            compactGridBtn.classList.toggle('gpp-vs-view-btn-active', mode === 'grid');
+            compactListBtn.classList.toggle('gpp-vs-view-btn-active', mode === 'list');
+            compactGridBtn.setAttribute('aria-pressed', String(mode === 'grid'));
+            compactListBtn.setAttribute('aria-pressed', String(mode === 'list'));
+        }
+        function setCompactPaletteViewMode(mode) {
+            if (gppSettings.paletteViewMode === mode) return;
+            gppSettings.paletteViewMode = mode;
+            gppState.saveSettings();
+            syncCompactPaletteViewButtons();
+            performFilterSort();
+            if (typeof controller.onChange === 'function') controller.onChange();
+        }
+        compactGridBtn.addEventListener('click', () => setCompactPaletteViewMode('grid'));
+        compactListBtn.addEventListener('click', () => setCompactPaletteViewMode('list'));
+        paletteViewToggle.append(compactGridBtn, compactListBtn);
+        paletteViewRow.append(paletteViewLabel, paletteViewToggle);
+        syncCompactPaletteViewButtons();
+
         bulkRowTop.append(allBtn, noneBtn);
         bulkRowMiddle.append(ownedBtn, enableFilteredBtn);
         bulkRowBottom.append(activeBtn, setPaletteBtn);
-        panel.append(bulkRowTop, bulkRowMiddle, bulkRowBottom);
+        panel.append(bulkRowTop, paletteViewRow, bulkRowMiddle, bulkRowBottom);
 
         // No "Sync with selected color" button here — per explicit product
         // decision, that stays the legacy Ghost Palette Color Search tool's
@@ -10753,6 +10832,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         controller.update = function gppPaletteControllerUpdate(template, onChange) {
             controller.template = template || null;
             controller.onChange = typeof onChange === 'function' ? onChange : null;
+            syncCompactPaletteViewButtons();
             gppPaletteHideTooltip(); // avoid a stuck tooltip across a re-render/deselection
             if (!controller.template) {
                 emptyEl.style.display = '';
