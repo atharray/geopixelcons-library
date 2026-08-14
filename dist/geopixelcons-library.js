@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.1.0 - readable release bundle */
+/* GeoPixelcons Library v2.2.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.2.0'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.2.0';
+    const VERSION = '2.3.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -31,6 +31,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'themeEditor', name: 'Theme Editor', icon: '🎨', desc: 'Visual map theme editor — edit MapLibre GL styles with color pickers, save/load/manage custom themes.', features: ['Bundled themes (Fjord, Obsidian, Monokai, Ayu Mirage, etc.)', 'Simple & Full color editing modes', 'Live preview toggle for instant feedback', 'Import/export themes as JSON files', 'Quick theme-switch submenu in the dropdown', 'Theme manager with create, edit & delete'] },
         { key: 'mapMarkers', name: 'Map Markers', icon: '📌', desc: 'Place and manage image stickers on the map canvas. Images scale and persist with the map.', features: ['Upload PNG/JPEG/WebP files or use image URLs', 'Drag to define placement bounds (click-only rejected with prompt)', 'Hold Shift during drag to force aspect-ratio lock', 'Per-marker lock/unlock aspect ratio toggle', 'Per-marker opacity slider and visibility toggle', 'Edit mode with 8 fixed-size handles (corners + edge midpoints)', 'Drag-to-sort cards to reorder rendering order', 'Compact card view with click-to-expand controls', 'Draggable management modal', 'Persistent storage via IndexedDB'] },
         { key: 'profileColorsCollapse', name: 'Profile Color List Collapse', icon: '🎨', desc: 'Keeps large owned-color lists compact in the Profile overlay.', features: ['Shows the first 100 colors initially', 'Expands the complete list with Show All', 'Collapses it again with Show Less'] },
+        { key: 'mobileOverhaul', name: 'Mobile Overhaul', icon: '\u{1F4F1}', desc: 'Scaffold for a touch-first GeoPixelcons++ interface.', features: ['Direct toggle in the GeoPixelcons++ menu', 'Persists the enabled state across reloads', 'Provides the mount point for future mobile controls'] },
     ];
 
     const EXTENSION_LIST = [
@@ -52,6 +53,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
     // force on every user silently. New installs get it off until they enable it themselves.
     DEFAULT_SETTINGS.ghostPlusPlus = false;
+    // Mobile Overhaul is an explicit opt-in while its touch-first surface is
+    // being built incrementally.
+    DEFAULT_SETTINGS.mobileOverhaul = false;
     EXTENSION_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = f.key === 'extPillHoverLabels' ? true : false);
 
     function loadSettings() {
@@ -455,6 +459,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                     }
                     setTimeout(() => flashEl(document.getElementById('userColorsContainer')), 400);
                 },
+                mobileOverhaul: () => {
+                    if (typeof gpcSetMobileOverhaul === 'function') gpcSetMobileOverhaul(true);
+                },
                 themeEditor: () => {
                     if (_themeEditor) _themeEditor.toggleModal();
                 },
@@ -554,6 +561,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             input.addEventListener('change', () => {
                 _settings[f.key] = input.checked;
                 saveSettings(_settings);
+                if (f.key === 'mobileOverhaul' && typeof gpcSetMobileOverhaul === 'function') {
+                    gpcSetMobileOverhaul(input.checked);
+                    banner.style.display = 'none';
+                }
                 slider.style.background = input.checked ? '#22c55e' : (dark ? '#585b70' : '#cbd5e1');
                 knob.style.left = input.checked ? '22px' : '2px';
                 row.style.background = input.checked
@@ -1241,6 +1252,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.3.0',
+            date: '2026-08-13',
+            items: [
+                { type: 'added', text: 'Mobile Overhaul: added a default-off menu toggle and visible scaffold for the future touch-first interface' },
+            ]
+        },
         {
             version: '2.2.0',
             date: '2026-08-13',
@@ -2620,6 +2638,16 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 if (_mapMarkers) _mapMarkers.openModal();
             }));
         }
+
+        // Mobile Overhaul scaffold toggle (always visible, default off)
+        const mobileOverhaulBtn = makeSubBtn('\u{1F4F1}', 'Mobile Overhaul', () => {
+            if (typeof gpcToggleMobileOverhaul === 'function') gpcToggleMobileOverhaul();
+        });
+        mobileOverhaulBtn.id = 'gpc-mobile-overhaul-btn';
+        const mobileOverhaulLabel = mobileOverhaulBtn.querySelector('span:nth-child(2)');
+        if (mobileOverhaulLabel) mobileOverhaulLabel.dataset.gpcMobileOverhaulLabel = '1';
+        dropdown.appendChild(mobileOverhaulBtn);
+        if (typeof gpcSyncMobileOverhaulButton === 'function') gpcSyncMobileOverhaulButton();
 
         // Settings button (always visible)
         dropdown.appendChild(makeSubBtn('⚙️', 'Settings...', createSettingsModal));
@@ -30444,6 +30472,113 @@ if (_settings.profileColorsCollapse) {
         console.error('[GeoPixelcons++] ❌ Profile Color List Collapse failed:', err);
     }
 }
+
+
+// ============================================================
+//  FEATURE: Mobile Overhaul [mobileOverhaul]
+// ============================================================
+
+const MOBILE_OVERHAUL_SCAFFOLD_ID = 'gpc-mobile-overhaul-scaffold';
+
+function gpcSyncMobileOverhaulButton() {
+    const button = document.getElementById('gpc-mobile-overhaul-btn');
+    if (!button) return;
+
+    const enabled = _settings.mobileOverhaul === true;
+    button.dataset.enabled = String(enabled);
+    button.setAttribute('aria-pressed', String(enabled));
+    button.title = `Mobile Overhaul: ${enabled ? 'On' : 'Off'}`;
+    button.style.outline = enabled ? '2px solid var(--color-green-500, #22c55e)' : 'none';
+    button.style.outlineOffset = enabled ? '-2px' : '';
+
+    const label = button.querySelector('[data-gpc-mobile-overhaul-label]');
+    if (label) label.textContent = `Mobile Overhaul ${enabled ? '(On)' : '(Off)'}`;
+}
+
+function gpcUnmountMobileOverhaul() {
+    document.getElementById(MOBILE_OVERHAUL_SCAFFOLD_ID)?.remove();
+}
+
+function gpcMountMobileOverhaul() {
+    gpcUnmountMobileOverhaul();
+
+    const dark = isDarkMode();
+    const scaffold = document.createElement('section');
+    scaffold.id = MOBILE_OVERHAUL_SCAFFOLD_ID;
+    scaffold.setAttribute('role', 'region');
+    scaffold.setAttribute('aria-live', 'polite');
+    scaffold.setAttribute('aria-label', 'Mobile Overhaul scaffold');
+    scaffold.style.cssText = `
+        position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 99998;
+        max-width: 640px; margin: 0 auto; padding: 14px 16px;
+        display: flex; align-items: center; gap: 12px;
+        background: ${dark ? '#1e1e2e' : '#ffffff'};
+        color: ${dark ? '#cdd6f4' : '#1e293b'};
+        border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+        border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.24);
+        font-family: system-ui, -apple-system, sans-serif;
+    `;
+
+    const icon = document.createElement('span');
+    icon.textContent = '\u{1F4F1}';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.style.cssText = 'font-size:20px;flex:0 0 auto;';
+
+    const copy = document.createElement('div');
+    copy.style.cssText = 'min-width:0;display:flex;flex-direction:column;gap:3px;';
+
+    const title = document.createElement('strong');
+    title.textContent = 'Mobile Overhaul scaffold';
+    title.style.cssText = 'font-size:14px;line-height:1.2;';
+
+    const description = document.createElement('span');
+    description.textContent = 'Enabled. Future touch-first controls will mount here.';
+    description.style.cssText = `font-size:12px;line-height:1.35;color:${dark ? '#a6adc8' : '#64748b'};`;
+
+    copy.appendChild(title);
+    copy.appendChild(description);
+    scaffold.appendChild(icon);
+    scaffold.appendChild(copy);
+    document.body.appendChild(scaffold);
+}
+
+function gpcSetMobileOverhaul(enabled) {
+    _settings.mobileOverhaul = !!enabled;
+    saveSettings(_settings);
+
+    if (_settings.mobileOverhaul) {
+        try {
+            gpcMountMobileOverhaul();
+            _featureStatus.mobileOverhaul = 'ok';
+        } catch (err) {
+            _featureStatus.mobileOverhaul = 'error';
+            dbgPush(`Mobile Overhaul init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Mobile Overhaul' });
+            console.error('[GeoPixelcons++] ❌ Mobile Overhaul failed:', err);
+        }
+    } else {
+        gpcUnmountMobileOverhaul();
+        _featureStatus.mobileOverhaul = 'disabled';
+    }
+
+    gpcSyncMobileOverhaulButton();
+}
+
+function gpcToggleMobileOverhaul() {
+    gpcSetMobileOverhaul(!_settings.mobileOverhaul);
+}
+
+if (_settings.mobileOverhaul) {
+    try {
+        gpcMountMobileOverhaul();
+        _featureStatus.mobileOverhaul = 'ok';
+    } catch (err) {
+        _featureStatus.mobileOverhaul = 'error';
+        dbgPush(`Mobile Overhaul init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Mobile Overhaul' });
+        console.error('[GeoPixelcons++] ❌ Mobile Overhaul failed:', err);
+    }
+}
+
+gpcSyncMobileOverhaulButton();
 
 
 

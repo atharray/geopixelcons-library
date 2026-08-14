@@ -45,6 +45,7 @@ const LEGACY_SOURCE_ORDER = [
     'src/legacy/features/theme-editor.js',
     'src/legacy/features/map-markers.js',
     'src/legacy/features/profile-colors-collapse.js',
+    'src/legacy/features/mobile-overhaul.js',
     'src/legacy/footer.js',
 ];
 

@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.2.0';
+    const VERSION = '2.3.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -19,6 +19,7 @@
         { key: 'themeEditor', name: 'Theme Editor', icon: '🎨', desc: 'Visual map theme editor — edit MapLibre GL styles with color pickers, save/load/manage custom themes.', features: ['Bundled themes (Fjord, Obsidian, Monokai, Ayu Mirage, etc.)', 'Simple & Full color editing modes', 'Live preview toggle for instant feedback', 'Import/export themes as JSON files', 'Quick theme-switch submenu in the dropdown', 'Theme manager with create, edit & delete'] },
         { key: 'mapMarkers', name: 'Map Markers', icon: '📌', desc: 'Place and manage image stickers on the map canvas. Images scale and persist with the map.', features: ['Upload PNG/JPEG/WebP files or use image URLs', 'Drag to define placement bounds (click-only rejected with prompt)', 'Hold Shift during drag to force aspect-ratio lock', 'Per-marker lock/unlock aspect ratio toggle', 'Per-marker opacity slider and visibility toggle', 'Edit mode with 8 fixed-size handles (corners + edge midpoints)', 'Drag-to-sort cards to reorder rendering order', 'Compact card view with click-to-expand controls', 'Draggable management modal', 'Persistent storage via IndexedDB'] },
         { key: 'profileColorsCollapse', name: 'Profile Color List Collapse', icon: '🎨', desc: 'Keeps large owned-color lists compact in the Profile overlay.', features: ['Shows the first 100 colors initially', 'Expands the complete list with Show All', 'Collapses it again with Show Less'] },
+        { key: 'mobileOverhaul', name: 'Mobile Overhaul', icon: '\u{1F4F1}', desc: 'Scaffold for a touch-first GeoPixelcons++ interface.', features: ['Direct toggle in the GeoPixelcons++ menu', 'Persists the enabled state across reloads', 'Provides the mount point for future mobile controls'] },
     ];
 
     const EXTENSION_LIST = [
@@ -40,6 +41,9 @@
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
     // force on every user silently. New installs get it off until they enable it themselves.
     DEFAULT_SETTINGS.ghostPlusPlus = false;
+    // Mobile Overhaul is an explicit opt-in while its touch-first surface is
+    // being built incrementally.
+    DEFAULT_SETTINGS.mobileOverhaul = false;
     EXTENSION_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = f.key === 'extPillHoverLabels' ? true : false);
 
     function loadSettings() {
@@ -443,6 +447,9 @@
                     }
                     setTimeout(() => flashEl(document.getElementById('userColorsContainer')), 400);
                 },
+                mobileOverhaul: () => {
+                    if (typeof gpcSetMobileOverhaul === 'function') gpcSetMobileOverhaul(true);
+                },
                 themeEditor: () => {
                     if (_themeEditor) _themeEditor.toggleModal();
                 },
@@ -542,6 +549,10 @@
             input.addEventListener('change', () => {
                 _settings[f.key] = input.checked;
                 saveSettings(_settings);
+                if (f.key === 'mobileOverhaul' && typeof gpcSetMobileOverhaul === 'function') {
+                    gpcSetMobileOverhaul(input.checked);
+                    banner.style.display = 'none';
+                }
                 slider.style.background = input.checked ? '#22c55e' : (dark ? '#585b70' : '#cbd5e1');
                 knob.style.left = input.checked ? '22px' : '2px';
                 row.style.background = input.checked
@@ -1229,6 +1240,13 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.3.0',
+            date: '2026-08-13',
+            items: [
+                { type: 'added', text: 'Mobile Overhaul: added a default-off menu toggle and visible scaffold for the future touch-first interface' },
+            ]
+        },
         {
             version: '2.2.0',
             date: '2026-08-13',
@@ -2608,6 +2626,16 @@
                 if (_mapMarkers) _mapMarkers.openModal();
             }));
         }
+
+        // Mobile Overhaul scaffold toggle (always visible, default off)
+        const mobileOverhaulBtn = makeSubBtn('\u{1F4F1}', 'Mobile Overhaul', () => {
+            if (typeof gpcToggleMobileOverhaul === 'function') gpcToggleMobileOverhaul();
+        });
+        mobileOverhaulBtn.id = 'gpc-mobile-overhaul-btn';
+        const mobileOverhaulLabel = mobileOverhaulBtn.querySelector('span:nth-child(2)');
+        if (mobileOverhaulLabel) mobileOverhaulLabel.dataset.gpcMobileOverhaulLabel = '1';
+        dropdown.appendChild(mobileOverhaulBtn);
+        if (typeof gpcSyncMobileOverhaulButton === 'function') gpcSyncMobileOverhaulButton();
 
         // Settings button (always visible)
         dropdown.appendChild(makeSubBtn('⚙️', 'Settings...', createSettingsModal));

@@ -26,7 +26,7 @@ test('publishes the library bridge when @require wraps the source', () => {
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Ghost Template Manager/);
-    assert.match(artifact, /const VERSION = '2\.2\.0';/);
+    assert.match(artifact, /const VERSION = '2\.3\.0';/);
     const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const versionPattern = new RegExp(`const LIBRARY_VERSION = '${escapedVersion}'; // x-release-please-version`);
     assert.match(artifact, versionPattern);
@@ -39,4 +39,11 @@ test('includes the profile color list collapse feature', () => {
     assert.match(artifact, /Show All/);
     assert.match(artifact, /Show Less/);
     assert.match(artifact, /bodyObserver\.disconnect\(\)/);
+});
+
+test('includes the mobile overhaul scaffold toggle', () => {
+    assert.match(artifact, /FEATURE: Mobile Overhaul/);
+    assert.match(artifact, /gpc-mobile-overhaul-btn/);
+    assert.match(artifact, /gpc-mobile-overhaul-scaffold/);
+    assert.match(artifact, /gpcSetMobileOverhaul/);
 });
