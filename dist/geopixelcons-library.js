@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.0.0 - readable release bundle */
+/* GeoPixelcons Library v2.0.1 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.0.1'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.0.0';
+    const VERSION = '2.1.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -30,6 +30,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'regionsHighscore', name: 'Regions Highscore', icon: '🏆', desc: 'Displays regional pixel/color contribution rankings.', features: ['Sort rankings by player or guild', 'Filter by pixel count, color, or region', 'Historical contribution statistics'] },
         { key: 'themeEditor', name: 'Theme Editor', icon: '🎨', desc: 'Visual map theme editor — edit MapLibre GL styles with color pickers, save/load/manage custom themes.', features: ['Bundled themes (Fjord, Obsidian, Monokai, Ayu Mirage, etc.)', 'Simple & Full color editing modes', 'Live preview toggle for instant feedback', 'Import/export themes as JSON files', 'Quick theme-switch submenu in the dropdown', 'Theme manager with create, edit & delete'] },
         { key: 'mapMarkers', name: 'Map Markers', icon: '📌', desc: 'Place and manage image stickers on the map canvas. Images scale and persist with the map.', features: ['Upload PNG/JPEG/WebP files or use image URLs', 'Drag to define placement bounds (click-only rejected with prompt)', 'Hold Shift during drag to force aspect-ratio lock', 'Per-marker lock/unlock aspect ratio toggle', 'Per-marker opacity slider and visibility toggle', 'Edit mode with 8 fixed-size handles (corners + edge midpoints)', 'Drag-to-sort cards to reorder rendering order', 'Compact card view with click-to-expand controls', 'Draggable management modal', 'Persistent storage via IndexedDB'] },
+        { key: 'profileColorsCollapse', name: 'Profile Color List Collapse', icon: '🎨', desc: 'Keeps large owned-color lists compact in the Profile overlay.', features: ['Shows the first 100 colors initially', 'Expands the complete list with Show All', 'Collapses it again with Show Less'] },
     ];
 
     const EXTENSION_LIST = [
@@ -446,6 +447,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 bulkPurchaseColors: () => {
                     if (typeof _pw.toggleProfile === 'function') _pw.toggleProfile();
                     setTimeout(() => flashEl(document.querySelector('#gp-bulk-profile-card')), 400);
+                },
+                profileColorsCollapse: () => {
+                    const profileOverlay = document.getElementById('profileOverlay');
+                    if (profileOverlay && profileOverlay.classList.contains('hidden') && typeof _pw.toggleProfile === 'function') {
+                        _pw.toggleProfile();
+                    }
+                    setTimeout(() => flashEl(document.getElementById('userColorsContainer')), 400);
                 },
                 themeEditor: () => {
                     if (_themeEditor) _themeEditor.toggleModal();
@@ -1233,6 +1241,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.1.0',
+            date: '2026-08-13',
+            items: [
+                { type: 'added', text: 'Profile overlay: owned-color lists over 100 colors now start compact with a Show All button, and can be collapsed again with Show Less' },
+                { type: 'fixed', text: 'Profile color list: the new enhancement no longer watches every page mutation after the native profile container is found, preventing unnecessary background work' },
+            ]
+        },
         {
             version: '2.0.0',
             date: '2026-08-09',
@@ -30200,6 +30216,155 @@ applyLockState();
             console.error('[GeoPixelcons++] \u274c Map Markers failed:', err);
         }
     }
+
+// ============================================================
+//  FEATURE: Profile Color List Collapse [profileColorsCollapse]
+// ============================================================
+if (_settings.profileColorsCollapse) {
+    try {
+        (function _init_profileColorsCollapse() {
+            const COLOR_CONTAINER_ID = 'userColorsContainer';
+            const TOGGLE_WRAPPER_ID = 'gpc-profile-colors-toggle';
+            const TOGGLE_BUTTON_ID = 'gpc-profile-colors-toggle-btn';
+            const MAX_VISIBLE_COLORS = 100;
+            const COLLAPSED_ATTR = 'data-gpc-profile-color-collapsed';
+
+            let isExpanded = false;
+            let watchedContainer = null;
+            let containerObserver = null;
+            let bodyObserver = null;
+            let refreshQueued = false;
+
+            function getColorSwatches(container) {
+                return Array.from(container.children).filter((child) => {
+                    return child.id !== TOGGLE_WRAPPER_ID;
+                });
+            }
+
+            function restoreCollapsedSwatches(swatches) {
+                swatches.forEach((swatch) => {
+                    if (!swatch.hasAttribute(COLLAPSED_ATTR)) return;
+                    swatch.classList.remove('hidden');
+                    swatch.removeAttribute('aria-hidden');
+                    swatch.removeAttribute(COLLAPSED_ATTR);
+                });
+            }
+
+            function getOrCreateToggle(container) {
+                const parent = container.parentElement;
+                if (!parent) return null;
+
+                let wrapper = parent.querySelector('#' + TOGGLE_WRAPPER_ID);
+                if (!wrapper) {
+                    wrapper = document.createElement('div');
+                    wrapper.id = TOGGLE_WRAPPER_ID;
+                    wrapper.className = 'mt-2 hidden';
+
+                    const button = document.createElement('button');
+                    button.id = TOGGLE_BUTTON_ID;
+                    button.type = 'button';
+                    button.className = 'px-3 py-1 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer';
+                    button.setAttribute('aria-controls', COLOR_CONTAINER_ID);
+                    button.addEventListener('click', () => {
+                        isExpanded = !isExpanded;
+                        applyVisibility(container);
+                    });
+
+                    wrapper.appendChild(button);
+                    parent.insertBefore(wrapper, container.nextSibling);
+                }
+
+                return wrapper;
+            }
+
+            function applyVisibility(container) {
+                if (!container || !container.isConnected) return;
+
+                const swatches = getColorSwatches(container);
+                const wrapper = getOrCreateToggle(container);
+                if (!wrapper) return;
+
+                restoreCollapsedSwatches(swatches);
+
+                const shouldCollapse = swatches.length > MAX_VISIBLE_COLORS;
+                wrapper.classList.toggle('hidden', !shouldCollapse);
+
+                const button = wrapper.querySelector('#' + TOGGLE_BUTTON_ID);
+                if (!button) return;
+
+                if (shouldCollapse && !isExpanded) {
+                    swatches.slice(MAX_VISIBLE_COLORS).forEach((swatch) => {
+                        swatch.classList.add('hidden');
+                        swatch.setAttribute('aria-hidden', 'true');
+                        swatch.setAttribute(COLLAPSED_ATTR, '1');
+                    });
+                }
+
+                button.textContent = isExpanded ? 'Show Less' : 'Show All';
+                button.setAttribute('aria-expanded', String(isExpanded));
+            }
+
+            function queueRefresh(container) {
+                if (refreshQueued) return;
+                refreshQueued = true;
+                queueMicrotask(() => {
+                    refreshQueued = false;
+                    applyVisibility(container);
+                });
+            }
+
+            function watchContainer(container) {
+                if (container === watchedContainer) {
+                    queueRefresh(container);
+                    return;
+                }
+
+                if (containerObserver) containerObserver.disconnect();
+                watchedContainer = container;
+                containerObserver = new MutationObserver(() => queueRefresh(container));
+                containerObserver.observe(container, { childList: true });
+                isExpanded = false;
+                applyVisibility(container);
+            }
+
+            function syncContainer() {
+                const container = document.getElementById(COLOR_CONTAINER_ID);
+                if (container) {
+                    watchContainer(container);
+                    if (bodyObserver) {
+                        bodyObserver.disconnect();
+                        bodyObserver = null;
+                    }
+                } else if (containerObserver) {
+                    containerObserver.disconnect();
+                    containerObserver = null;
+                    watchedContainer = null;
+                }
+            }
+
+            function init() {
+                syncContainer();
+                if (watchedContainer) return;
+
+                bodyObserver = new MutationObserver(syncContainer);
+                bodyObserver.observe(document.body, { childList: true, subtree: true });
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init, { once: true });
+            } else {
+                init();
+            }
+        })();
+        _featureStatus.profileColorsCollapse = 'ok';
+        console.log('[GeoPixelcons++] ✅ Profile Color List Collapse loaded');
+    } catch (err) {
+        _featureStatus.profileColorsCollapse = 'error';
+        dbgPush(`Profile Color List Collapse init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Profile Color List Collapse' });
+        console.error('[GeoPixelcons++] ❌ Profile Color List Collapse failed:', err);
+    }
+}
+
 
 
     // ============================================================
