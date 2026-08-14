@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.0.0';
+    const VERSION = '2.1.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -18,6 +18,7 @@
         { key: 'regionsHighscore', name: 'Regions Highscore', icon: '🏆', desc: 'Displays regional pixel/color contribution rankings.', features: ['Sort rankings by player or guild', 'Filter by pixel count, color, or region', 'Historical contribution statistics'] },
         { key: 'themeEditor', name: 'Theme Editor', icon: '🎨', desc: 'Visual map theme editor — edit MapLibre GL styles with color pickers, save/load/manage custom themes.', features: ['Bundled themes (Fjord, Obsidian, Monokai, Ayu Mirage, etc.)', 'Simple & Full color editing modes', 'Live preview toggle for instant feedback', 'Import/export themes as JSON files', 'Quick theme-switch submenu in the dropdown', 'Theme manager with create, edit & delete'] },
         { key: 'mapMarkers', name: 'Map Markers', icon: '📌', desc: 'Place and manage image stickers on the map canvas. Images scale and persist with the map.', features: ['Upload PNG/JPEG/WebP files or use image URLs', 'Drag to define placement bounds (click-only rejected with prompt)', 'Hold Shift during drag to force aspect-ratio lock', 'Per-marker lock/unlock aspect ratio toggle', 'Per-marker opacity slider and visibility toggle', 'Edit mode with 8 fixed-size handles (corners + edge midpoints)', 'Drag-to-sort cards to reorder rendering order', 'Compact card view with click-to-expand controls', 'Draggable management modal', 'Persistent storage via IndexedDB'] },
+        { key: 'profileColorsCollapse', name: 'Profile Color List Collapse', icon: '🎨', desc: 'Keeps large owned-color lists compact in the Profile overlay.', features: ['Shows the first 100 colors initially', 'Expands the complete list with Show All', 'Collapses it again with Show Less'] },
     ];
 
     const EXTENSION_LIST = [
@@ -434,6 +435,13 @@
                 bulkPurchaseColors: () => {
                     if (typeof _pw.toggleProfile === 'function') _pw.toggleProfile();
                     setTimeout(() => flashEl(document.querySelector('#gp-bulk-profile-card')), 400);
+                },
+                profileColorsCollapse: () => {
+                    const profileOverlay = document.getElementById('profileOverlay');
+                    if (profileOverlay && profileOverlay.classList.contains('hidden') && typeof _pw.toggleProfile === 'function') {
+                        _pw.toggleProfile();
+                    }
+                    setTimeout(() => flashEl(document.getElementById('userColorsContainer')), 400);
                 },
                 themeEditor: () => {
                     if (_themeEditor) _themeEditor.toggleModal();
@@ -1221,6 +1229,13 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.1.0',
+            date: '2026-08-13',
+            items: [
+                { type: 'added', text: 'Profile overlay: owned-color lists over 100 colors now start compact with a Show All button, and can be collapsed again with Show Less' },
+            ]
+        },
         {
             version: '2.0.0',
             date: '2026-08-09',
