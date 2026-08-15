@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/atharray/geopixelcons-library/compare/v2.2.0...v2.3.0) (2026-08-15)
+
+
+### Features
+
+* auto-load guild territories on map startup ([#21](https://github.com/atharray/geopixelcons-library/issues/21)) ([63cfa14](https://github.com/atharray/geopixelcons-library/commit/63cfa14ae6381475a2c5b51351640694c1ad89b4))
+
 ## [2.2.0](https://github.com/atharray/geopixelcons-library/compare/v2.1.0...v2.2.0) (2026-08-14)
 
 
