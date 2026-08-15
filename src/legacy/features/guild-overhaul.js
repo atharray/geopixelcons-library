@@ -3161,7 +3161,7 @@
         content.innerHTML = `
             <div class="territory-section-divider">Startup</div>
             <div class="territory-setting-row">
-                <label for="territoryAutoLoadCheck" title="Load your guild data and show territories automatically after the map loads">Auto-show on map load</label>
+                    <label for="territoryAutoLoadCheck" title="Load your guild data and show territories automatically after the map loads">Automatically load territories when loading Geopixels</label>
                 <input type="checkbox" id="territoryAutoLoadCheck" ${territorySettings.autoLoadTerritories ? 'checked' : ''}
                        class="w-4 h-4 cursor-pointer accent-blue-500"
                        title="Load guild territories automatically when GeoPixels opens">
