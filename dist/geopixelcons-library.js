@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.1.0 - readable release bundle */
+/* GeoPixelcons Library v2.2.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.2.0'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.2.0';
+    const VERSION = '2.3.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1241,6 +1241,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.3.0',
+            date: '2026-08-14',
+            items: [
+                { type: 'added', text: 'Guild Overhaul: optionally load and show guild territories automatically when the map opens' },
+            ]
+        },
         {
             version: '2.2.0',
             date: '2026-08-13',
@@ -17964,6 +17971,9 @@ patch();
     let territoryCanvas = null;
     let territoryVisible = false;
     let territoryRects = []; // Array of { gridX, gridY, width, height, label }
+    let territoryProjects = null;
+    let territoryProjectsLoadPromise = null;
+    let territoryAutoLoadStarted = false;
     let territoryActivityMap = {}; // Map of rect.index → boolean (has active players)
     let territorySettings = loadTerritorySettings();
 
@@ -17996,11 +18006,7 @@ patch();
     }
 
     function loadTerritorySettings() {
-        try {
-            const stored = GM_getValue(TERRITORY_STORAGE_KEY, null);
-            if (stored) return stored;
-        } catch (e) {}
-        return {
+        const defaults = {
             borderColor: '#3b82f6',
             borderThickness: 2,
             showLabels: true,
@@ -18012,8 +18018,15 @@ patch();
             activeBorderColor: '#22c55e',
             activeFillColor: '#22c55e',
             abandonedBorderColor: '#6b7280',
-            abandonedFillColor: '#6b7280'
+            abandonedFillColor: '#6b7280',
+            autoLoadTerritories: false
         };
+
+        try {
+            const stored = GM_getValue(TERRITORY_STORAGE_KEY, null);
+            if (stored && typeof stored === 'object') return { ...defaults, ...stored };
+        } catch (e) {}
+        return defaults;
     }
 
     function saveTerritorySettings() {
@@ -20498,6 +20511,160 @@ patch();
     // =====================================================
 
     /**
+     * Ask the native page code to refresh guild state and return its projects.
+     * The native auth values and userGuildData are top-level page bindings, so
+     * this must run in the page realm instead of copying credentials here.
+     */
+    function loadGuildProjectsInPageRealm() {
+        return new Promise((resolve) => {
+            const pageWindow = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
+            const eventName = `gpcGuildProjectsLoaded_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+            const requestId = Math.random().toString(36).slice(2);
+            let settled = false;
+            let timeoutId = null;
+
+            const finish = (projects) => {
+                if (settled) return;
+                settled = true;
+                pageWindow.removeEventListener(eventName, onLoaded);
+                if (timeoutId !== null) clearTimeout(timeoutId);
+                resolve(projects);
+            };
+
+            const onLoaded = (event) => {
+                const detail = event && event.detail;
+                if (!detail || detail.requestId !== requestId) return;
+
+                if (!detail.ok) {
+                    console.warn('[Guild Territories] Native guild project loader failed:', detail.error || 'unknown error');
+                    finish(null);
+                    return;
+                }
+
+                try {
+                    const projects = JSON.parse(detail.projectsJson || '[]');
+                    finish(Array.isArray(projects) ? projects : []);
+                } catch (error) {
+                    console.warn('[Guild Territories] Could not read native guild projects:', error);
+                    finish(null);
+                }
+            };
+
+            pageWindow.addEventListener(eventName, onLoaded);
+            timeoutId = setTimeout(() => {
+                console.warn('[Guild Territories] Timed out waiting for native guild functions.');
+                finish(null);
+            }, 20000);
+
+            try {
+                const script = document.createElement('script');
+                script.textContent = `
+                    (() => {
+                        const eventName = ${JSON.stringify(eventName)};
+                        const requestId = ${JSON.stringify(requestId)};
+
+                        const dispatch = (ok, projectsJson, error) => {
+                            window.dispatchEvent(new CustomEvent(eventName, {
+                                detail: { requestId, ok, projectsJson, error }
+                            }));
+                        };
+
+                        const wait = (predicate, attempts = 80) => new Promise((resolveWait) => {
+                            let remaining = attempts;
+                            const check = () => {
+                                if (predicate()) {
+                                    resolveWait(true);
+                                } else if (--remaining <= 0) {
+                                    resolveWait(false);
+                                } else {
+                                    setTimeout(check, 250);
+                                }
+                            };
+                            check();
+                        });
+
+                        const hasAuth = () => {
+                            const token = typeof tokenUser !== 'undefined' ? tokenUser : null;
+                            const userId = typeof userData !== 'undefined' && userData
+                                ? userData.id
+                                : (typeof userID !== 'undefined' ? userID : null);
+                            return !!token && !!userId;
+                        };
+
+                        (async () => {
+                            try {
+                                const functionsReady = await wait(() =>
+                                    typeof fetchUserGuild === 'function' &&
+                                    typeof fetchGuildProjects === 'function'
+                                );
+                                if (!functionsReady || !(await wait(hasAuth))) {
+                                    throw new Error('Native guild functions or login state are not ready.');
+                                }
+
+                                await fetchUserGuild();
+                                if (typeof userGuildData === 'undefined' || !userGuildData || !userGuildData.id) {
+                                    dispatch(true, '[]', '');
+                                    return;
+                                }
+
+                                await fetchGuildProjects();
+                                const projects = Array.isArray(userGuildData.projects)
+                                    ? userGuildData.projects.map((project) => ({
+                                        id: project && project.id,
+                                        image: project && project.image,
+                                        imageGridX: project && project.imageGridX,
+                                        imageGridY: project && project.imageGridY
+                                    }))
+                                    : [];
+                                dispatch(true, JSON.stringify(projects), '');
+                            } catch (error) {
+                                dispatch(false, '[]', error && error.message ? error.message : String(error));
+                            }
+                        })();
+                    })();
+                `;
+                (document.head || document.documentElement).appendChild(script);
+                script.remove();
+            } catch (error) {
+                console.warn('[Guild Territories] Could not start native guild project loader:', error);
+                finish(null);
+            }
+        });
+    }
+
+    /**
+     * Refresh projects once at a time. The local fallback keeps older page
+     * contexts and test fixtures compatible when native functions are absent.
+     */
+    function refreshTerritoryProjects() {
+        if (territoryProjectsLoadPromise) return territoryProjectsLoadPromise;
+
+        territoryProjectsLoadPromise = (async () => {
+            const nativeProjects = await loadGuildProjectsInPageRealm();
+            if (Array.isArray(nativeProjects)) {
+                territoryProjects = nativeProjects;
+                return nativeProjects;
+            }
+
+            try {
+                if (typeof userGuildData !== 'undefined' && userGuildData && typeof fetchGuildProjects === 'function') {
+                    await fetchGuildProjects();
+                    territoryProjects = Array.isArray(userGuildData.projects) ? userGuildData.projects : [];
+                    return territoryProjects;
+                }
+            } catch (error) {
+                console.warn('[Guild Territories] Local guild project fallback failed:', error);
+            }
+
+            return null;
+        })().finally(() => {
+            territoryProjectsLoadPromise = null;
+        });
+
+        return territoryProjectsLoadPromise;
+    }
+
+    /**
      * Create the territory overlay canvas that sits on top of the map.
      * Similar approach to geopixels++ censor canvas but draws stroke-only rectangles.
      */
@@ -20527,19 +20694,24 @@ patch();
      * Each project has imageGridX, imageGridY (top-left) and an image (base64 PNG).
      * Width/height are the pixel dimensions of the PNG (1 pixel = 1 grid unit).
      */
-    async function buildTerritoryRects() {
-        if (typeof userGuildData === 'undefined' || !userGuildData || !userGuildData.projects) {
+    async function buildTerritoryRects(projects = null) {
+        const projectList = Array.isArray(projects)
+            ? projects
+            : (Array.isArray(territoryProjects)
+                ? territoryProjects
+                : (typeof userGuildData !== 'undefined' && userGuildData && Array.isArray(userGuildData.projects)
+                    ? userGuildData.projects
+                    : []));
+
+        if (projectList.length === 0) {
             console.warn('[Guild Territories] No guild data or projects available');
             return [];
         }
 
-        const projects = userGuildData.projects;
-        if (projects.length === 0) return [];
-
         const rects = [];
 
-        for (let i = 0; i < projects.length; i++) {
-            const project = projects[i];
+        for (let i = 0; i < projectList.length; i++) {
+            const project = projectList[i];
             try {
                 const dims = await getImageDimensionsFromSrc(project.image);
                 rects.push({
@@ -20570,12 +20742,8 @@ patch();
         }
 
         try {
-            // Ensure guild projects are fetched
-            if (typeof userGuildData !== 'undefined' && userGuildData && typeof fetchGuildProjects === 'function') {
-                await fetchGuildProjects();
-            }
-
-            const rects = await buildTerritoryRects();
+            const projects = await refreshTerritoryProjects();
+            const rects = await buildTerritoryRects(projects);
 
             if (rects.length === 0) {
                 alert('No guild projects found to export.');
@@ -20786,11 +20954,49 @@ patch();
     }
 
     /**
+     * Show the territory overlay, optionally suppressing the no-project alert
+     * used by the silent startup path.
+     */
+    async function showTerritories({ silent = false } = {}) {
+        const toggleBtn = document.getElementById('territoryToggleBtn');
+        if (toggleBtn) {
+            toggleBtn.disabled = true;
+            toggleBtn.innerHTML = '⏳ Processing...';
+        }
+
+        try {
+            const projects = await refreshTerritoryProjects();
+            territoryRects = await buildTerritoryRects(projects);
+
+            if (territoryRects.length === 0) {
+                if (!silent) alert('No guild projects found to display territories for.');
+                return false;
+            }
+
+            createTerritoryCanvas();
+            territoryVisible = true;
+            drawTerritories();
+            updateTerritoryToggleButton();
+            console.log(`[Guild Territories] Showing ${territoryRects.length} territories`);
+            return true;
+
+        } catch (err) {
+            console.error('[Guild Territories] Error building territories:', err);
+            if (!silent) alert('Failed to process territories: ' + err.message);
+            return false;
+        } finally {
+            if (toggleBtn) {
+                toggleBtn.disabled = false;
+                updateTerritoryToggleButton();
+            }
+        }
+    }
+
+    /**
      * Toggle territory overlay on/off. If turning on, process projects first.
      */
     async function toggleTerritories() {
         if (territoryVisible) {
-            // Turn off
             territoryVisible = false;
             if (territoryCanvas) {
                 const ctx = territoryCanvas.getContext('2d');
@@ -20801,43 +21007,7 @@ patch();
             return;
         }
 
-        // Turn on - process projects
-        const toggleBtn = document.getElementById('territoryToggleBtn');
-        if (toggleBtn) {
-            toggleBtn.disabled = true;
-            toggleBtn.innerHTML = '⏳ Processing...';
-        }
-
-        try {
-            // Ensure guild projects are fetched
-            if (typeof userGuildData !== 'undefined' && userGuildData && typeof fetchGuildProjects === 'function') {
-                await fetchGuildProjects();
-            }
-
-            territoryRects = await buildTerritoryRects();
-
-            if (territoryRects.length === 0) {
-                if (toggleBtn) {
-                    toggleBtn.disabled = false;
-                    toggleBtn.innerHTML = '🗺️ Show Territories';
-                    toggleBtn.className = 'territory-toggle-btn inactive';
-                }
-                alert('No guild projects found to display territories for.');
-                return;
-            }
-
-            createTerritoryCanvas();
-            territoryVisible = true;
-            drawTerritories();
-            updateTerritoryToggleButton();
-            console.log(`[Guild Territories] Showing ${territoryRects.length} territories`);
-
-        } catch (err) {
-            console.error('[Guild Territories] Error building territories:', err);
-            alert('Failed to process territories: ' + err.message);
-        }
-
-        if (toggleBtn) toggleBtn.disabled = false;
+        await showTerritories();
     }
 
     /**
@@ -20886,6 +21056,13 @@ patch();
         const fillOpacityPct = Math.round(territorySettings.fillAlpha * 100);
 
         content.innerHTML = `
+            <div class="territory-section-divider">Startup</div>
+            <div class="territory-setting-row">
+                    <label for="territoryAutoLoadCheck" title="Load your guild data and show territories automatically after the map loads">Automatically load territories when loading Geopixels</label>
+                <input type="checkbox" id="territoryAutoLoadCheck" ${territorySettings.autoLoadTerritories ? 'checked' : ''}
+                       class="w-4 h-4 cursor-pointer accent-blue-500"
+                       title="Load guild territories automatically when GeoPixels opens">
+            </div>
             <div class="territory-setting-row">
                 <label>Border Color</label>
                 <input type="color" id="territoryColorInput" value="${territorySettings.borderColor}"
@@ -21076,6 +21253,14 @@ patch();
                 document.getElementById(id)?.addEventListener('change', updatePreviewAndSave);
             });
             document.getElementById('territoryFillAlphaRange')?.addEventListener('input', updatePreviewAndSave);
+
+            document.getElementById('territoryAutoLoadCheck')?.addEventListener('change', (event) => {
+                territorySettings.autoLoadTerritories = event.target.checked;
+                saveTerritorySettings();
+                if (event.target.checked && !territoryVisible) {
+                    showTerritories({ silent: true });
+                }
+            });
         };
 
         // Defer event wiring until after DOM insertion
@@ -21661,10 +21846,8 @@ patch();
             if (territoryRects.length === 0) {
                 // Try to build territory rects (non-blocking, best-effort)
                 try {
-                    if (typeof userGuildData !== 'undefined' && userGuildData && typeof fetchGuildProjects === 'function') {
-                        await fetchGuildProjects();
-                    }
-                    territoryRects = await buildTerritoryRects();
+                    const projects = await refreshTerritoryProjects();
+                    territoryRects = await buildTerritoryRects(projects);
                 } catch (e) {
                     console.warn('[Guild Players] Could not build territory rects for coloring:', e);
                 }
@@ -22236,6 +22419,20 @@ patch();
 
     // --- Initialization ---
 
+    function scheduleAutoLoadTerritories() {
+        if (!territorySettings.autoLoadTerritories || territoryAutoLoadStarted) return;
+        territoryAutoLoadStarted = true;
+
+        // Let the native page finish its initial login/map setup before the
+        // page-realm guild loader starts. It will still wait for auth/functions
+        // briefly if the site is slower than this first task.
+        setTimeout(() => {
+            showTerritories({ silent: true }).then((shown) => {
+                if (!shown) console.log('[Guild Territories] Automatic territory display found no projects.');
+            });
+        }, 0);
+    }
+
     function init() {
         transformGuildModal();
         hookTerritoryToMap();
@@ -22255,6 +22452,7 @@ patch();
         });
 
         bodyObserver.observe(document.body, { childList: true, subtree: true });
+        scheduleAutoLoadTerritories();
     }
 
     if (document.readyState === 'loading') {
@@ -22274,6 +22472,7 @@ patch();
             console.error('[GeoPixelcons++] ❌ Guild Overhaul failed:', err);
         }
     }
+
 
 
     // ============================================================

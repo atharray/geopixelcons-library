@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.2.0';
+    const VERSION = '2.3.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1229,6 +1229,13 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.3.0',
+            date: '2026-08-14',
+            items: [
+                { type: 'added', text: 'Guild Overhaul: optionally load and show guild territories automatically when the map opens' },
+            ]
+        },
         {
             version: '2.2.0',
             date: '2026-08-13',
