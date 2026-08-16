@@ -447,8 +447,10 @@
     let _bulkOverlay = null;
     /** Original ordered list passed to openBulkModal (preserved for results display). */
     let _pendingColors = [];
-    /** Separate warning overlay shown before large purchases reach the preview. */
+    /** Separate warning overlay shown before large purchases are submitted. */
     let _bulkWarningOverlay = null;
+    /** Action resumed by Continue after the large-purchase warning. */
+    let _bulkWarningContinue = null;
 
     /** Per-status visual style config. */
     function getStatusStyles() {
@@ -549,12 +551,12 @@
         _bulkWarningOverlay.addEventListener('click', e => { if (e.target === _bulkWarningOverlay) cancelBulkWarning(); });
     }
 
-    function openBulkWarning(toBuyCount) {
+    function openBulkWarning(toBuyCount, onContinue) {
         ensureBulkWarningModal();
+        _bulkWarningContinue = onContinue;
         const cost = (toBuyCount * PIXELS_PER_COLOR).toLocaleString();
         document.getElementById('gp-bulk-warning-summary').textContent =
             `You are about to buy ${toBuyCount.toLocaleString()} colors for ${cost} Pixels.`;
-        if (_bulkOverlay) _bulkOverlay.style.display = 'none';
         _bulkWarningOverlay.style.display = 'flex';
     }
 
@@ -564,13 +566,14 @@
 
     function cancelBulkWarning() {
         closeBulkWarning();
-        closeBulkModal();
+        _bulkWarningContinue = null;
     }
 
     function continueBulkWarning() {
-        const colors = [..._pendingColors];
+        const onContinue = _bulkWarningContinue;
+        _bulkWarningContinue = null;
         closeBulkWarning();
-        if (colors.length > 0) renderBulkPreview(colors);
+        if (typeof onContinue === 'function') onContinue();
     }
 
     function ensureBulkModal() {
@@ -701,27 +704,32 @@
 
     function openBulkModal(colors) {
         const nextColors = Array.isArray(colors) ? [...colors] : [];
-        const ownedSet = buildOwnedSet();
-        const toBuyCount = nextColors.filter(color => !ownedSet.has(color)).length;
-        _pendingColors = nextColors;
-
-        if (toBuyCount > BULK_PURCHASE_WARNING_THRESHOLD) {
-            openBulkWarning(toBuyCount);
-            return;
-        }
-
         renderBulkPreview(nextColors);
     }
 
     function closeBulkModal() {
         if (_bulkOverlay) _bulkOverlay.style.display = 'none';
         closeBulkWarning();
+        _bulkWarningContinue = null;
         _pendingColors = [];
         // Sync the profile card queue now that the modal is gone
         if (document.getElementById('gp-bulk-queue-list')) refreshColorQueue();
     }
 
     async function onBulkConfirm() {
+        const colors = [..._pendingColors];
+        const ownedSet = buildOwnedSet();
+        const toBuyCount = colors.filter(color => !ownedSet.has(color)).length;
+
+        if (toBuyCount > BULK_PURCHASE_WARNING_THRESHOLD) {
+            openBulkWarning(toBuyCount, () => { void executeConfirmedBulkPurchase(); });
+            return;
+        }
+
+        await executeConfirmedBulkPurchase();
+    }
+
+    async function executeConfirmedBulkPurchase() {
         const confirmBtn = document.getElementById('gp-bulk-confirm');
         const cancelBtn  = document.getElementById('gp-bulk-cancel');
         const closeBtn   = document.getElementById('gp-bulk-close');
