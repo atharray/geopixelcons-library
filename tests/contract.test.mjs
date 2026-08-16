@@ -54,6 +54,9 @@ test('includes a confirmation gate for large bulk purchases', () => {
     assert.match(artifact, /gp-bulk-warning-summary/);
     assert.match(artifact, /toBuyCount > BULK_PURCHASE_WARNING_THRESHOLD/);
     assert.match(artifact, /You are about to buy/);
+    assert.match(artifact, /⚠️ WARNING ⚠️/);
+    assert.match(artifact, />Continue\?</);
+    assert.match(artifact, /Continue \(buy all\)/);
     assert.match(artifact, /gp-bulk-warning-continue/);
     assert.match(artifact, /function onBulkConfirm\(\)[\s\S]*?openBulkWarning\(toBuyCount/);
     assert.match(artifact, /function openBulkModal\(colors\)[\s\S]*?renderBulkPreview\(nextColors\)/);

@@ -529,9 +529,9 @@
         _bulkWarningOverlay.innerHTML = `
 <div id="gp-bulk-warning-panel" role="dialog" aria-modal="true" aria-labelledby="gp-bulk-warning-title"
      style="background:${c.panelBg};color:${c.text};border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:90%;max-width:28rem;padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
-    <h2 id="gp-bulk-warning-title" style="margin:0;font-size:1.25rem;font-weight:700;color:${c.text};">Large bulk purchase warning</h2>
+    <h2 id="gp-bulk-warning-title" style="margin:0;font-size:1.25rem;font-weight:700;color:${c.text};">⚠️ WARNING ⚠️</h2>
     <p id="gp-bulk-warning-summary" style="margin:0;font-size:1rem;line-height:1.5;color:${c.textMed};"></p>
-    <p style="margin:0;font-size:0.85rem;line-height:1.45;color:${c.textSec};">This will send one purchase request for each color. Would you like to continue?</p>
+    <p style="margin:0;font-size:0.85rem;line-height:1.45;color:${c.textSec};">Continue?</p>
     <div style="display:flex;gap:0.75rem;">
         <button id="gp-bulk-warning-cancel"
                 style="flex:1;padding:0.5rem 1rem;background:${c.cancelBg};border:none;border-radius:0.5rem;font-weight:600;cursor:pointer;font-size:0.9rem;color:${c.cancelText};">
@@ -539,7 +539,7 @@
         </button>
         <button id="gp-bulk-warning-continue"
                 style="flex:1;padding:0.5rem 1rem;background:${primaryBg};color:${primaryText};border:none;border-radius:0.5rem;font-weight:600;cursor:pointer;font-size:0.9rem;">
-            Continue
+            Continue (buy all)
         </button>
     </div>
 </div>`;
