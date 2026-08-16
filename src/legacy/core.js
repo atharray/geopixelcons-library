@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.3.0';
+    const VERSION = '2.4.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1229,6 +1229,13 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.4.0',
+            date: '2026-08-16',
+            items: [
+                { type: 'added', text: 'Bulk Purchase Colors now warns before buying more than 50 colors, showing the color count and total Pixel cost with Continue or Cancel options' },
+            ]
+        },
         {
             version: '2.3.0',
             date: '2026-08-14',

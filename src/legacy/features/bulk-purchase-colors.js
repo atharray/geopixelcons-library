@@ -24,6 +24,7 @@
 
     // ─── Constants ────────────────────────────────────────────────────────────────
     const PIXELS_PER_COLOR = 100; // Informational cost shown in the preview
+    const BULK_PURCHASE_WARNING_THRESHOLD = 50;
     const _pw = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
 
     // ─── Dark mode detection (geopixels++ compatibility) ──────────────────────────
@@ -446,6 +447,10 @@
     let _bulkOverlay = null;
     /** Original ordered list passed to openBulkModal (preserved for results display). */
     let _pendingColors = [];
+    /** Separate warning overlay shown before large purchases are submitted. */
+    let _bulkWarningOverlay = null;
+    /** Action resumed by Continue after the large-purchase warning. */
+    let _bulkWarningContinue = null;
 
     /** Per-status visual style config. */
     function getStatusStyles() {
@@ -507,6 +512,68 @@
         row.style.borderColor = s.border;
         const badge = row.querySelector('.gp-row-badge');
         if (badge) { badge.textContent = s.label; badge.style.color = s.textColor; }
+    }
+
+    function ensureBulkWarningModal() {
+        if (_bulkWarningOverlay) return;
+
+        const c = t();
+        const dark = isDarkMode();
+        const primaryBg = dark ? '#89b4fa' : '#3b82f6';
+        const primaryText = dark ? '#1e1e2e' : '#fff';
+
+        _bulkWarningOverlay = document.createElement('div');
+        _bulkWarningOverlay.id = 'gp-bulk-warning-overlay';
+        _bulkWarningOverlay.style.cssText =
+            'position:fixed;inset:0;z-index:10001;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);';
+        _bulkWarningOverlay.innerHTML = `
+<div id="gp-bulk-warning-panel" role="dialog" aria-modal="true" aria-labelledby="gp-bulk-warning-title"
+     style="background:${c.panelBg};color:${c.text};border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:90%;max-width:28rem;padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
+    <h2 id="gp-bulk-warning-title" style="margin:0;font-size:1.25rem;font-weight:700;color:${c.text};">⚠️ WARNING ⚠️</h2>
+    <p id="gp-bulk-warning-summary" style="margin:0;font-size:1rem;line-height:1.5;color:${c.textMed};"></p>
+    <p style="margin:0;font-size:0.85rem;line-height:1.45;color:${c.textSec};">Continue?</p>
+    <div style="display:flex;gap:0.75rem;">
+        <button id="gp-bulk-warning-cancel"
+                style="flex:1;padding:0.5rem 1rem;background:${c.cancelBg};border:none;border-radius:0.5rem;font-weight:600;cursor:pointer;font-size:0.9rem;color:${c.cancelText};">
+            Cancel
+        </button>
+        <button id="gp-bulk-warning-continue"
+                style="flex:1;padding:0.5rem 1rem;background:${primaryBg};color:${primaryText};border:none;border-radius:0.5rem;font-weight:600;cursor:pointer;font-size:0.9rem;">
+            Continue (buy all)
+        </button>
+    </div>
+</div>`;
+
+        document.body.appendChild(_bulkWarningOverlay);
+
+        document.getElementById('gp-bulk-warning-cancel').addEventListener('click', cancelBulkWarning);
+        document.getElementById('gp-bulk-warning-continue').addEventListener('click', continueBulkWarning);
+        _bulkWarningOverlay.addEventListener('click', e => { if (e.target === _bulkWarningOverlay) cancelBulkWarning(); });
+    }
+
+    function openBulkWarning(toBuyCount, onContinue) {
+        ensureBulkWarningModal();
+        _bulkWarningContinue = onContinue;
+        const cost = (toBuyCount * PIXELS_PER_COLOR).toLocaleString();
+        document.getElementById('gp-bulk-warning-summary').textContent =
+            `You are about to buy ${toBuyCount.toLocaleString()} colors for ${cost} Pixels.`;
+        _bulkWarningOverlay.style.display = 'flex';
+    }
+
+    function closeBulkWarning() {
+        if (_bulkWarningOverlay) _bulkWarningOverlay.style.display = 'none';
+    }
+
+    function cancelBulkWarning() {
+        closeBulkWarning();
+        _bulkWarningContinue = null;
+    }
+
+    function continueBulkWarning() {
+        const onContinue = _bulkWarningContinue;
+        _bulkWarningContinue = null;
+        closeBulkWarning();
+        if (typeof onContinue === 'function') onContinue();
     }
 
     function ensureBulkModal() {
@@ -576,7 +643,7 @@
      * All colors are shown in original order; already-owned ones get an
      * "Already Owned" badge and are non-destructively skipped on confirm.
      */
-    function openBulkModal(colors) {
+    function renderBulkPreview(colors) {
         ensureBulkModal();
 
         _pendingColors = colors;
@@ -635,14 +702,34 @@
         _bulkOverlay.style.display = 'flex';
     }
 
+    function openBulkModal(colors) {
+        const nextColors = Array.isArray(colors) ? [...colors] : [];
+        renderBulkPreview(nextColors);
+    }
+
     function closeBulkModal() {
         if (_bulkOverlay) _bulkOverlay.style.display = 'none';
+        closeBulkWarning();
+        _bulkWarningContinue = null;
         _pendingColors = [];
         // Sync the profile card queue now that the modal is gone
         if (document.getElementById('gp-bulk-queue-list')) refreshColorQueue();
     }
 
     async function onBulkConfirm() {
+        const colors = [..._pendingColors];
+        const ownedSet = buildOwnedSet();
+        const toBuyCount = colors.filter(color => !ownedSet.has(color)).length;
+
+        if (toBuyCount > BULK_PURCHASE_WARNING_THRESHOLD) {
+            openBulkWarning(toBuyCount, () => { void executeConfirmedBulkPurchase(); });
+            return;
+        }
+
+        await executeConfirmedBulkPurchase();
+    }
+
+    async function executeConfirmedBulkPurchase() {
         const confirmBtn = document.getElementById('gp-bulk-confirm');
         const cancelBtn  = document.getElementById('gp-bulk-cancel');
         const closeBtn   = document.getElementById('gp-bulk-close');
