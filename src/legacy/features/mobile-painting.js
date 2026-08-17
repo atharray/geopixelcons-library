@@ -11,14 +11,18 @@
 
     const MP_STYLE_ID = 'gpc-mobile-painting-style';
 
-    // Narrower than core.js's shared isDarkMode(): only the OTHER
-    // "GeoPixels++" extension's own explicit theme selector counts here, not
-    // body.dark or the OS-level prefers-color-scheme fallback isDarkMode()
-    // also honors. See the .gpc-mobile-controls-row comment in injectStyle()
-    // below for why -- #bottomControls' own wrapper never itself goes dark,
-    // so an OS/body signal alone would make these buttons black against a
-    // background that stays unconditionally white regardless.
+    // Narrower than core.js's shared isDarkMode(): only the GeoPixels++
+    // theme that is actually applied to the document, or its saved explicit
+    // selector, counts here. Do not fall back to body.dark or the OS-level
+    // prefers-color-scheme signal: #bottomControls' own wrapper can remain
+    // white under those signals, producing dark controls on a light panel.
     function isControlsRowDark() {
+        try {
+            const rootStyle = document.documentElement && typeof getComputedStyle === 'function'
+                ? getComputedStyle(document.documentElement)
+                : null;
+            if (rootStyle && /\bdark\b/i.test(rootStyle.colorScheme || '')) return true;
+        } catch (e) {}
         try {
             const raw = localStorage.getItem('geo++_settings');
             if (raw) {
@@ -687,16 +691,16 @@
             }
             .gpc-ctrl-menu-option:hover { background: ${tc('#f3f4f6', '#313244')}; }
             .gpc-ctrl-menu-option input { width: 13px; height: 13px; cursor: pointer; }
+            /* The nearest-pixel switch belongs to Enable > Selected rather
+               than being a global palette preference. Hidden uses an
+               explicit author rule because the base display:flex rule above
+               would otherwise override the browser's [hidden] stylesheet. */
+            .gpc-ctrl-menu-option.gpc-ctrl-menu-option-nested {
+                margin-left: 18px; padding-left: 2px; font-size: 11px;
+            }
+            .gpc-ctrl-menu-option[hidden] { display: none; }
         `;
         if (isNew) document.head.appendChild(style);
-    }
-
-    function applyFullWidthBottomControls(bottomControls) {
-        bottomControls.style.width = '100vw';
-        bottomControls.style.maxWidth = '100vw';
-        bottomControls.style.left = '0';
-        bottomControls.style.right = '0';
-        bottomControls.style.transform = 'none';
     }
 
     function getFocusedTemplateWithPalette() {
@@ -1199,6 +1203,25 @@
             (button.disabled ? 'opacity:.5; cursor:default;' : '');
     }
 
+    // Unlike the regular borrowed controls, gpp-scan.js intentionally bakes
+    // these four buttons' theme colors into inline style.cssText. Refresh that
+    // presentation whenever the Mobile Painting theme stylesheet refreshes so
+    // a live GeoPixels++ theme switch cannot leave placeholder Scan controls
+    // with their old colors until something else rebuilds the whole panel.
+    function retintBorrowedScanButtons() {
+        const group = document.getElementById('gpc-mobile-placeholder-group');
+        if (!group || group.classList.contains('gpc-hidden')) return;
+        const template = getFocusedTemplateWithPalette();
+        const scanBtn = group.querySelector('#gpp-scan-btn-scan');
+        const showErrBtn = group.querySelector('#gpp-scan-btn-show-err');
+        const showMissBtn = group.querySelector('#gpp-scan-btn-show-miss');
+        const nearestBtn = group.querySelector('#gpp-scan-btn-nearest');
+        if (scanBtn) retintScanButton(scanBtn, true);
+        if (showErrBtn) retintScanButton(showErrBtn, !!(template && template._gppShowWrong));
+        if (showMissBtn) retintScanButton(showMissBtn, !!(template && template._gppShowMissing));
+        if (nearestBtn) retintScanButton(nearestBtn, false);
+    }
+
     // Placeholder 1: the real scan-progress bar + its two summary text
     // lines + 4 of its 5 real buttons (Scan progress / Show errors / Show
     // missing / Nearest error -- Clear is deliberately left behind, per
@@ -1698,6 +1721,7 @@
         grid.style.maxHeight = computeGridMaxHeight(getVisibleRowsSetting()) + 'px';
 
         function soloColor(targetIndex, hex) {
+            const isNewSelection = !liveState || liveState.selectedHex !== hex;
             for (let index = 0; index < template.palette.length; index++) {
                 core.maskSet(template.mask, index, index === targetIndex);
             }
@@ -1720,8 +1744,16 @@
             gppState.persistTemplateState(template).catch((err) => {
                 console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
             });
+            // A fresh Selected-mode colour makes any existing guide obsolete
+            // immediately, even if the next lookup has to wait for the Scan
+            // progress run that Selected just requested. Re-tapping the same
+            // colour while the option is enabled is an intentional retry: it
+            // is useful when the first tap happened before the scan finished.
+            const shouldRequestNearestHighlight = !!(liveState && liveState.enableSelectedMode && (isNewSelection || liveState.highlightNearest));
+            if (shouldRequestNearestHighlight) invalidateSelectedNearestHighlight();
             if (typeof gppRendererSchedule === 'function') gppRendererSchedule();
             if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
+            if (shouldRequestNearestHighlight) requestSelectedNearestHighlight(template, targetIndex);
         }
 
         // Multi-select mode counterpart to soloColor: used instead whenever
@@ -1983,18 +2015,22 @@
     // selected should immediately re-solo it.
     function bulkEnableAll(template, core) {
         tryAutoScanFirst();
+        leaveEnableSelectedMode();
         if (liveState) liveState.soloMode = false;
         template.mask = core.makeFullMask(template.palette.length, template.counts);
         notifyMaskChanged(template);
     }
 
     function bulkDisableAll(template) {
+        leaveEnableSelectedMode();
+        if (liveState) liveState.soloMode = false;
         template.mask = new Uint32Array(Math.ceil(template.palette.length / 32));
         notifyMaskChanged(template);
     }
 
     function bulkEnableOwned(template, core) {
         tryAutoScanFirst();
+        leaveEnableSelectedMode();
         if (liveState) liveState.soloMode = false;
         const rows = (typeof gppReadGamePalette === 'function') ? gppReadGamePalette() : [];
         const allowedHex = new Set();
@@ -2014,6 +2050,7 @@
     // behavior for why.
     function bulkEnableFiltered(template, core) {
         tryAutoScanFirst();
+        leaveEnableSelectedMode();
         if (liveState) liveState.soloMode = false;
         const realState = getRealPaletteRenderState(template.id);
         const real = getRealPaletteFormControls();
@@ -2041,7 +2078,19 @@
     // template's palette (e.g. focused template changed since it was set).
     function bulkEnableSelected(template, core) {
         tryAutoScanFirst();
-        if (liveState) liveState.soloMode = true;
+        if (liveState) {
+            const enteringSelectedMode = !liveState.enableSelectedMode;
+            liveState.soloMode = true;
+            liveState.enableSelectedMode = true;
+            // The checkbox defaults off when Selected is first chosen, but
+            // reopening/reapplying Selected should not unexpectedly turn off
+            // an already-enabled session-only highlight preference.
+            if (enteringSelectedMode) {
+                liveState.highlightNearest = false;
+                invalidateSelectedNearestHighlight();
+            }
+        }
+        syncEnableSelectedModeUi();
         const hex = liveState && liveState.selectedHex;
         if (!hex) {
             dbgPush('Mobile Painting: switched to solo mode, but no color is currently selected to re-solo.', { uiComponent: 'Mobile Painting' });
@@ -2062,6 +2111,110 @@
         if (typeof pw.changeColor === 'function') pw.changeColor(hex);
         updateHexDisplay(hex);
         notifyMaskChanged(template);
+    }
+
+    // The nested Enable > Selected option is intentionally session-only and
+    // starts off. A color tap can launch an asynchronous nearest-pixel search,
+    // so each transition invalidates older requests before they are allowed to
+    // start a glow for a no-longer-selected color.
+    function clearSelectedNearestPulse() {
+        if (typeof gppScanClearSelectedColorGlow === 'function') gppScanClearSelectedColorGlow();
+    }
+
+    function invalidateSelectedNearestHighlight() {
+        if (!liveState) return;
+        liveState.highlightRequestId++;
+        liveState.pendingHighlightTemplateId = null;
+        liveState.pendingHighlightPaletteIndex = null;
+        clearSelectedNearestPulse();
+    }
+
+    function isSelectedHighlightScanRunning(template) {
+        return typeof gppScanIsBusyFor === 'function' && gppScanIsBusyFor(template);
+    }
+
+    function leaveEnableSelectedMode() {
+        if (!liveState) return;
+        const changed = liveState.enableSelectedMode || liveState.highlightNearest || liveState.pendingHighlightTemplateId !== null;
+        if (changed) invalidateSelectedNearestHighlight();
+        liveState.enableSelectedMode = false;
+        liveState.highlightNearest = false;
+        syncEnableSelectedModeUi();
+    }
+
+    // The control-row DOM is built once, while mode changes happen from both
+    // its Enable menu and the bulk-action helpers above. Keep the optional
+    // UI callback on liveState so either path can reveal/hide the nested
+    // checkbox without rebuilding the whole row.
+    function syncEnableSelectedModeUi() {
+        if (!liveState || typeof liveState.syncEnableSelectedModeUi !== 'function') return;
+        liveState.syncEnableSelectedModeUi();
+    }
+
+    function requestSelectedNearestHighlight(template, paletteIndex) {
+        if (!liveState || !liveState.enableSelectedMode || !liveState.highlightNearest || !template) return;
+        const requestId = ++liveState.highlightRequestId;
+        liveState.pendingHighlightTemplateId = null;
+        liveState.pendingHighlightPaletteIndex = null;
+        const scanSummary = template.scanSummary;
+        const position = template.position ? { gridX: template.position.gridX, gridY: template.position.gridY } : null;
+        // Selected starts an auto-scan. A tap during it must use the fresh
+        // completed summary, not whatever happened to be left from the prior
+        // scan (or silently give up when this is the first scan ever).
+        if (!scanSummary || !position || isSelectedHighlightScanRunning(template)) {
+            liveState.pendingHighlightTemplateId = template.id;
+            liveState.pendingHighlightPaletteIndex = paletteIndex;
+            return;
+        }
+        if (typeof gppScanFindNearestError !== 'function' || typeof gppScanStartSelectedColorGlow !== 'function') return;
+        Promise.resolve(gppScanFindNearestError(template, { paletteIndex })).then((result) => {
+            const focused = getFocusedTemplateWithPalette();
+            const focusedPosition = focused && focused.position;
+            const requestStillCurrent = liveState && liveState.highlightRequestId === requestId;
+            const stillCurrent = requestStillCurrent && focused && focused.id === template.id &&
+                focused.scanSummary === scanSummary && focusedPosition &&
+                focusedPosition.gridX === position.gridX && focusedPosition.gridY === position.gridY &&
+                !isSelectedHighlightScanRunning(focused);
+            if (!stillCurrent) {
+                // A scan or placement completed while the chunked lookup was
+                // yielding. Queue one retry against the newer, authoritative
+                // state instead of showing a ring for stale pixels.
+                if (requestStillCurrent && liveState.enableSelectedMode && liveState.highlightNearest && focused && focused.id === template.id) {
+                    liveState.pendingHighlightTemplateId = template.id;
+                    liveState.pendingHighlightPaletteIndex = paletteIndex;
+                    retryPendingSelectedNearestHighlight(focused);
+                }
+                return;
+            }
+            if (result && result.ok) gppScanStartSelectedColorGlow(template.id, result.gridX, result.gridY);
+        }).catch((err) => {
+            console.error('[GeoPixelcons++] Mobile Painting: nearest selected-color highlight failed', err);
+        });
+    }
+
+    function retryPendingSelectedNearestHighlight(template) {
+        if (!liveState) return;
+        if (!liveState.enableSelectedMode || !liveState.highlightNearest) {
+            liveState.pendingHighlightTemplateId = null;
+            liveState.pendingHighlightPaletteIndex = null;
+            return;
+        }
+        const pendingTemplateId = liveState.pendingHighlightTemplateId;
+        const pendingPaletteIndex = liveState.pendingHighlightPaletteIndex;
+        if (!template || pendingTemplateId !== template.id || !Number.isInteger(pendingPaletteIndex)) {
+            liveState.pendingHighlightTemplateId = null;
+            liveState.pendingHighlightPaletteIndex = null;
+            return;
+        }
+        if (isSelectedHighlightScanRunning(template)) return;
+        if (!template.scanSummary || !template.position) {
+            liveState.pendingHighlightTemplateId = null;
+            liveState.pendingHighlightPaletteIndex = null;
+            return;
+        }
+        liveState.pendingHighlightTemplateId = null;
+        liveState.pendingHighlightPaletteIndex = null;
+        requestSelectedNearestHighlight(template, pendingPaletteIndex);
     }
 
     const GPC_HEX_VALUE_SCOPES = [
@@ -2155,12 +2308,12 @@
         menu.className = 'gpc-ctrl-menu';
         const closeMenu = () => menu.classList.remove('gpc-open');
         openControlsRowMenus.push(closeMenu);
-        optionDefs.forEach(({ text, onClick }) => {
+        optionDefs.forEach(({ text, onClick, closeOnClick = true }) => {
             const option = document.createElement('div');
             option.className = 'gpc-ctrl-menu-option';
             option.textContent = text;
             option.addEventListener('click', () => {
-                closeMenu();
+                if (closeOnClick) closeMenu();
                 onClick();
             });
             menu.appendChild(option);
@@ -2175,7 +2328,7 @@
         document.addEventListener('click', closeMenu);
 
         dropdown.append(button, menu);
-        return { el: dropdown, setLabel: (text) => { buttonText.textContent = text; } };
+        return { el: dropdown, menu, setLabel: (text) => { buttonText.textContent = text; } };
     }
 
     // Our own <select>, but its options are cloned from the real sort
@@ -2296,8 +2449,42 @@
             { text: 'All', onClick: withTemplate(bulkEnableAll) },
             { text: 'Owned', onClick: withTemplate(bulkEnableOwned) },
             { text: 'Filtered', onClick: withTemplate(bulkEnableFiltered) },
-            { text: 'Selected', onClick: withTemplate(bulkEnableSelected) },
+            // Keep this menu open so its nested, session-only checkbox is
+            // revealed immediately after the user enters Selected mode.
+            { text: 'Selected', closeOnClick: false, onClick: withTemplate(bulkEnableSelected) },
         ]);
+        const highlightNearestOption = document.createElement('label');
+        highlightNearestOption.className = 'gpc-ctrl-menu-option gpc-ctrl-menu-option-nested';
+        const highlightNearestInput = document.createElement('input');
+        highlightNearestInput.type = 'checkbox';
+        const highlightNearestText = document.createElement('span');
+        highlightNearestText.textContent = 'Highlight nearest';
+        highlightNearestOption.append(highlightNearestInput, highlightNearestText);
+        enableDropdown.menu.appendChild(highlightNearestOption);
+
+        const syncHighlightNearestOption = () => {
+            const selectedMode = !!(liveState && liveState.enableSelectedMode);
+            highlightNearestOption.hidden = !selectedMode;
+            highlightNearestOption.setAttribute('aria-hidden', String(!selectedMode));
+            highlightNearestInput.checked = selectedMode && !!liveState.highlightNearest;
+        };
+        if (liveState) liveState.syncEnableSelectedModeUi = syncHighlightNearestOption;
+        syncHighlightNearestOption();
+        highlightNearestInput.addEventListener('change', () => {
+            if (!liveState || !liveState.enableSelectedMode) {
+                highlightNearestInput.checked = false;
+                return;
+            }
+            liveState.highlightNearest = highlightNearestInput.checked;
+            // Turning this off must remove a guide already on screen, not
+            // merely stop a still-pending lookup from starting one later.
+            if (!liveState.highlightNearest) invalidateSelectedNearestHighlight();
+            else {
+                liveState.highlightRequestId++;
+                liveState.pendingHighlightTemplateId = null;
+                liveState.pendingHighlightPaletteIndex = null;
+            }
+        });
         const disableAllBtn = document.createElement('button');
         disableAllBtn.type = 'button';
         disableAllBtn.className = 'gpc-ctrl-btn';
@@ -2340,7 +2527,7 @@
     //      performFilterSort() directly -- neither reaches subscribers.
     //      Polling is the only reliable way to catch either without patching
     //      more of Ghost++'s own code than the one renderState hook above.
-    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, selectedHex, soloMode }
+    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
 
     // Shown in .gpc-mobile-palette-wrap's usual spot whenever no Ghost++
     // template is focused -- most notably the very first time a mobile
@@ -2395,9 +2582,12 @@
         // this matches that same behavior instead of gating the refresh on
         // an unrelated "did the grid's own content change" check.
         injectStyle();
+        retintBorrowedScanButtons();
         const template = getFocusedTemplateWithPalette();
 
         if (!template) {
+            leaveEnableSelectedMode();
+            liveState.scanSummaryRef = null;
             if (liveState.wrap) {
                 // Reclaim the borrowed palette-view toggle BEFORE the wrap
                 // holding it gets removed -- otherwise it would silently go
@@ -2432,6 +2622,7 @@
         }
 
         removeNoTemplatePrompt(); // a template just became focused (or already was) -- the real wrap is about to take (or already takes) its place
+        if (liveState.templateId && liveState.templateId !== template.id) invalidateSelectedNearestHighlight();
         const order = computeVisibleOrder(template);
         const orderKey = order.join(',');
         // Mirrors gpp-palette.js's own listMode check (gppSettings.
@@ -2445,7 +2636,12 @@
         // fix above addressed, just for a full rebuild's worth of state
         // instead of a stylesheet.
         const paletteViewMode = gppSettings.paletteViewMode === 'list' ? 'list' : 'grid';
-        const sameEverything = liveState.grid && liveState.templateId === template.id && liveState.orderKey === orderKey && liveState.paletteViewMode === paletteViewMode;
+        // gppScanRunInternal replaces scanSummary after a completed scan.
+        // Include that object identity in the key so this grid rebuilds its
+        // per-colour checkmarks/list progress instead of taking the mask-only
+        // fast path when Scan progress updates the same template in place.
+        const scanSummaryRef = template.scanSummary || null;
+        const sameEverything = liveState.grid && liveState.templateId === template.id && liveState.orderKey === orderKey && liveState.paletteViewMode === paletteViewMode && liveState.scanSummaryRef === scanSummaryRef;
 
         if (sameEverything) {
             const core = gppCreateCore();
@@ -2458,6 +2654,7 @@
                     setSwatchState(swatch, swatch.dataset.hex, enabled);
                 }
             }
+            retryPendingSelectedNearestHighlight(template);
             return;
         }
 
@@ -2467,6 +2664,8 @@
         liveState.templateId = template.id;
         liveState.orderKey = orderKey;
         liveState.paletteViewMode = paletteViewMode;
+        liveState.scanSummaryRef = scanSummaryRef;
+        retryPendingSelectedNearestHighlight(template);
         dbgPush('Mobile Painting: (re)built palette grid for template "' + template.id + '" (' + order.length + '/' + template.palette.length + ' colors visible).', { uiComponent: 'Mobile Painting' });
     }
 
@@ -2487,8 +2686,11 @@
     }
 
     function mount(bottomControls) {
-        applyFullWidthBottomControls(bottomControls);
-        dbgPush('Mobile Painting: #bottomControls found -- applied full-width layout.', { uiComponent: 'Mobile Painting' });
+        // Apply the current GeoPixels++ theme before the controls first enter
+        // the DOM. resync() continues to refresh this stylesheet afterward
+        // for live theme changes.
+        injectStyle();
+        dbgPush('Mobile Painting: #bottomControls found -- keeping the site-controlled responsive width.', { uiComponent: 'Mobile Painting' });
 
         const nativeContainer = bottomControls.querySelector('.control-container-colors');
         if (!nativeContainer) {
@@ -2524,7 +2726,14 @@
         const nativeTopBar = innerWrapperEl ? innerWrapperEl.querySelector(':scope > .w-full.flex') : null;
         if (nativeTopBar && !nativeTopBar.id) nativeTopBar.id = 'gpc-native-top-bar';
 
-        liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null, paletteViewMode: null, selectedHex: null, soloMode: true };
+        liveState = {
+            bottomControls, savedNativeContainer: nativeContainer,
+            wrap: null, grid: null, templateId: null, orderKey: null,
+            paletteViewMode: null, scanSummaryRef: null, selectedHex: null,
+            soloMode: true, enableSelectedMode: false, highlightNearest: false,
+            highlightRequestId: 0, pendingHighlightTemplateId: null,
+            pendingHighlightPaletteIndex: null, syncEnableSelectedModeUi: null,
+        };
 
         // The native Sort button (sortAndSetColors()) is redundant with our
         // own Sort control below -- hidden in place, same reasoning as

@@ -62,6 +62,7 @@ import { fileURLToPath } from 'node:url';
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const GPP_DIR = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'ghost-plus-plus');
+const MOBILE_PAINTING_FILE = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'mobile-painting.js');
 
 // Exactly the 13-file slice of build.js's SRC_ORDER for Ghost++, in the same
 // order build.js concatenates them in.
@@ -85,6 +86,10 @@ function readGhostPlusPlusSource() {
     return GPP_FILES.map(name => readFileSync(join(GPP_DIR, name), 'utf8')).join('\n');
 }
 
+function readMobilePaintingSource() {
+    return readFileSync(MOBILE_PAINTING_FILE, 'utf8');
+}
+
 // Runs the exact same real Ghost++ source this fixture already exercises
 // through terser (build.js's own minification pass — see that file) before
 // injecting it into the page, so the "Minified build" pass below proves
@@ -96,7 +101,7 @@ function readGhostPlusPlusSource() {
 // do with minification.
 async function readGhostPlusPlusSourceMinified() {
     const terser = await import('terser');
-    const result = await terser.minify(readGhostPlusPlusSource(), {
+    const result = await terser.minify(readGhostPlusPlusSource() + '\n' + readMobilePaintingSource(), {
         compress: true,
         mangle: true,
         format: { comments: false, ascii_only: false },
@@ -153,6 +158,9 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('<input id="ghostImageInput" type="file" accept="image/*" style="display:none">');
     lines.push('<button id="initiatePlaceGhostBtn" type="button" style="display:none">Native place</button>');
     lines.push('<button id="clearGhostImageBtn" type="button" style="display:none">Native clear</button>');
+    // Deliberately plain site-like paint bar: Mobile Painting must preserve
+    // these natural dimensions rather than forcing a full-viewport width.
+    lines.push('<div id="bottomControls"><div><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button></div><div class="control-container-colors"><button type="button">Native color</button></div></div></div>');
     lines.push('<div id="map-shell"><div id="pixel-canvas"></div><canvas id="ghost-canvas"></canvas></div>');
     lines.push('<pre id="test-result" data-status="pending">pending</pre>');
     lines.push('<script>');
@@ -284,6 +292,8 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('window.__nativeDrawCalls = 0;');
     lines.push('window.__nativeRegenCalls = 0;');
     lines.push('window.__nativeInitCalls = 0;');
+    lines.push('window.__changedColors = [];');
+    lines.push('function changeColor(hex) { window.__changedColors.push(hex); }');
     lines.push('function drawGhostImageOnCanvas() { window.__nativeDrawCalls++; }');
     lines.push('function regenerateGhostCanvas() { window.__nativeRegenCalls++; }');
     lines.push('function initializeGhostFromStorage() { window.__nativeInitCalls++; }');
@@ -293,7 +303,11 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('    document.getElementById(id).addEventListener(type, function() { window.__nativeControlEvents++; });');
     lines.push('});');
     lines.push('');
-    lines.push('let _settings = { ghostPlusPlus: true };');
+    // Start as though Simple Black was already applied before Mobile Painting
+    // mounts. The feature must consult the live computed root style instead
+    // of only a later settings refresh.
+    lines.push('document.documentElement.style.colorScheme = "dark";');
+    lines.push('let _settings = { ghostPlusPlus: true, mobilePaintingExtension: true };');
     lines.push('function gpcMobileOverhaulAvailable() { return false; }');
     lines.push('let _featureStatus = {};');
     lines.push('function dbgPush(message, opts) { console.warn("[dbgPush]", message, opts); }');
@@ -893,6 +907,40 @@ function buildDriverScript() {
     L.push('    return "a template\'s Scan/error/missing/nearest/clear buttons only show Scanning…/disabled while THAT template is the one actually being scanned — a different template\'s in-flight background scan no longer falsely blocks or mislabels this one\'s Progress section";');
     L.push('  });');
     L.push('');
+
+    // ---- item scan.manual-button-refreshes-public-subscribers ----
+    // The compact Mobile Painting palette subscribes through
+    // gppSubscribeUiRefresh(). Its borrowed Scan progress button used to call
+    // only the private panel callback, leaving mobile checkmarks/status stale
+    // even when the scan itself completed. Exercise the real button and prove
+    // the public gateway fires both at its synchronous busy transition and at
+    // completion.
+    L.push('  await step("scan.manual-button-refreshes-public-subscribers", async function() {');
+    L.push('    var bitmap = await makeTileBitmap("rgb(0,255,0)");');
+    L.push('    var priorTile = tileImageCache.get("0,0");');
+    L.push('    tileImageCache.set("0,0", { colorBitmap: bitmap });');
+    L.push('    var container = document.createElement("div");');
+    L.push('    var refreshStates = [];');
+    L.push('    var unsubscribe = gppSubscribeUiRefresh(function() { refreshStates.push(!!gppScanRunning); });');
+    L.push('    try {');
+    L.push('      var ready = await waitFor(function() { return !gppScanRunning; }, 8000);');
+    L.push('      if (!ready) throw new Error("test setup: a prior scan never settled before clicking the manual Scan progress button");');
+    L.push('      gppRenderProgressBar(container, template, function() {});');
+    L.push('      var scanBtn = container.querySelector("#gpp-scan-btn-scan");');
+    L.push('      if (!scanBtn || scanBtn.disabled) throw new Error("test setup: expected an enabled manual Scan progress button");');
+    L.push('      scanBtn.click();');
+    L.push('      if (refreshStates[0] !== true) throw new Error("REGRESSION: clicking Scan progress did not synchronously notify public UI subscribers of the busy state: " + JSON.stringify(refreshStates));');
+    L.push('      var settled = await waitFor(function() { return !gppScanRunning && refreshStates.indexOf(false) !== -1; }, 8000);');
+    L.push('      if (!settled) throw new Error("REGRESSION: clicking Scan progress did not notify public UI subscribers after completion: " + JSON.stringify(refreshStates));');
+    L.push('    } finally {');
+    L.push('      unsubscribe();');
+    L.push('      container.remove();');
+    L.push('      if (priorTile) tileImageCache.set("0,0", priorTile); else tileImageCache.delete("0,0");');
+    L.push('      bitmap.close();');
+    L.push('    }');
+    L.push('    return "clicking the real Scan progress button now notifies public UI subscribers at both busy and completion states, so Mobile Painting can refresh its palette status without waiting for its fallback poll";');
+    L.push('  });');
+    L.push('');
     // ---- open real modal (integration + needed for item i) ----
     // gpp-native-shim.js's blocked-click handler (already exercised once by
     // item "f", which clicked the blocked native loadGhostImageBtnLabel)
@@ -1184,6 +1232,64 @@ function buildDriverScript() {
     L.push('    gppScanRedrawErrors();'); // exercises the affine-transform crosshair path with the glow active — must not throw
     L.push('    gppNearestErrorGlow = null;'); // let the glow\'s own rAF loop stop on its next tick instead of running for its full ~2.2s during later steps
     L.push('    return "gppLibraryFlyToTemplate clamps to zoom 12.5 as a floor only; gppFlyToNearestError clamps to zoom 17, finds the seeded WRONG cell, and starts the target-cell glow at the exact right grid cell";');
+    L.push('  });');
+    L.push('');
+
+    // ---- item scan.selected-colour-highlight-no-teleport ----
+    // Enable > Selected's optional guide must search the newly selected
+    // palette index only, then paint its own red multi-ring target without
+    // repurposing the regular Nearest error action (which jumps the map).
+    L.push('  await step("scan.selected-colour-highlight-no-teleport", async function() {');
+    L.push('    var ERROR_STATE = core.constants.ERROR_STATE;');
+    L.push('    var targetPaletteIndex = template.indices[1];');
+    L.push('    var otherPaletteIndex = template.indices[0];');
+    L.push('    if (targetPaletteIndex === otherPaletteIndex) throw new Error("test setup: fixture needs distinct palette indexes for selected-colour scan coverage");');
+    L.push('    var savedSummary = template.scanSummary;');
+    L.push('    var fakeStates = new Uint8Array(template.width * template.height).fill(ERROR_STATE.CORRECT);');
+    L.push('    fakeStates[0] = ERROR_STATE.WRONG;'); // nearest by distance, but deliberately the OTHER colour
+    L.push('    fakeStates[1] = ERROR_STATE.MISSING;'); // selected colour — must win even when it is not nearest overall
+    L.push('    template.scanSummary = { scannedAt: new Date().toISOString(), total: fakeStates.length, correct: fakeStates.length - 2, wrong: 1, missing: 1, unknown: 0, perColour: savedSummary.perColour, states: fakeStates };');
+    L.push('    template.mask = core.makeFullMask(template.palette.length, template.counts);');
+    L.push('    var jumpsBefore = __jumpToCalls.length;');
+    L.push('    var flightsBefore = __flyToCalls.length;');
+    L.push('    gppNearestSelectedColorGlow = null;');
+    L.push('    try {');
+    L.push('      var result = await gppScanHighlightNearestSelectedColor(template, targetPaletteIndex);');
+    L.push('      if (!result.ok) throw new Error("selected-colour nearest scan did not find the seeded target: " + JSON.stringify(result));');
+    L.push('      if (result.gridX !== template.position.gridX + 1 || result.gridY !== template.position.gridY) throw new Error("selected-colour nearest scan chose (" + result.gridX + "," + result.gridY + ") instead of the selected-colour target (" + (template.position.gridX + 1) + "," + template.position.gridY + ")");');
+    L.push('      if (__jumpToCalls.length !== jumpsBefore || __flyToCalls.length !== flightsBefore) throw new Error("REGRESSION: selected-colour highlight moved the map (jump delta=" + (__jumpToCalls.length - jumpsBefore) + ", fly delta=" + (__flyToCalls.length - flightsBefore) + ")");');
+    L.push('      if (!gppNearestSelectedColorGlow || gppNearestSelectedColorGlow.templateId !== template.id) throw new Error("selected-colour scan did not start its separate red pulse state");');
+    L.push('      if (gppNearestSelectedColorGlow.gridX !== result.gridX || gppNearestSelectedColorGlow.gridY !== result.gridY) throw new Error("selected-colour pulse target did not match its selected-colour scan result");');
+    L.push('      gppScanRedrawErrors();'); // smoke test the four-ring canvas drawing path
+    L.push('      gppScanClearSelectedColorGlow();');
+    L.push('      if (gppNearestSelectedColorGlow || gppNearestSelectedColorGlowRafId) throw new Error("selected-colour pulse clear did not synchronously remove the active guide");');
+    L.push('    } finally {');
+    L.push('      template.scanSummary = savedSummary;');
+    L.push('      gppScanClearSelectedColorGlow();');
+    L.push('    }');
+    L.push('    return "the selected-colour nearest helper ignores a closer wrong pixel of another colour, starts and clears its own pulse at the selected-colour cell, and never calls jumpTo/flyTo";');
+    L.push('  });');
+    L.push('');
+    // ---- item scan.nearest-search-snapshots-scan-and-position ----
+    // A full nearest lookup yields between large chunks. It must retain both
+    // its scan state and the template position captured at launch rather than
+    // mixing the first chunk with a later scan/drag update.
+    L.push('  await step("scan.nearest-search-snapshots-scan-and-position", async function() {');
+    L.push('    var ERROR_STATE = core.constants.ERROR_STATE;');
+    L.push('    var targetPaletteIndex = template.indices[1];');
+    L.push('    var stateCount = 65537;');
+    L.push('    var initialStates = new Uint8Array(stateCount).fill(ERROR_STATE.CORRECT);');
+    L.push('    initialStates[stateCount - 1] = ERROR_STATE.MISSING;');
+    L.push('    var indexed = new Uint16Array(stateCount);');
+    L.push('    indexed[stateCount - 1] = targetPaletteIndex;');
+    L.push('    var transientTemplate = { id: "snapshot-search", position: { gridX: 321, gridY: 654 }, scanSummary: { states: initialStates }, palette: template.palette, indices: indexed, width: stateCount, height: 1, mask: core.makeFullMask(template.palette.length, template.counts) };');
+    L.push('    var pending = gppScanFindNearestError(transientTemplate, { paletteIndex: targetPaletteIndex });');
+    L.push('    transientTemplate.position.gridX = 9999;');
+    L.push('    transientTemplate.position.gridY = 9999;');
+    L.push('    transientTemplate.scanSummary = { states: new Uint8Array(stateCount).fill(ERROR_STATE.CORRECT) };');
+    L.push('    var result = await pending;');
+    L.push('    if (!result.ok || result.gridX !== 321 + stateCount - 1 || result.gridY !== 654) throw new Error("nearest lookup mixed in a later scan or position: " + JSON.stringify(result));');
+    L.push('    return "gppScanFindNearestError snapshots both scan states and grid origin before yielding between chunks";');
     L.push('  });');
     L.push('');
     // ---- item manage.grid-view ----
@@ -2856,6 +2962,85 @@ function buildDriverScript() {
     L.push('    return "a tooltip left open (continuously hovered, no mouseleave) stays visible through ~9s and auto-dismisses on its own by ~11.5s, matching the requested 10s auto-dismiss";');
     L.push('  });');
     L.push('');
+    // ---- item mobile-painting.live-controller ----
+    // Loads the real Mobile Painting source after Ghost++ in the same browser
+    // page. Covers the regressions that a scan-only fixture cannot: natural
+    // host width, Simple Black present before mount, compact palette status
+    // rebuild after the public completed-scan refresh, and a rapid A -> B
+    // selection cancelling A.  The preceding manual-scan test separately
+    // proves that its button emits that public refresh synchronously and when
+    // the scan settles.
+    L.push('  await step("mobile-painting.live-controller", async function() {');
+    L.push('    if (!template || !template.id) throw new Error("test setup: expected the original template id for Mobile Painting coverage");');
+    L.push('    var originalTemplateId = template.id;');
+    L.push('    await gppState.focusTemplate(originalTemplateId);');
+    L.push('    template = gppState.getFocusedTemplate();');
+    L.push('    if (!template || template.id !== originalTemplateId || !template.position) throw new Error("test setup: expected the current positioned original template for Mobile Painting coverage");');
+    L.push('    var focusScanSettled = await waitFor(function() { return !gppScanRunning; }, 8000);');
+    L.push('    if (!focusScanSettled) throw new Error("test setup: focus-triggered scan did not settle before rapid-selection coverage");');
+    L.push('    var seededTotal = 0, seededPerColour = [];');
+    L.push('    for (var seededIndex = 0; seededIndex < template.palette.length; seededIndex++) { var count = template.counts[seededIndex] || 0; if (!count) continue; seededTotal += count; seededPerColour.push({ index: seededIndex, enabled: true, correct: count, wrong: 0, missing: 0, unknown: 0, total: count }); }');
+    L.push('    template.mask = core.makeFullMask(template.palette.length, template.counts);');
+    L.push('    template.scanSummary = { scannedAt: new Date().toISOString(), total: seededTotal, correct: seededTotal, wrong: 0, missing: 0, unknown: 0, perColour: seededPerColour, states: new Uint8Array(template.width * template.height) };');
+    L.push('    gppRequestUiRefresh();');
+    L.push('    var gridReady = await waitFor(function() { return !!document.getElementById("gpc-mobile-palette-grid"); }, 5000);');
+    L.push('    if (!gridReady) throw new Error("Mobile Painting never mounted its compact palette grid");');
+    L.push('    var bottom = document.getElementById("bottomControls");');
+    L.push('    if (!bottom || bottom.style.width || bottom.style.maxWidth || bottom.style.left || bottom.style.right || bottom.style.transform) throw new Error("REGRESSION: Mobile Painting imposed inline full-width/position styles on #bottomControls");');
+    L.push('    var row = document.querySelector(".gpc-mobile-controls-row");');
+    L.push('    var enableButton = row && Array.from(row.querySelectorAll("button")).find(function(button) { return button.textContent.trim().indexOf("Enable") === 0; });');
+    L.push('    if (!enableButton) throw new Error("Mobile Painting Enable control was not mounted");');
+    L.push('    if (getComputedStyle(enableButton).backgroundColor !== "rgb(30, 30, 46)") throw new Error("REGRESSION: Simple Black already applied at mount did not dark-theme Mobile Painting controls: " + getComputedStyle(enableButton).backgroundColor);');
+    L.push('    var originalFindNearest = gppScanFindNearestError;');
+    L.push('    var originalStartGlow = gppScanStartSelectedColorGlow;');
+    L.push('    var originalClearGlow = gppScanClearSelectedColorGlow;');
+    L.push('    var originalTryAutoScan = gppTryAutoScan;');
+    L.push('    var deferred = [], glowCalls = [], clearedPulseCount = 0;');
+    L.push('    try {');
+    L.push('      gppTryAutoScan = function() {};');
+    L.push('      enableButton.click();');
+    L.push('      var enableMenu = enableButton.parentElement.querySelector(".gpc-ctrl-menu");');
+    L.push('      var selectedOption = Array.from(enableMenu.querySelectorAll(".gpc-ctrl-menu-option")).find(function(option) { return option.textContent.trim() === "Selected"; });');
+    L.push('      if (!selectedOption) throw new Error("Mobile Painting Enable > Selected option is missing");');
+    L.push('      selectedOption.click();');
+    L.push('      var highlightOption = enableMenu.querySelector("label.gpc-ctrl-menu-option-nested");');
+    L.push('      var highlightInput = highlightOption && highlightOption.querySelector("input[type=checkbox]");');
+    L.push('      if (!highlightOption || highlightOption.hidden || !highlightInput || highlightInput.checked) throw new Error("Highlight nearest must appear only under Selected and default unchecked");');
+    L.push('      highlightInput.click();');
+    L.push('      if (!highlightInput.checked) throw new Error("Highlight nearest checkbox did not enable");');
+    L.push('      gppScanFindNearestError = function(_template, options) { return new Promise(function(resolve) { deferred.push({ resolve: resolve, paletteIndex: options.paletteIndex }); }); };');
+    L.push('      gppScanStartSelectedColorGlow = function(templateId, gridX, gridY) { glowCalls.push({ templateId: templateId, gridX: gridX, gridY: gridY }); };');
+    L.push('      var swatches = Array.from(document.querySelectorAll("#gpc-mobile-palette-grid .gpp-swatch"));');
+    L.push('      if (swatches.length < 2) throw new Error("test setup: Mobile Painting needs two swatches for stale-selection coverage");');
+    L.push('      swatches[0].click();');
+    L.push('      swatches[1].click();');
+    L.push('      if (deferred.length !== 2) throw new Error("test setup: expected one nearest lookup per rapid A -> B selection, got " + deferred.length + " (busy=" + gppScanRunning + ", focused=" + (gppState.getFocusedTemplate() && gppState.getFocusedTemplate().id) + ", summary=" + !!template.scanSummary + ", changed=" + JSON.stringify(window.__changedColors.slice(-2)) + ")");');
+    L.push('      deferred[0].resolve({ ok: true, gridX: 111, gridY: 111 });');
+    L.push('      await new Promise(function(resolve) { setTimeout(resolve, 0); });');
+    L.push('      if (deferred.length !== 2 || glowCalls.length !== 0) throw new Error("REGRESSION: stale A lookup retried or glowed after B became current (lookups=" + deferred.length + ", glows=" + glowCalls.length + ")");');
+    L.push('      deferred[1].resolve({ ok: true, gridX: 222, gridY: 222 });');
+    L.push('      await new Promise(function(resolve) { setTimeout(resolve, 0); });');
+    L.push('      if (glowCalls.length !== 1 || glowCalls[0].gridX !== 222 || glowCalls[0].gridY !== 222) throw new Error("current B lookup did not produce exactly its own selected-colour pulse: " + JSON.stringify(glowCalls));');
+    L.push('      gppScanClearSelectedColorGlow = function() { clearedPulseCount++; };');
+    L.push('      highlightInput.click();');
+    L.push('      if (highlightInput.checked || clearedPulseCount !== 1) throw new Error("REGRESSION: turning off Highlight nearest did not immediately clear its active selected-colour pulse");');
+    L.push('    } finally {');
+    L.push('      gppScanFindNearestError = originalFindNearest;');
+    L.push('      gppScanStartSelectedColorGlow = originalStartGlow;');
+    L.push('      gppScanClearSelectedColorGlow = originalClearGlow;');
+    L.push('      gppTryAutoScan = originalTryAutoScan;');
+    L.push('    }');
+    L.push('    var compactBeforeCompletedScan = document.getElementById("gpc-mobile-palette-grid");');
+    L.push('    var refreshedPerColour = seededPerColour.map(function(entry) { return { index: entry.index, enabled: entry.enabled, correct: 0, wrong: entry.total, missing: 0, unknown: 0, total: entry.total }; });');
+    L.push('    template.scanSummary = { scannedAt: new Date().toISOString(), total: seededTotal, correct: 0, wrong: seededTotal, missing: 0, unknown: 0, perColour: refreshedPerColour, states: new Uint8Array(template.width * template.height).fill(core.constants.ERROR_STATE.WRONG) };');
+    L.push('    gppRequestUiRefresh();');
+    L.push('    var compactUpdated = await waitFor(function() { var grid = document.getElementById("gpc-mobile-palette-grid"); return grid && grid !== compactBeforeCompletedScan; }, 5000);');
+    L.push('    if (!compactUpdated) throw new Error("REGRESSION: completed Scan progress refresh did not rebuild Mobile Painting per-colour status/badges");');
+    L.push('    var firstUpdatedBadge = document.querySelector("#gpc-mobile-palette-grid .gpp-swatch-progress");');
+    L.push('    if (!firstUpdatedBadge || !firstUpdatedBadge.classList.contains("gpp-swatch-progress-unstarted")) throw new Error("REGRESSION: compact palette did not consume the completed Scan progress status for its per-colour badge");');
+    L.push('    return "Mobile Painting preserves native bar width, sees Simple Black at first mount, exposes a default-off Selected-only highlight, cancels stale A -> B lookups, and rebuilds compact status from the completed Scan progress refresh";');
+    L.push('  });');
+    L.push('');
     L.push('  var resultEl = document.getElementById("test-result");');
     L.push('  resultEl.dataset.status = "done";');
     L.push('  var payload = {');
@@ -2881,7 +3066,9 @@ function buildDriverScript() {
 
 async function buildFixtureHtml(forceCanvas2D, minify) {
     const head = buildFixtureHead(forceCanvas2D);
-    const source = minify ? await readGhostPlusPlusSourceMinified() : readGhostPlusPlusSource();
+    const source = minify
+        ? await readGhostPlusPlusSourceMinified()
+        : readGhostPlusPlusSource() + '\n' + readMobilePaintingSource();
     const ghostScript = '<script>\n\'use strict\';\n' + source + '\n</script>';
     const driver = buildDriverScript();
     return head + '\n' + ghostScript + '\n' + driver + '\n</body></html>';
@@ -2977,11 +3164,19 @@ async function runBrowserFixture(html, options = {}) {
         });
 
         const wallTimeoutMs = options.wallTimeoutMs || 90_000;
+        let timeoutId = null;
         const timeoutPromise = new Promise((_, rej) => {
-            setTimeout(() => rej(new Error(`timed out after ${wallTimeoutMs}ms waiting for the fixture's /report POST`)), wallTimeoutMs);
+            timeoutId = setTimeout(() => rej(new Error(`timed out after ${wallTimeoutMs}ms waiting for the fixture's /report POST`)), wallTimeoutMs);
         });
-        const body = await Promise.race([reportPromise, timeoutPromise]);
-        return { body, stdout, stderr, browserPath };
+        try {
+            const body = await Promise.race([reportPromise, timeoutPromise]);
+            return { body, stdout, stderr, browserPath };
+        } finally {
+            // A successful report does not cancel Promise.race's losing timer
+            // automatically. Clearing it keeps a passing three-browser run
+            // from appearing to hang for its full watchdog duration.
+            if (timeoutId !== null) clearTimeout(timeoutId);
+        }
     } finally {
         if (browser && !browser.killed) { try { browser.kill(); } catch (_) { /* ignore */ } }
         await new Promise(resolveClose => server.close(resolveClose));

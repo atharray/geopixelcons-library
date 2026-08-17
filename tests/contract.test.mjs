@@ -51,6 +51,20 @@ test('includes the opt-in native guild territory auto-loader', () => {
 test('defaults Compact Paint Controls on for new installs', () => {
     assert.match(artifact, /compactPaintOverflow: true/);
 });
+test('keeps Mobile Painting responsive and exposes selected-colour scan feedback', () => {
+    assert.doesNotMatch(artifact, /function applyFullWidthBottomControls\(/);
+    assert.doesNotMatch(artifact, /style\.width = '100vw'/);
+    assert.match(artifact, /rootStyle\.colorScheme/);
+    assert.match(artifact, /scanSummaryRef/);
+    assert.match(artifact, /gppRequestUiRefresh/);
+    assert.match(artifact, /Highlight nearest/);
+    assert.match(artifact, /gppScanFindNearestError/);
+    assert.match(artifact, /gppScanStartSelectedColorGlow/);
+    assert.match(artifact, /gppScanClearSelectedColorGlow/);
+    assert.match(artifact, /pendingHighlightPaletteIndex/);
+    assert.match(artifact, /requestStillCurrent/);
+    assert.match(artifact, /retintBorrowedScanButtons/);
+});
 test('includes a confirmation gate for large bulk purchases', () => {
     assert.match(artifact, /BULK_PURCHASE_WARNING_THRESHOLD = 50/);
     assert.match(artifact, /gp-bulk-warning-overlay/);

@@ -44,7 +44,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', desc: 'Superseded by Ghost++ Template Overlay. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
         { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', desc: 'Superseded by Ghost++ Template Overlay. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
-        { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Bottom paint controls span the full screen width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
+        { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive width for bottom paint controls', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
     ];
 
     const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
@@ -1249,7 +1249,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             version: '2.5.0',
             date: '2026-08-16',
             items: [
-                { type: 'added', text: 'Mobile Painting (in development): bottom paint controls now span the full width of the screen when enabled' },
+                { type: 'changed', text: 'Mobile Painting (in development): bottom paint controls now keep the site\'s natural responsive width instead of being forced full-screen' },
+                { type: 'fixed', text: 'Mobile Painting (in development): controls now apply the active GeoPixels++ Simple Black theme when the extension first loads' },
+                { type: 'fixed', text: 'Mobile Painting (in development): Scan progress now refreshes the compact palette\'s per-color checkmarks and status when its scan finishes' },
+                { type: 'added', text: 'Mobile Painting (in development): Enable > Selected now reveals an optional, session-only Highlight nearest checkbox; selecting a new color can show its nearest remaining pixel with large fading red rings without teleporting the map (off by default)' },
                 { type: 'added', text: 'Mobile Painting (in development): native color grid replaced with the focused Ghost++ template\'s own color grid, styled like the Ghost++ manager' },
                 { type: 'added', text: 'Mobile Painting (in development): the color grid now stays live-synced with the Ghost++ manager -- switching templates or changing a color\'s visibility there updates it automatically' },
                 { type: 'added', text: 'Mobile Painting (in development): tapping a color now shows only that color\'s remaining pixels on the map and selects it as your active paint color in one tap' },
@@ -8629,15 +8632,27 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         } finally {
             gppScanRunning = false;
             gppScanningTemplateId = null;
+            // The compact Mobile Painting palette listens through this public
+            // refresh path. The regular Progress panel already re-renders via
+            // its local onChange callback, but without this notification the
+            // borrowed Scan progress button could finish with stale swatch
+            // badges and list progress until some unrelated later refresh.
+            if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
         }
     }
 
-    // Flies the map to the wrong/missing cell nearest the current map centre,
-    // among currently-enabled colours. Grid<->world conversion mirrors
-    // encodePositionHeader/computeGridBounds: gridX/gridY are pure grid
-    // indices, offsetMetersX/Y are added only when converting to world meters
-    // (and subtracted when converting the other way), kept symmetric here.
-    async function gppFlyToNearestError(template) {
+    // Finds the wrong/missing cell nearest the current map centre. The normal
+    // Nearest error action leaves paletteIndex null so it respects the live
+    // enabled-colour mask; Mobile Painting passes one explicit palette index
+    // after a solo-color tap. Keeping that index fixed matters because this
+    // scan yields between chunks and a second tap may change template.mask
+    // before the first search completes.
+    //
+    // Grid<->world conversion mirrors encodePositionHeader/computeGridBounds:
+    // gridX/gridY are pure grid indices, offsetMetersX/Y are added only when
+    // converting to world meters (and subtracted when converting the other
+    // way), kept symmetric here.
+    async function gppScanFindNearestError(template, options = {}) {
         if (!template || !template.position || !template.scanSummary) return { ok: false, reason: 'nothing-to-search' };
         const map = gppGetMap();
         const turf = gppGetTurf();
@@ -8645,18 +8660,26 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         const core = gppCreateCore();
         const ERROR_STATE = core.constants.ERROR_STATE;
         const grid = gppReadGridConstants();
-        const states = template.scanSummary.states;
+        // A large template yields between chunks. Freeze the scan/position
+        // inputs at request time so this one lookup never combines an old
+        // state array with a newly moved template halfway through its loop.
+        const scanSummary = template.scanSummary;
+        const states = scanSummary.states;
+        const originGridX = template.position.gridX;
+        const originGridY = template.position.gridY;
+        const paletteIndex = Number.isInteger(options.paletteIndex) ? options.paletteIndex : null;
+        if (paletteIndex !== null && (paletteIndex < 0 || paletteIndex >= template.palette.length)) {
+            return { ok: false, reason: 'invalid-palette-index' };
+        }
 
         const center = map.getCenter();
         const mercator = turf.toMercator([center.lng, center.lat]);
         const centerX = (mercator[0] - grid.offsetMetersX) / grid.gridSize;
         const centerY = (mercator[1] - grid.offsetMetersY) / grid.gridSize;
 
-        // Search whichever of wrong/missing is currently toggled visible; if
-        // neither is (a scan just finished and the user hasn't opted into a
-        // display yet), search both so the action is still useful.
-        const searchWrong = template._gppShowWrong || !template._gppShowMissing;
-        const searchMissing = template._gppShowMissing || !template._gppShowWrong;
+        const searchWrong = options.searchWrong !== false;
+        const searchMissing = options.searchMissing !== false;
+        if (!searchWrong && !searchMissing) return { ok: false, reason: 'nothing-to-search' };
 
         let nearest = null;
         let nearestDistance = Infinity;
@@ -8668,12 +8691,16 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 if (state === ERROR_STATE.WRONG && !searchWrong) continue;
                 if (state === ERROR_STATE.MISSING && !searchMissing) continue;
                 if (state !== ERROR_STATE.WRONG && state !== ERROR_STATE.MISSING) continue;
-                const paletteIndex = template.indices[pixel];
-                if (!core.maskHas(template.mask, paletteIndex)) continue; // respect current filter
+                const pixelPaletteIndex = template.indices[pixel];
+                if (paletteIndex !== null) {
+                    if (pixelPaletteIndex !== paletteIndex) continue;
+                } else if (!core.maskHas(template.mask, pixelPaletteIndex)) {
+                    continue; // normal Nearest error: respect current filter
+                }
                 const localX = pixel % template.width;
                 const localY = Math.floor(pixel / template.width);
-                const gridX = template.position.gridX + localX;
-                const gridY = template.position.gridY - localY;
+                const gridX = originGridX + localX;
+                const gridY = originGridY - localY;
                 const dx = gridX - centerX;
                 const dy = gridY - centerY;
                 const distance = dx * dx + dy * dy;
@@ -8686,6 +8713,26 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         }
 
         if (!nearest) return { ok: false, reason: 'none-found' };
+        return { ok: true, gridX: nearest.gridX, gridY: nearest.gridY };
+    }
+
+    // Flies the map to the wrong/missing cell nearest the current map centre,
+    // among currently-enabled colours. This preserves the established button
+    // semantics while sharing the actual search with Mobile Painting's
+    // no-teleport selected-colour helper below.
+    async function gppFlyToNearestError(template) {
+        // Search whichever of wrong/missing is currently toggled visible; if
+        // neither is (a scan just finished and the user hasn't opted into a
+        // display yet), search both so the action is still useful.
+        const nearest = await gppScanFindNearestError(template, {
+            searchWrong: template && (template._gppShowWrong || !template._gppShowMissing),
+            searchMissing: template && (template._gppShowMissing || !template._gppShowWrong),
+        });
+        if (!nearest.ok) return nearest;
+        const map = gppGetMap();
+        const turf = gppGetTurf();
+        if (!map || !turf) return { ok: false, reason: 'map-unavailable' };
+        const grid = gppReadGridConstants();
         const target = turf.toWgs84([
             nearest.gridX * grid.gridSize + grid.offsetMetersX,
             nearest.gridY * grid.gridSize + grid.offsetMetersY,
@@ -8701,6 +8748,22 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         // the button click, not the passive crosshair overlay.
         gppScanStartNearestErrorGlow(template.id, nearest.gridX, nearest.gridY);
         return { ok: true };
+    }
+
+    // Convenience no-teleport entry point for callers that do not need to
+    // invalidate a stale async selection. Mobile Painting uses the lower-level
+    // search plus its own request id, then calls the same pulse starter only
+    // if that selected color is still current. Unlike gppFlyToNearestError(),
+    // this never moves the map.
+    async function gppScanHighlightNearestSelectedColor(template, paletteIndex) {
+        const nearest = await gppScanFindNearestError(template, {
+            paletteIndex,
+            searchWrong: true,
+            searchMissing: true,
+        });
+        if (!nearest.ok) return nearest;
+        gppScanStartSelectedColorGlow(template.id, nearest.gridX, nearest.gridY);
+        return nearest;
     }
 
     // Clearing the error DISPLAY is deliberately separate from discarding the
@@ -8751,6 +8814,18 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const GPP_NEAREST_ERROR_GLOW_DURATION_MS = 2200;
     const GPP_NEAREST_ERROR_GLOW_PULSE_MS = 650;
 
+    // ── Mobile Painting's selected-colour target glow ────────────────────
+    // Kept distinct from the normal Nearest error glow above: the ordinary
+    // button must stay a small, short amber confirmation after a teleport,
+    // while this opt-in helper is a much larger red guide that deliberately
+    // leaves the map where the painter already is.
+    let gppNearestSelectedColorGlow = null; // { templateId, gridX, gridY, startTime } | null
+    let gppNearestSelectedColorGlowRafId = 0;
+    const GPP_NEAREST_SELECTED_COLOR_GLOW_DURATION_MS = 5200;
+    const GPP_NEAREST_SELECTED_COLOR_GLOW_PULSE_MS = 1300;
+    const GPP_NEAREST_SELECTED_COLOR_GLOW_RING_COUNT = 4;
+    const GPP_NEAREST_SELECTED_COLOR_GLOW_RADIUS_CELLS = 50;
+
     function gppScanStartNearestErrorGlow(templateId, gridX, gridY) {
         gppNearestErrorGlow = { templateId, gridX, gridY, startTime: Date.now() };
         if (gppNearestErrorGlowRafId) return; // animation loop already running, will pick up the new target next frame
@@ -8767,6 +8842,39 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             gppNearestErrorGlowRafId = requestAnimationFrame(tick);
         };
         gppNearestErrorGlowRafId = requestAnimationFrame(tick);
+    }
+
+    function gppScanStartSelectedColorGlow(templateId, gridX, gridY) {
+        gppNearestSelectedColorGlow = { templateId, gridX, gridY, startTime: Date.now() };
+        if (gppNearestSelectedColorGlowRafId) return; // latest target is read on the next frame
+        const tick = () => {
+            if (!gppNearestSelectedColorGlow) { gppNearestSelectedColorGlowRafId = 0; return; }
+            const elapsed = Date.now() - gppNearestSelectedColorGlow.startTime;
+            if (elapsed >= GPP_NEAREST_SELECTED_COLOR_GLOW_DURATION_MS) {
+                gppNearestSelectedColorGlow = null;
+                gppNearestSelectedColorGlowRafId = 0;
+                gppScanRedrawErrors(); // clear the final red rings immediately
+                return;
+            }
+            gppScanRedrawErrors();
+            gppNearestSelectedColorGlowRafId = requestAnimationFrame(tick);
+        };
+        gppNearestSelectedColorGlowRafId = requestAnimationFrame(tick);
+    }
+
+    // The mobile Enable > Selected option is opt-in. Turning it off, changing
+    // to another color, or leaving that mode must immediately remove an
+    // already-visible guide rather than merely blocking a still-pending
+    // lookup. Keeping this separate from the regular amber nearest-error glow
+    // means the normal desktop action remains untouched.
+    function gppScanClearSelectedColorGlow() {
+        if (!gppNearestSelectedColorGlow && !gppNearestSelectedColorGlowRafId) return;
+        gppNearestSelectedColorGlow = null;
+        if (gppNearestSelectedColorGlowRafId) {
+            cancelAnimationFrame(gppNearestSelectedColorGlowRafId);
+            gppNearestSelectedColorGlowRafId = 0;
+        }
+        gppScanRedrawErrors();
     }
 
     // Parented inside the map's own container (not window/body) so
@@ -8858,6 +8966,51 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                     ctx.arc(screen.x, screen.y, ringRadius, 0, Math.PI * 2);
                     ctx.stroke();
                     ctx.globalAlpha = 1;
+                }
+            } catch (_) { /* map/turf not ready this frame — try again next tick */ }
+        }
+
+        // Mobile Painting's opt-in selected-colour guide. This is intentionally
+        // drawn before the normal error-display gates below: it is a direct
+        // response to selecting a color, not an ambient error marker. The
+        // expanding radii use projected grid-cell distance, so the outer ring
+        // aims for 50 cells rather than imitating the regular glow's tiny
+        // fixed CSS-pixel radius. It is capped to the visible viewport so a
+        // close zoom never turns the whole canvas into an off-screen circle.
+        if (gppNearestSelectedColorGlow && template && template.id === gppNearestSelectedColorGlow.templateId && template.opacity > 0 && map && turf) {
+            const grid = gppReadGridConstants();
+            const elapsed = Date.now() - gppNearestSelectedColorGlow.startTime;
+            try {
+                const worldX = gppNearestSelectedColorGlow.gridX * grid.gridSize + grid.offsetMetersX;
+                const worldY = gppNearestSelectedColorGlow.gridY * grid.gridSize + grid.offsetMetersY;
+                const world = turf.toWgs84([worldX, worldY]);
+                const nextCellWorld = turf.toWgs84([worldX + grid.gridSize, worldY]);
+                const screen = map.project(world);
+                const nextCellScreen = map.project(nextCellWorld);
+                const cellPx = Math.hypot(nextCellScreen.x - screen.x, nextCellScreen.y - screen.y);
+                if (Number.isFinite(screen.x) && Number.isFinite(screen.y) && Number.isFinite(cellPx) && cellPx > 0) {
+                    const overallFade = Math.max(0, 1 - elapsed / GPP_NEAREST_SELECTED_COLOR_GLOW_DURATION_MS);
+                    const pulseBase = (elapsed % GPP_NEAREST_SELECTED_COLOR_GLOW_PULSE_MS) / GPP_NEAREST_SELECTED_COLOR_GLOW_PULSE_MS;
+                    const viewportRadius = Math.max(80, Math.min(rect.width, rect.height) * 0.78);
+                    const minRadius = Math.min(Math.max(6, cellPx), Math.max(24, viewportRadius * 0.12));
+                    const maxRadius = Math.max(
+                        minRadius + 1,
+                        Math.min(viewportRadius, Math.max(80, cellPx * GPP_NEAREST_SELECTED_COLOR_GLOW_RADIUS_CELLS)),
+                    );
+                    ctx.save();
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.shadowColor = 'rgba(239, 68, 68, 0.72)';
+                    ctx.shadowBlur = 8;
+                    ctx.lineWidth = Math.max(2, Math.min(5, cellPx * 0.28));
+                    for (let ring = 0; ring < GPP_NEAREST_SELECTED_COLOR_GLOW_RING_COUNT; ring++) {
+                        const phase = (pulseBase + ring / GPP_NEAREST_SELECTED_COLOR_GLOW_RING_COUNT) % 1;
+                        const radius = minRadius + phase * (maxRadius - minRadius);
+                        ctx.globalAlpha = Math.pow(1 - phase, 1.35) * overallFade;
+                        ctx.beginPath();
+                        ctx.arc(screen.x, screen.y, radius, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
                 }
             } catch (_) { /* map/turf not ready this frame — try again next tick */ }
         }
@@ -9245,8 +9398,18 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         scanBtn.addEventListener('click', () => {
             if (gppScanRunning || !template || !template.position) return;
             const pending = gppScanTemplate(template); // sets gppScanRunning synchronously before its first await
-            onChange();
-            pending.then(() => onChange());
+            // The Progress panel's local refresh is still needed for its own
+            // button state, while the public request keeps Mobile Painting's
+            // borrowed Scan progress control and palette current too. Do this
+            // both after the synchronous busy flip and after the promise
+            // settles; gppScanTemplate's finally is a backstop for all other
+            // scan entry points.
+            const refreshScanUi = () => {
+                if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
+                else onChange(); // keeps this renderer usable before gpp-init wires the public gateway
+            };
+            refreshScanUi();
+            pending.then(refreshScanUi, refreshScanUi);
         });
         showErrBtn.addEventListener('click', () => {
             if (!template || !template.scanSummary) return;
@@ -30932,14 +31095,18 @@ if (_settings.profileColorsCollapse) {
 
     const MP_STYLE_ID = 'gpc-mobile-painting-style';
 
-    // Narrower than core.js's shared isDarkMode(): only the OTHER
-    // "GeoPixels++" extension's own explicit theme selector counts here, not
-    // body.dark or the OS-level prefers-color-scheme fallback isDarkMode()
-    // also honors. See the .gpc-mobile-controls-row comment in injectStyle()
-    // below for why -- #bottomControls' own wrapper never itself goes dark,
-    // so an OS/body signal alone would make these buttons black against a
-    // background that stays unconditionally white regardless.
+    // Narrower than core.js's shared isDarkMode(): only the GeoPixels++
+    // theme that is actually applied to the document, or its saved explicit
+    // selector, counts here. Do not fall back to body.dark or the OS-level
+    // prefers-color-scheme signal: #bottomControls' own wrapper can remain
+    // white under those signals, producing dark controls on a light panel.
     function isControlsRowDark() {
+        try {
+            const rootStyle = document.documentElement && typeof getComputedStyle === 'function'
+                ? getComputedStyle(document.documentElement)
+                : null;
+            if (rootStyle && /\bdark\b/i.test(rootStyle.colorScheme || '')) return true;
+        } catch (e) {}
         try {
             const raw = localStorage.getItem('geo++_settings');
             if (raw) {
@@ -31608,16 +31775,16 @@ if (_settings.profileColorsCollapse) {
             }
             .gpc-ctrl-menu-option:hover { background: ${tc('#f3f4f6', '#313244')}; }
             .gpc-ctrl-menu-option input { width: 13px; height: 13px; cursor: pointer; }
+            /* The nearest-pixel switch belongs to Enable > Selected rather
+               than being a global palette preference. Hidden uses an
+               explicit author rule because the base display:flex rule above
+               would otherwise override the browser's [hidden] stylesheet. */
+            .gpc-ctrl-menu-option.gpc-ctrl-menu-option-nested {
+                margin-left: 18px; padding-left: 2px; font-size: 11px;
+            }
+            .gpc-ctrl-menu-option[hidden] { display: none; }
         `;
         if (isNew) document.head.appendChild(style);
-    }
-
-    function applyFullWidthBottomControls(bottomControls) {
-        bottomControls.style.width = '100vw';
-        bottomControls.style.maxWidth = '100vw';
-        bottomControls.style.left = '0';
-        bottomControls.style.right = '0';
-        bottomControls.style.transform = 'none';
     }
 
     function getFocusedTemplateWithPalette() {
@@ -32120,6 +32287,25 @@ if (_settings.profileColorsCollapse) {
             (button.disabled ? 'opacity:.5; cursor:default;' : '');
     }
 
+    // Unlike the regular borrowed controls, gpp-scan.js intentionally bakes
+    // these four buttons' theme colors into inline style.cssText. Refresh that
+    // presentation whenever the Mobile Painting theme stylesheet refreshes so
+    // a live GeoPixels++ theme switch cannot leave placeholder Scan controls
+    // with their old colors until something else rebuilds the whole panel.
+    function retintBorrowedScanButtons() {
+        const group = document.getElementById('gpc-mobile-placeholder-group');
+        if (!group || group.classList.contains('gpc-hidden')) return;
+        const template = getFocusedTemplateWithPalette();
+        const scanBtn = group.querySelector('#gpp-scan-btn-scan');
+        const showErrBtn = group.querySelector('#gpp-scan-btn-show-err');
+        const showMissBtn = group.querySelector('#gpp-scan-btn-show-miss');
+        const nearestBtn = group.querySelector('#gpp-scan-btn-nearest');
+        if (scanBtn) retintScanButton(scanBtn, true);
+        if (showErrBtn) retintScanButton(showErrBtn, !!(template && template._gppShowWrong));
+        if (showMissBtn) retintScanButton(showMissBtn, !!(template && template._gppShowMissing));
+        if (nearestBtn) retintScanButton(nearestBtn, false);
+    }
+
     // Placeholder 1: the real scan-progress bar + its two summary text
     // lines + 4 of its 5 real buttons (Scan progress / Show errors / Show
     // missing / Nearest error -- Clear is deliberately left behind, per
@@ -32619,6 +32805,7 @@ if (_settings.profileColorsCollapse) {
         grid.style.maxHeight = computeGridMaxHeight(getVisibleRowsSetting()) + 'px';
 
         function soloColor(targetIndex, hex) {
+            const isNewSelection = !liveState || liveState.selectedHex !== hex;
             for (let index = 0; index < template.palette.length; index++) {
                 core.maskSet(template.mask, index, index === targetIndex);
             }
@@ -32641,8 +32828,16 @@ if (_settings.profileColorsCollapse) {
             gppState.persistTemplateState(template).catch((err) => {
                 console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
             });
+            // A fresh Selected-mode colour makes any existing guide obsolete
+            // immediately, even if the next lookup has to wait for the Scan
+            // progress run that Selected just requested. Re-tapping the same
+            // colour while the option is enabled is an intentional retry: it
+            // is useful when the first tap happened before the scan finished.
+            const shouldRequestNearestHighlight = !!(liveState && liveState.enableSelectedMode && (isNewSelection || liveState.highlightNearest));
+            if (shouldRequestNearestHighlight) invalidateSelectedNearestHighlight();
             if (typeof gppRendererSchedule === 'function') gppRendererSchedule();
             if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
+            if (shouldRequestNearestHighlight) requestSelectedNearestHighlight(template, targetIndex);
         }
 
         // Multi-select mode counterpart to soloColor: used instead whenever
@@ -32904,18 +33099,22 @@ if (_settings.profileColorsCollapse) {
     // selected should immediately re-solo it.
     function bulkEnableAll(template, core) {
         tryAutoScanFirst();
+        leaveEnableSelectedMode();
         if (liveState) liveState.soloMode = false;
         template.mask = core.makeFullMask(template.palette.length, template.counts);
         notifyMaskChanged(template);
     }
 
     function bulkDisableAll(template) {
+        leaveEnableSelectedMode();
+        if (liveState) liveState.soloMode = false;
         template.mask = new Uint32Array(Math.ceil(template.palette.length / 32));
         notifyMaskChanged(template);
     }
 
     function bulkEnableOwned(template, core) {
         tryAutoScanFirst();
+        leaveEnableSelectedMode();
         if (liveState) liveState.soloMode = false;
         const rows = (typeof gppReadGamePalette === 'function') ? gppReadGamePalette() : [];
         const allowedHex = new Set();
@@ -32935,6 +33134,7 @@ if (_settings.profileColorsCollapse) {
     // behavior for why.
     function bulkEnableFiltered(template, core) {
         tryAutoScanFirst();
+        leaveEnableSelectedMode();
         if (liveState) liveState.soloMode = false;
         const realState = getRealPaletteRenderState(template.id);
         const real = getRealPaletteFormControls();
@@ -32962,7 +33162,19 @@ if (_settings.profileColorsCollapse) {
     // template's palette (e.g. focused template changed since it was set).
     function bulkEnableSelected(template, core) {
         tryAutoScanFirst();
-        if (liveState) liveState.soloMode = true;
+        if (liveState) {
+            const enteringSelectedMode = !liveState.enableSelectedMode;
+            liveState.soloMode = true;
+            liveState.enableSelectedMode = true;
+            // The checkbox defaults off when Selected is first chosen, but
+            // reopening/reapplying Selected should not unexpectedly turn off
+            // an already-enabled session-only highlight preference.
+            if (enteringSelectedMode) {
+                liveState.highlightNearest = false;
+                invalidateSelectedNearestHighlight();
+            }
+        }
+        syncEnableSelectedModeUi();
         const hex = liveState && liveState.selectedHex;
         if (!hex) {
             dbgPush('Mobile Painting: switched to solo mode, but no color is currently selected to re-solo.', { uiComponent: 'Mobile Painting' });
@@ -32983,6 +33195,110 @@ if (_settings.profileColorsCollapse) {
         if (typeof pw.changeColor === 'function') pw.changeColor(hex);
         updateHexDisplay(hex);
         notifyMaskChanged(template);
+    }
+
+    // The nested Enable > Selected option is intentionally session-only and
+    // starts off. A color tap can launch an asynchronous nearest-pixel search,
+    // so each transition invalidates older requests before they are allowed to
+    // start a glow for a no-longer-selected color.
+    function clearSelectedNearestPulse() {
+        if (typeof gppScanClearSelectedColorGlow === 'function') gppScanClearSelectedColorGlow();
+    }
+
+    function invalidateSelectedNearestHighlight() {
+        if (!liveState) return;
+        liveState.highlightRequestId++;
+        liveState.pendingHighlightTemplateId = null;
+        liveState.pendingHighlightPaletteIndex = null;
+        clearSelectedNearestPulse();
+    }
+
+    function isSelectedHighlightScanRunning(template) {
+        return typeof gppScanIsBusyFor === 'function' && gppScanIsBusyFor(template);
+    }
+
+    function leaveEnableSelectedMode() {
+        if (!liveState) return;
+        const changed = liveState.enableSelectedMode || liveState.highlightNearest || liveState.pendingHighlightTemplateId !== null;
+        if (changed) invalidateSelectedNearestHighlight();
+        liveState.enableSelectedMode = false;
+        liveState.highlightNearest = false;
+        syncEnableSelectedModeUi();
+    }
+
+    // The control-row DOM is built once, while mode changes happen from both
+    // its Enable menu and the bulk-action helpers above. Keep the optional
+    // UI callback on liveState so either path can reveal/hide the nested
+    // checkbox without rebuilding the whole row.
+    function syncEnableSelectedModeUi() {
+        if (!liveState || typeof liveState.syncEnableSelectedModeUi !== 'function') return;
+        liveState.syncEnableSelectedModeUi();
+    }
+
+    function requestSelectedNearestHighlight(template, paletteIndex) {
+        if (!liveState || !liveState.enableSelectedMode || !liveState.highlightNearest || !template) return;
+        const requestId = ++liveState.highlightRequestId;
+        liveState.pendingHighlightTemplateId = null;
+        liveState.pendingHighlightPaletteIndex = null;
+        const scanSummary = template.scanSummary;
+        const position = template.position ? { gridX: template.position.gridX, gridY: template.position.gridY } : null;
+        // Selected starts an auto-scan. A tap during it must use the fresh
+        // completed summary, not whatever happened to be left from the prior
+        // scan (or silently give up when this is the first scan ever).
+        if (!scanSummary || !position || isSelectedHighlightScanRunning(template)) {
+            liveState.pendingHighlightTemplateId = template.id;
+            liveState.pendingHighlightPaletteIndex = paletteIndex;
+            return;
+        }
+        if (typeof gppScanFindNearestError !== 'function' || typeof gppScanStartSelectedColorGlow !== 'function') return;
+        Promise.resolve(gppScanFindNearestError(template, { paletteIndex })).then((result) => {
+            const focused = getFocusedTemplateWithPalette();
+            const focusedPosition = focused && focused.position;
+            const requestStillCurrent = liveState && liveState.highlightRequestId === requestId;
+            const stillCurrent = requestStillCurrent && focused && focused.id === template.id &&
+                focused.scanSummary === scanSummary && focusedPosition &&
+                focusedPosition.gridX === position.gridX && focusedPosition.gridY === position.gridY &&
+                !isSelectedHighlightScanRunning(focused);
+            if (!stillCurrent) {
+                // A scan or placement completed while the chunked lookup was
+                // yielding. Queue one retry against the newer, authoritative
+                // state instead of showing a ring for stale pixels.
+                if (requestStillCurrent && liveState.enableSelectedMode && liveState.highlightNearest && focused && focused.id === template.id) {
+                    liveState.pendingHighlightTemplateId = template.id;
+                    liveState.pendingHighlightPaletteIndex = paletteIndex;
+                    retryPendingSelectedNearestHighlight(focused);
+                }
+                return;
+            }
+            if (result && result.ok) gppScanStartSelectedColorGlow(template.id, result.gridX, result.gridY);
+        }).catch((err) => {
+            console.error('[GeoPixelcons++] Mobile Painting: nearest selected-color highlight failed', err);
+        });
+    }
+
+    function retryPendingSelectedNearestHighlight(template) {
+        if (!liveState) return;
+        if (!liveState.enableSelectedMode || !liveState.highlightNearest) {
+            liveState.pendingHighlightTemplateId = null;
+            liveState.pendingHighlightPaletteIndex = null;
+            return;
+        }
+        const pendingTemplateId = liveState.pendingHighlightTemplateId;
+        const pendingPaletteIndex = liveState.pendingHighlightPaletteIndex;
+        if (!template || pendingTemplateId !== template.id || !Number.isInteger(pendingPaletteIndex)) {
+            liveState.pendingHighlightTemplateId = null;
+            liveState.pendingHighlightPaletteIndex = null;
+            return;
+        }
+        if (isSelectedHighlightScanRunning(template)) return;
+        if (!template.scanSummary || !template.position) {
+            liveState.pendingHighlightTemplateId = null;
+            liveState.pendingHighlightPaletteIndex = null;
+            return;
+        }
+        liveState.pendingHighlightTemplateId = null;
+        liveState.pendingHighlightPaletteIndex = null;
+        requestSelectedNearestHighlight(template, pendingPaletteIndex);
     }
 
     const GPC_HEX_VALUE_SCOPES = [
@@ -33076,12 +33392,12 @@ if (_settings.profileColorsCollapse) {
         menu.className = 'gpc-ctrl-menu';
         const closeMenu = () => menu.classList.remove('gpc-open');
         openControlsRowMenus.push(closeMenu);
-        optionDefs.forEach(({ text, onClick }) => {
+        optionDefs.forEach(({ text, onClick, closeOnClick = true }) => {
             const option = document.createElement('div');
             option.className = 'gpc-ctrl-menu-option';
             option.textContent = text;
             option.addEventListener('click', () => {
-                closeMenu();
+                if (closeOnClick) closeMenu();
                 onClick();
             });
             menu.appendChild(option);
@@ -33096,7 +33412,7 @@ if (_settings.profileColorsCollapse) {
         document.addEventListener('click', closeMenu);
 
         dropdown.append(button, menu);
-        return { el: dropdown, setLabel: (text) => { buttonText.textContent = text; } };
+        return { el: dropdown, menu, setLabel: (text) => { buttonText.textContent = text; } };
     }
 
     // Our own <select>, but its options are cloned from the real sort
@@ -33217,8 +33533,42 @@ if (_settings.profileColorsCollapse) {
             { text: 'All', onClick: withTemplate(bulkEnableAll) },
             { text: 'Owned', onClick: withTemplate(bulkEnableOwned) },
             { text: 'Filtered', onClick: withTemplate(bulkEnableFiltered) },
-            { text: 'Selected', onClick: withTemplate(bulkEnableSelected) },
+            // Keep this menu open so its nested, session-only checkbox is
+            // revealed immediately after the user enters Selected mode.
+            { text: 'Selected', closeOnClick: false, onClick: withTemplate(bulkEnableSelected) },
         ]);
+        const highlightNearestOption = document.createElement('label');
+        highlightNearestOption.className = 'gpc-ctrl-menu-option gpc-ctrl-menu-option-nested';
+        const highlightNearestInput = document.createElement('input');
+        highlightNearestInput.type = 'checkbox';
+        const highlightNearestText = document.createElement('span');
+        highlightNearestText.textContent = 'Highlight nearest';
+        highlightNearestOption.append(highlightNearestInput, highlightNearestText);
+        enableDropdown.menu.appendChild(highlightNearestOption);
+
+        const syncHighlightNearestOption = () => {
+            const selectedMode = !!(liveState && liveState.enableSelectedMode);
+            highlightNearestOption.hidden = !selectedMode;
+            highlightNearestOption.setAttribute('aria-hidden', String(!selectedMode));
+            highlightNearestInput.checked = selectedMode && !!liveState.highlightNearest;
+        };
+        if (liveState) liveState.syncEnableSelectedModeUi = syncHighlightNearestOption;
+        syncHighlightNearestOption();
+        highlightNearestInput.addEventListener('change', () => {
+            if (!liveState || !liveState.enableSelectedMode) {
+                highlightNearestInput.checked = false;
+                return;
+            }
+            liveState.highlightNearest = highlightNearestInput.checked;
+            // Turning this off must remove a guide already on screen, not
+            // merely stop a still-pending lookup from starting one later.
+            if (!liveState.highlightNearest) invalidateSelectedNearestHighlight();
+            else {
+                liveState.highlightRequestId++;
+                liveState.pendingHighlightTemplateId = null;
+                liveState.pendingHighlightPaletteIndex = null;
+            }
+        });
         const disableAllBtn = document.createElement('button');
         disableAllBtn.type = 'button';
         disableAllBtn.className = 'gpc-ctrl-btn';
@@ -33261,7 +33611,7 @@ if (_settings.profileColorsCollapse) {
     //      performFilterSort() directly -- neither reaches subscribers.
     //      Polling is the only reliable way to catch either without patching
     //      more of Ghost++'s own code than the one renderState hook above.
-    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, selectedHex, soloMode }
+    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
 
     // Shown in .gpc-mobile-palette-wrap's usual spot whenever no Ghost++
     // template is focused -- most notably the very first time a mobile
@@ -33316,9 +33666,12 @@ if (_settings.profileColorsCollapse) {
         // this matches that same behavior instead of gating the refresh on
         // an unrelated "did the grid's own content change" check.
         injectStyle();
+        retintBorrowedScanButtons();
         const template = getFocusedTemplateWithPalette();
 
         if (!template) {
+            leaveEnableSelectedMode();
+            liveState.scanSummaryRef = null;
             if (liveState.wrap) {
                 // Reclaim the borrowed palette-view toggle BEFORE the wrap
                 // holding it gets removed -- otherwise it would silently go
@@ -33353,6 +33706,7 @@ if (_settings.profileColorsCollapse) {
         }
 
         removeNoTemplatePrompt(); // a template just became focused (or already was) -- the real wrap is about to take (or already takes) its place
+        if (liveState.templateId && liveState.templateId !== template.id) invalidateSelectedNearestHighlight();
         const order = computeVisibleOrder(template);
         const orderKey = order.join(',');
         // Mirrors gpp-palette.js's own listMode check (gppSettings.
@@ -33366,7 +33720,12 @@ if (_settings.profileColorsCollapse) {
         // fix above addressed, just for a full rebuild's worth of state
         // instead of a stylesheet.
         const paletteViewMode = gppSettings.paletteViewMode === 'list' ? 'list' : 'grid';
-        const sameEverything = liveState.grid && liveState.templateId === template.id && liveState.orderKey === orderKey && liveState.paletteViewMode === paletteViewMode;
+        // gppScanRunInternal replaces scanSummary after a completed scan.
+        // Include that object identity in the key so this grid rebuilds its
+        // per-colour checkmarks/list progress instead of taking the mask-only
+        // fast path when Scan progress updates the same template in place.
+        const scanSummaryRef = template.scanSummary || null;
+        const sameEverything = liveState.grid && liveState.templateId === template.id && liveState.orderKey === orderKey && liveState.paletteViewMode === paletteViewMode && liveState.scanSummaryRef === scanSummaryRef;
 
         if (sameEverything) {
             const core = gppCreateCore();
@@ -33379,6 +33738,7 @@ if (_settings.profileColorsCollapse) {
                     setSwatchState(swatch, swatch.dataset.hex, enabled);
                 }
             }
+            retryPendingSelectedNearestHighlight(template);
             return;
         }
 
@@ -33388,6 +33748,8 @@ if (_settings.profileColorsCollapse) {
         liveState.templateId = template.id;
         liveState.orderKey = orderKey;
         liveState.paletteViewMode = paletteViewMode;
+        liveState.scanSummaryRef = scanSummaryRef;
+        retryPendingSelectedNearestHighlight(template);
         dbgPush('Mobile Painting: (re)built palette grid for template "' + template.id + '" (' + order.length + '/' + template.palette.length + ' colors visible).', { uiComponent: 'Mobile Painting' });
     }
 
@@ -33408,8 +33770,11 @@ if (_settings.profileColorsCollapse) {
     }
 
     function mount(bottomControls) {
-        applyFullWidthBottomControls(bottomControls);
-        dbgPush('Mobile Painting: #bottomControls found -- applied full-width layout.', { uiComponent: 'Mobile Painting' });
+        // Apply the current GeoPixels++ theme before the controls first enter
+        // the DOM. resync() continues to refresh this stylesheet afterward
+        // for live theme changes.
+        injectStyle();
+        dbgPush('Mobile Painting: #bottomControls found -- keeping the site-controlled responsive width.', { uiComponent: 'Mobile Painting' });
 
         const nativeContainer = bottomControls.querySelector('.control-container-colors');
         if (!nativeContainer) {
@@ -33445,7 +33810,14 @@ if (_settings.profileColorsCollapse) {
         const nativeTopBar = innerWrapperEl ? innerWrapperEl.querySelector(':scope > .w-full.flex') : null;
         if (nativeTopBar && !nativeTopBar.id) nativeTopBar.id = 'gpc-native-top-bar';
 
-        liveState = { bottomControls, savedNativeContainer: nativeContainer, wrap: null, grid: null, templateId: null, orderKey: null, paletteViewMode: null, selectedHex: null, soloMode: true };
+        liveState = {
+            bottomControls, savedNativeContainer: nativeContainer,
+            wrap: null, grid: null, templateId: null, orderKey: null,
+            paletteViewMode: null, scanSummaryRef: null, selectedHex: null,
+            soloMode: true, enableSelectedMode: false, highlightNearest: false,
+            highlightRequestId: 0, pendingHighlightTemplateId: null,
+            pendingHighlightPaletteIndex: null, syncEnableSelectedModeUi: null,
+        };
 
         // The native Sort button (sortAndSetColors()) is redundant with our
         // own Sort control below -- hidden in place, same reasoning as
