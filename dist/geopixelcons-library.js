@@ -1253,6 +1253,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Mobile Painting (in development): controls now apply the active GeoPixels++ Simple Black theme when the extension first loads' },
                 { type: 'fixed', text: 'Mobile Painting (in development): Scan progress now refreshes the compact palette\'s per-color checkmarks and status when its scan finishes' },
                 { type: 'added', text: 'Mobile Painting (in development): Enable > Selected now reveals an optional, session-only Highlight nearest checkbox; selecting a new color can show its nearest remaining pixel with large fading red rings without teleporting the map (off by default)' },
+                { type: 'fixed', text: 'Mobile Painting (in development): Highlight nearest red rings now remain visible even when the focused Ghost++ template is hidden or set to 0% opacity' },
                 { type: 'added', text: 'Mobile Painting (in development): native color grid replaced with the focused Ghost++ template\'s own color grid, styled like the Ghost++ manager' },
                 { type: 'added', text: 'Mobile Painting (in development): the color grid now stays live-synced with the Ghost++ manager -- switching templates or changing a color\'s visibility there updates it automatically' },
                 { type: 'added', text: 'Mobile Painting (in development): tapping a color now shows only that color\'s remaining pixels on the map and selects it as your active paint color in one tap' },
