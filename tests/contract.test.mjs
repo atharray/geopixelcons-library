@@ -26,7 +26,7 @@ test('publishes the library bridge when @require wraps the source', () => {
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Ghost Template Manager/);
-    assert.match(artifact, /const VERSION = '2\.4\.0';/);
+    assert.match(artifact, /const VERSION = '2\.4\.1';/);
     const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const versionPattern = new RegExp(`const LIBRARY_VERSION = '${escapedVersion}'; // x-release-please-version`);
     assert.match(artifact, versionPattern);
@@ -47,6 +47,9 @@ test('includes the opt-in native guild territory auto-loader', () => {
     assert.match(artifact, /fetchUserGuild/);
     assert.match(artifact, /fetchGuildProjects/);
     assert.match(artifact, /loadGuildProjectsInPageRealm/);
+});
+test('defaults Compact Paint Controls on for new installs', () => {
+    assert.match(artifact, /compactPaintOverflow: true/);
 });
 test('includes a confirmation gate for large bulk purchases', () => {
     assert.match(artifact, /BULK_PURCHASE_WARNING_THRESHOLD = 50/);

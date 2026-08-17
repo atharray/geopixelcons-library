@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.4.0';
+    const VERSION = '2.4.1';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -34,7 +34,7 @@
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
     ];
 
-    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: false, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
+    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
     FEATURE_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = true);
     // Ghost++ deliberately opts out of the blanket "every feature defaults on" rule above:
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
@@ -1229,6 +1229,13 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.4.1',
+            date: '2026-08-16',
+            items: [
+                { type: 'changed', text: 'Compact Paint Controls is now enabled by default for new installs' },
+            ]
+        },
         {
             version: '2.4.0',
             date: '2026-08-16',
