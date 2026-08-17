@@ -679,7 +679,11 @@
         // aims for 50 cells rather than imitating the regular glow's tiny
         // fixed CSS-pixel radius. It is capped to the visible viewport so a
         // close zoom never turns the whole canvas into an off-screen circle.
-        if (gppNearestSelectedColorGlow && template && template.id === gppNearestSelectedColorGlow.templateId && template.opacity > 0 && map && turf) {
+        // Keep this direct interaction guide independent of the Ghost++
+        // template opacity. A template can be intentionally hidden while the
+        // user is still painting with Mobile Painting, and the selected-color
+        // feedback must remain visible in that state.
+        if (gppNearestSelectedColorGlow && template && template.id === gppNearestSelectedColorGlow.templateId && map && turf) {
             const grid = gppReadGridConstants();
             const elapsed = Date.now() - gppNearestSelectedColorGlow.startTime;
             try {

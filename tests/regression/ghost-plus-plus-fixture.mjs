@@ -3030,6 +3030,17 @@ function buildDriverScript() {
     L.push('      gppScanClearSelectedColorGlow = originalClearGlow;');
     L.push('      gppTryAutoScan = originalTryAutoScan;');
     L.push('    }');
+    L.push('    var originalCanvasStroke = CanvasRenderingContext2D.prototype.stroke;');
+    L.push('    var selectedPulseStrokeCount = 0;');
+    L.push('    CanvasRenderingContext2D.prototype.stroke = function() { var strokeColor = String(this.strokeStyle || "").replace(/\\s/g, "").toLowerCase(); if (strokeColor === "#ef4444" || strokeColor === "rgb(239,68,68)") selectedPulseStrokeCount++; return originalCanvasStroke.apply(this, arguments); };');
+    L.push('    try {');
+    L.push('      gppScanStartSelectedColorGlow(template.id, template.position.gridX, template.position.gridY);');
+    L.push('      var pulsePainted = await waitFor(function() { return selectedPulseStrokeCount > 0; }, 1500);');
+    L.push('      if (!pulsePainted) throw new Error("REGRESSION: selected-colour pulse started but did not paint any red rings to the scan overlay canvas");');
+    L.push('    } finally {');
+    L.push('      gppScanClearSelectedColorGlow();');
+    L.push('      CanvasRenderingContext2D.prototype.stroke = originalCanvasStroke;');
+    L.push('    }');
     L.push('    var compactBeforeCompletedScan = document.getElementById("gpc-mobile-palette-grid");');
     L.push('    var refreshedPerColour = seededPerColour.map(function(entry) { return { index: entry.index, enabled: entry.enabled, correct: 0, wrong: entry.total, missing: 0, unknown: 0, total: entry.total }; });');
     L.push('    template.scanSummary = { scannedAt: new Date().toISOString(), total: seededTotal, correct: 0, wrong: seededTotal, missing: 0, unknown: 0, perColour: refreshedPerColour, states: new Uint8Array(template.width * template.height).fill(core.constants.ERROR_STATE.WRONG) };');
