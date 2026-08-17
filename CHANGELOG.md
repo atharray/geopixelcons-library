@@ -1,5 +1,52 @@
 # Changelog
 
+## [2.4.1](https://github.com/atharray/geopixelcons-library/compare/v2.4.0...v2.4.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* enable compact paint controls by default ([73d3ec1](https://github.com/atharray/geopixelcons-library/commit/73d3ec117cab17806bc52858adad986a62f9ba4e))
+
+## [2.4.0](https://github.com/atharray/geopixelcons-library/compare/v2.3.0...v2.4.0) (2026-08-16)
+
+
+### Features
+
+* warn before large bulk color purchases ([5d9ced5](https://github.com/atharray/geopixelcons-library/commit/5d9ced5b043c781890ffdc0b69d984d4c431fa8d))
+
+## [2.3.0](https://github.com/atharray/geopixelcons-library/compare/v2.2.0...v2.3.0) (2026-08-15)
+
+
+### Features
+
+* auto-load guild territories on map startup ([#21](https://github.com/atharray/geopixelcons-library/issues/21)) ([63cfa14](https://github.com/atharray/geopixelcons-library/commit/63cfa14ae6381475a2c5b51351640694c1ad89b4))
+
+## [2.2.0](https://github.com/atharray/geopixelcons-library/compare/v2.1.0...v2.2.0) (2026-08-14)
+
+
+### Features
+
+* **ghost:** add palette view toggle to compact mode ([#18](https://github.com/atharray/geopixelcons-library/issues/18)) ([dd034b5](https://github.com/atharray/geopixelcons-library/commit/dd034b57d25993e376f827b28c81a090ecc68ba7))
+
+## [2.1.0](https://github.com/atharray/geopixelcons-library/compare/v2.0.1...v2.1.0) (2026-08-14)
+
+
+### Features
+
+* **profile:** collapse large user color lists ([#15](https://github.com/atharray/geopixelcons-library/issues/15)) ([a144916](https://github.com/atharray/geopixelcons-library/commit/a14491630220f11489dbd9520540daf165235260))
+
+
+### Bug Fixes
+
+* **ci:** detect stable tags through GitHub API ([#16](https://github.com/atharray/geopixelcons-library/issues/16)) ([87916bb](https://github.com/atharray/geopixelcons-library/commit/87916bb7ef9aa554cac11d3feacd30325b30c07d))
+
+## [2.0.1](https://github.com/atharray/geopixelcons-library/compare/v2.0.0...v2.0.1) (2026-08-13)
+
+
+### Bug Fixes
+
+* **ghost-plus-plus:** stop minified-view header overflow from blocking controls ([c6bec00](https://github.com/atharray/geopixelcons-library/commit/c6bec0017dc77f5a216509998d2488f545f76425))
+
 ## [2.0.0](https://github.com/atharray/geopixelcons-library/compare/v1.0.2...v2.0.0) (2026-08-11)
 
 

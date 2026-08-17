@@ -1,7 +1,7 @@
-/* GeoPixelcons Library v2.0.0 - readable release bundle */
+/* GeoPixelcons Library v2.4.1 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
-    const LIBRARY_VERSION = '2.0.0'; // x-release-please-version
+    const LIBRARY_VERSION = '2.4.1'; // x-release-please-version
     let runtime = null;
     let booting = false;
 
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.1.0';
+    const VERSION = '2.5.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -30,6 +30,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'regionsHighscore', name: 'Regions Highscore', icon: '🏆', desc: 'Displays regional pixel/color contribution rankings.', features: ['Sort rankings by player or guild', 'Filter by pixel count, color, or region', 'Historical contribution statistics'] },
         { key: 'themeEditor', name: 'Theme Editor', icon: '🎨', desc: 'Visual map theme editor — edit MapLibre GL styles with color pickers, save/load/manage custom themes.', features: ['Bundled themes (Fjord, Obsidian, Monokai, Ayu Mirage, etc.)', 'Simple & Full color editing modes', 'Live preview toggle for instant feedback', 'Import/export themes as JSON files', 'Quick theme-switch submenu in the dropdown', 'Theme manager with create, edit & delete'] },
         { key: 'mapMarkers', name: 'Map Markers', icon: '📌', desc: 'Place and manage image stickers on the map canvas. Images scale and persist with the map.', features: ['Upload PNG/JPEG/WebP files or use image URLs', 'Drag to define placement bounds (click-only rejected with prompt)', 'Hold Shift during drag to force aspect-ratio lock', 'Per-marker lock/unlock aspect ratio toggle', 'Per-marker opacity slider and visibility toggle', 'Edit mode with 8 fixed-size handles (corners + edge midpoints)', 'Drag-to-sort cards to reorder rendering order', 'Compact card view with click-to-expand controls', 'Draggable management modal', 'Persistent storage via IndexedDB'] },
+        { key: 'profileColorsCollapse', name: 'Profile Color List Collapse', icon: '🎨', desc: 'Keeps large owned-color lists compact in the Profile overlay.', features: ['Shows the first 100 colors initially', 'Expands the complete list with Show All', 'Collapses it again with Show Less'] },
     ];
 
     const EXTENSION_LIST = [
@@ -46,7 +47,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Bottom paint controls span the full screen width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
     ];
 
-    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: false, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
+    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
     FEATURE_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = true);
     // Ghost++ deliberately opts out of the blanket "every feature defaults on" rule above:
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
@@ -447,6 +448,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 bulkPurchaseColors: () => {
                     if (typeof _pw.toggleProfile === 'function') _pw.toggleProfile();
                     setTimeout(() => flashEl(document.querySelector('#gp-bulk-profile-card')), 400);
+                },
+                profileColorsCollapse: () => {
+                    const profileOverlay = document.getElementById('profileOverlay');
+                    if (profileOverlay && profileOverlay.classList.contains('hidden') && typeof _pw.toggleProfile === 'function') {
+                        _pw.toggleProfile();
+                    }
+                    setTimeout(() => flashEl(document.getElementById('userColorsContainer')), 400);
                 },
                 themeEditor: () => {
                     if (_themeEditor) _themeEditor.toggleModal();
@@ -1238,8 +1246,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // ============================================================
     const CHANGELOG = [
         {
-            version: '2.1.0',
-            date: '2026-08-10',
+            version: '2.5.0',
+            date: '2026-08-16',
             items: [
                 { type: 'added', text: 'Mobile Painting (in development): bottom paint controls now span the full width of the screen when enabled' },
                 { type: 'added', text: 'Mobile Painting (in development): native color grid replaced with the focused Ghost++ template\'s own color grid, styled like the Ghost++ manager' },
@@ -1306,6 +1314,42 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'changed', text: 'Mobile Painting (in development): the template preview thumbnail is now a square, its width matching whatever height its own row ends up (was a plain rectangle sized to the image itself)' },
                 { type: 'fixed', text: 'Mobile Painting (in development): Enable, Sort, Filter, and Get hex values in the bottom controls row now close each other when a different one is opened, instead of leaving multiple of them visibly open on top of each other at once' },
                 { type: 'changed', text: 'Mobile Painting (in development): the "Visible rows" dropdown now defaults to 3 instead of 2' },
+            ]
+        },
+        {
+            version: '2.4.1',
+            date: '2026-08-16',
+            items: [
+                { type: 'changed', text: 'Compact Paint Controls is now enabled by default for new installs' },
+            ]
+        },
+        {
+            version: '2.4.0',
+            date: '2026-08-16',
+            items: [
+                { type: 'added', text: 'Bulk Purchase Colors now warns before buying more than 50 colors, showing the color count and total Pixel cost with Continue or Cancel options' },
+            ]
+        },
+        {
+            version: '2.3.0',
+            date: '2026-08-14',
+            items: [
+                { type: 'added', text: 'Guild Overhaul: optionally load and show guild territories automatically when the map opens' },
+            ]
+        },
+        {
+            version: '2.2.0',
+            date: '2026-08-13',
+            items: [
+                { type: 'added', text: 'Ghost++ compact view now includes the Palette view Grid/List toggle directly below Enable all and Disable all' },
+            ]
+        },
+        {
+            version: '2.1.0',
+            date: '2026-08-13',
+            items: [
+                { type: 'added', text: 'Profile overlay: owned-color lists over 100 colors now start compact with a Show All button, and can be collapsed again with Show Less' },
+                { type: 'fixed', text: 'Profile color list: the new enhancement no longer watches every page mutation after the native profile container is found, preventing unnecessary background work' },
             ]
         },
         {
@@ -5129,6 +5173,31 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // somewhat above the bare 480px floor, not only exactly at it.
     const GPP_NARROW_SWAP_MARGIN = 80;
 
+    // .gpp-head is a plain flex row (Ghost++ label, editing name, spacer,
+    // minify/close buttons) with no wrap -- a long ingested filename (image
+    // hashes, camera exports, etc. routinely run 40+ characters) grows the
+    // name span wide enough to shove the minify/close buttons straight off
+    // the modal's right edge. With the panel then stuck in minified mode
+    // (only Enable all/Disable all + the color grid shown, per that view's
+    // own CSS below) there was no other control left to toggle it back off
+    // -- reported by ReaCreations, 2026-08-13. Truncate the display copy
+    // here rather than the modal's overflow: hidden alone, so the name
+    // stays readable instead of just clipping mid-character.
+    // Ingested template names never actually carry an extension by this
+    // point -- gppIngestImageFile strips it before template.name is ever
+    // set (gpp-runtime.js), and JSON re-imports inherit that already-bare
+    // name -- but this still preserves one defensively in case a future
+    // ingest path ever sets a dotted name.
+    const GPP_EDITING_NAME_MAX = 10;
+    function gppTruncateEditingName(name) {
+        const safe = name || 'Untitled template';
+        const extMatch = /\.[a-z0-9]{2,4}$/i.exec(safe);
+        const ext = extMatch ? extMatch[0] : '';
+        const base = ext ? safe.slice(0, -ext.length) : safe;
+        if (base.length <= GPP_EDITING_NAME_MAX) return safe;
+        return base.slice(0, GPP_EDITING_NAME_MAX) + '...' + ext;
+    }
+
     // Rewrites the tag's content every call rather than no-op-ing once it
     // exists — t2()/isDarkMode() are evaluated fresh each time this runs, so
     // re-calling it (see gpp-init.js's theme-change observer) is how the UI
@@ -5169,8 +5238,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             #${GPP_IDS.modal}.gpp-hidden { display: none; }
             /* ── Minified view (per explicit user feedback) ──────────────
                Pure CSS toggle (see the minify button's click handler below)
-               -- hides everything except the Enable all/Disable all row and
-               the color grid itself, and shrinks the modal down to a small
+               -- hides everything except the Enable all/Disable all row, the
+               palette Grid/List control, and the color grid itself, and
+               shrinks the modal down to a small
                floating strip. The real sections/controllers underneath stay
                fully mounted and functional; only their visibility changes,
                so nothing needs to be re-rendered when toggling in or out. */
@@ -5181,6 +5251,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             #${GPP_IDS.modal}.gpp-minified #${GPP_IDS.right},
             #${GPP_IDS.modal}.gpp-minified .gpp-edge,
             #${GPP_IDS.modal}.gpp-minified .gpp-corner { display: none !important; }
+            /* The "Ghost++" title itself is dead weight in the already-cramped
+               260px minified strip -- the editing-name label next to it (see
+               gppTruncateEditingName above) already identifies the panel,
+               so drop the title to leave it more room before truncating. */
+            #${GPP_IDS.modal}.gpp-minified .gpp-head-title { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-left-body { overflow: hidden; }
             #${GPP_IDS.modal}.gpp-minified #gpp-left-body > *:not(#gpp-palette-section) { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > summary,
@@ -5227,9 +5302,32 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             #${GPP_IDS.modal} .gpp-head button {
                 border: none; background: transparent; color: inherit; cursor: pointer; font-size: 14px;
             }
+            /* Two stacked lines (name, then position) rather than one run-on
+               string -- a single-line version had the whole thing (name AND
+               the X/Y coordinates after it) subject to the same nowrap +
+               ellipsis rule below, so on anything narrower than the full
+               string's width the coordinates themselves got silently
+               ellipsis-clipped along with the name, not just the name (per
+               user follow-up on the original overflow fix). Splitting into
+               two lines lets each be truncated independently -- only
+               .gpp-editing-name (backstopping gppTruncateEditingName()) ever
+               needs to clip; .gpp-editing-coords is always short and fixed-
+               format ("X: n, Y: n") so it is never truncated. */
             #${GPP_IDS.editingLabel} {
+                display: flex; flex-direction: column; gap: 1px;
                 font-size: 11px; font-weight: 600;
                 color: ${t2('#475569', '#a6adc8')};
+                /* min-width: 0 lets this actually shrink inside the flex row
+                   (flex items default to min-width: auto -- content width --
+                   which is exactly what let a long name push the minify/close
+                   buttons off the modal before). */
+                min-width: 0;
+            }
+            #${GPP_IDS.editingLabel} .gpp-editing-name {
+                min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+            }
+            #${GPP_IDS.editingLabel} .gpp-editing-coords {
+                font-weight: 400; opacity: .85;
             }
             /* No overflow-y/scrollbar-gutter here — #gpp-left-body (its
                child, below) is the one that actually scrolls (.gpp-head
@@ -5618,10 +5716,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             <div class="gpp-corner se" data-gpp-resize="se"></div>
             <div id="${GPP_IDS.left}">
                 <div class="gpp-head" data-gpp-drag>
-                    <strong>Ghost++</strong>
-                    <span id="${GPP_IDS.editingLabel}"></span>
+                    <strong class="gpp-head-title">Ghost++</strong>
+                    <span id="${GPP_IDS.editingLabel}">
+                        <span class="gpp-editing-name"></span>
+                        <span class="gpp-editing-coords"></span>
+                    </span>
                     <span class="gpp-spacer"></span>
-                    <button type="button" data-gpp-action="minify" aria-label="Minified view" title="Compact view: just Enable all / Disable all and the color grid">▭</button>
+                    <button type="button" data-gpp-action="minify" aria-label="Minified view" title="Compact view: Enable/Disable all, palette view, and the color grid">▭</button>
                     <button type="button" data-gpp-action="close" aria-label="Close">✕</button>
                 </div>
                 <div id="gpp-left-body" style="flex:1; overflow-y:auto;"></div>
@@ -5846,7 +5947,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         // the box is now" / "would it be possible to make it collapsible...
         // or at least some type of minified view with only what you need to
         // paint"): a compact mode showing ONLY the Enable all/Disable all
-        // buttons and the color grid (height-capped to ~2 rows, scrollable)
+        // buttons, the palette Grid/List control, and the color grid
+        // (height-capped to ~2 rows, scrollable)
         // -- everything else (ingest, Progress, Error Settings, View
         // Settings, Template Settings, the whole right panel/library) is
         // hidden via the .gpp-minified CSS below. Pure CSS toggle, not a
@@ -5888,7 +5990,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 if (event.target !== modal || event.propertyName !== 'opacity') return;
                 modal.removeEventListener('transitionend', onFadeOut);
                 const minified = modal.classList.toggle('gpp-minified'); // the actual (instant) layout swap, now hidden by the low opacity above
-                btn.title = minified ? 'Exit compact view' : 'Compact view: just Enable all / Disable all and the color grid';
+                btn.title = minified ? 'Exit compact view' : 'Compact view: Enable/Disable all, palette view, and the color grid';
                 btn.setAttribute('aria-label', minified ? 'Exit minified view' : 'Minified view');
                 modal.style.opacity = '1';
                 const onFadeIn = event2 => {
@@ -9422,6 +9524,29 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         style.textContent = `
             .gpp-palette-empty { font-size: 12px; color: ${t2('#64748b', '#a6adc8')}; padding: 6px 2px; }
             .gpp-palette-panel { display: flex; flex-direction: column; gap: 7px; margin: 8px 0; }
+            /* The compact panel gets the same Grid/List control as View
+               Settings, but it stays out of the normal palette layout so
+               the two controls never appear as duplicate rows. */
+            .gpp-palette-view-row.gpp-vs-row {
+                display: none; align-items: center; gap: 8px; margin: 0;
+            }
+            .gpp-minified .gpp-palette-view-row.gpp-vs-row { display: flex; }
+            .gpp-palette-view-row .gpp-vs-label {
+                flex: 1 1 auto; min-width: 0; font-size: 11px;
+                color: ${t2('#1f2937', '#e2e2f5')};
+            }
+            .gpp-palette-view-row .gpp-vs-view-toggle {
+                display: flex; border-radius: 6px; overflow: hidden; flex-shrink: 0;
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+            }
+            .gpp-palette-view-row .gpp-vs-view-btn {
+                font: inherit; font-size: 12px; line-height: 1; cursor: pointer; border: none; padding: 4px 8px;
+                background: ${t2('#ffffff', '#313244')}; color: ${t2('#64748b', '#a6adc8')};
+            }
+            .gpp-palette-view-row .gpp-vs-view-btn:hover { background: ${t2('#f3f4f6', '#45475a')}; }
+            .gpp-palette-view-row .gpp-vs-view-btn-active {
+                background: ${t2('#2563eb', '#89b4fa')}; color: ${t2('#ffffff', '#1e1e2e')};
+            }
             .gpp-gnc-group {
                 padding: 6px 0; border-bottom: 1px solid ${t2('#e5e7eb', '#313244')};
             }
@@ -9965,10 +10090,57 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 target.setGhostColorsAsActivePalette();
             }
         });
+
+        // Compact-mode palette view — the same persisted Grid/List choice as
+        // View Settings, placed directly below Enable all / Disable all.
+        // These controls intentionally have no ids because the full View
+        // Settings section already owns the stable ids for its own pair.
+        const paletteViewRow = document.createElement('div');
+        paletteViewRow.className = 'gpp-vs-row gpp-palette-view-row';
+        const paletteViewLabel = document.createElement('span');
+        paletteViewLabel.className = 'gpp-vs-label';
+        paletteViewLabel.textContent = 'Palette view';
+        const paletteViewToggle = document.createElement('div');
+        paletteViewToggle.className = 'gpp-vs-view-toggle';
+        const compactGridBtn = document.createElement('button');
+        compactGridBtn.type = 'button';
+        compactGridBtn.className = 'gpp-vs-view-btn';
+        compactGridBtn.dataset.gppPaletteView = 'grid';
+        compactGridBtn.textContent = '▦';
+        compactGridBtn.title = 'Grid view';
+        compactGridBtn.setAttribute('aria-label', 'Grid view');
+        const compactListBtn = document.createElement('button');
+        compactListBtn.type = 'button';
+        compactListBtn.className = 'gpp-vs-view-btn';
+        compactListBtn.dataset.gppPaletteView = 'list';
+        compactListBtn.textContent = '☰';
+        compactListBtn.title = 'List view';
+        compactListBtn.setAttribute('aria-label', 'List view');
+        function syncCompactPaletteViewButtons() {
+            const mode = gppSettings.paletteViewMode === 'list' ? 'list' : 'grid';
+            compactGridBtn.classList.toggle('gpp-vs-view-btn-active', mode === 'grid');
+            compactListBtn.classList.toggle('gpp-vs-view-btn-active', mode === 'list');
+            compactGridBtn.setAttribute('aria-pressed', String(mode === 'grid'));
+            compactListBtn.setAttribute('aria-pressed', String(mode === 'list'));
+        }
+        function setCompactPaletteViewMode(mode) {
+            if (gppSettings.paletteViewMode === mode) return;
+            gppSettings.paletteViewMode = mode;
+            gppState.saveSettings();
+            syncCompactPaletteViewButtons();
+            performFilterSort();
+            if (typeof controller.onChange === 'function') controller.onChange();
+        }
+        compactGridBtn.addEventListener('click', () => setCompactPaletteViewMode('grid'));
+        compactListBtn.addEventListener('click', () => setCompactPaletteViewMode('list'));
+        paletteViewToggle.append(compactGridBtn, compactListBtn);
+        paletteViewRow.append(paletteViewLabel, paletteViewToggle);
+        syncCompactPaletteViewButtons();
+
         bulkRowTop.append(allBtn, noneBtn);
         bulkRowMiddle.append(ownedBtn, enableFilteredBtn);
         bulkRowBottom.append(activeBtn, setPaletteBtn);
-        panel.append(bulkRowTop, bulkRowMiddle, bulkRowBottom);
+        panel.append(bulkRowTop, paletteViewRow, bulkRowMiddle, bulkRowBottom);
 
         // No "Sync with selected color" button here — per explicit product
         // decision, that stays the legacy Ghost Palette Color Search tool's
@@ -10830,6 +11002,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         controller.update = function gppPaletteControllerUpdate(template, onChange) {
             controller.template = template || null;
             controller.onChange = typeof onChange === 'function' ? onChange : null;
+            syncCompactPaletteViewButtons();
             gppPaletteHideTooltip(); // avoid a stuck tooltip across a re-render/deselection
             if (!controller.template) {
                 emptyEl.style.display = '';
@@ -13053,12 +13226,16 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 function refreshAll() {
                     const template = gppState.getFocusedTemplate();
                     const editingLabel = document.getElementById(GPP_IDS.editingLabel);
+                    const editingNameEl = editingLabel.querySelector('.gpp-editing-name');
+                    const editingCoordsEl = editingLabel.querySelector('.gpp-editing-coords');
                     if (!template) {
-                        editingLabel.textContent = '';
-                    } else if (template.position) {
-                        editingLabel.textContent = template.name + ' — X: ' + template.position.gridX + ', Y: ' + template.position.gridY;
+                        editingNameEl.textContent = '';
+                        editingCoordsEl.textContent = '';
                     } else {
-                        editingLabel.textContent = template.name + ' — not placed';
+                        editingNameEl.textContent = gppTruncateEditingName(template.name);
+                        editingCoordsEl.textContent = template.position
+                            ? 'X: ' + template.position.gridX + ', Y: ' + template.position.gridY
+                            : 'not placed';
                     }
 
                     // Single choke point every state-changing action already flows through
@@ -17980,6 +18157,9 @@ patch();
     let territoryCanvas = null;
     let territoryVisible = false;
     let territoryRects = []; // Array of { gridX, gridY, width, height, label }
+    let territoryProjects = null;
+    let territoryProjectsLoadPromise = null;
+    let territoryAutoLoadStarted = false;
     let territoryActivityMap = {}; // Map of rect.index → boolean (has active players)
     let territorySettings = loadTerritorySettings();
 
@@ -18012,11 +18192,7 @@ patch();
     }
 
     function loadTerritorySettings() {
-        try {
-            const stored = GM_getValue(TERRITORY_STORAGE_KEY, null);
-            if (stored) return stored;
-        } catch (e) {}
-        return {
+        const defaults = {
             borderColor: '#3b82f6',
             borderThickness: 2,
             showLabels: true,
@@ -18028,8 +18204,15 @@ patch();
             activeBorderColor: '#22c55e',
             activeFillColor: '#22c55e',
             abandonedBorderColor: '#6b7280',
-            abandonedFillColor: '#6b7280'
+            abandonedFillColor: '#6b7280',
+            autoLoadTerritories: false
         };
+
+        try {
+            const stored = GM_getValue(TERRITORY_STORAGE_KEY, null);
+            if (stored && typeof stored === 'object') return { ...defaults, ...stored };
+        } catch (e) {}
+        return defaults;
     }
 
     function saveTerritorySettings() {
@@ -20514,6 +20697,160 @@ patch();
     // =====================================================
 
     /**
+     * Ask the native page code to refresh guild state and return its projects.
+     * The native auth values and userGuildData are top-level page bindings, so
+     * this must run in the page realm instead of copying credentials here.
+     */
+    function loadGuildProjectsInPageRealm() {
+        return new Promise((resolve) => {
+            const pageWindow = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
+            const eventName = `gpcGuildProjectsLoaded_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+            const requestId = Math.random().toString(36).slice(2);
+            let settled = false;
+            let timeoutId = null;
+
+            const finish = (projects) => {
+                if (settled) return;
+                settled = true;
+                pageWindow.removeEventListener(eventName, onLoaded);
+                if (timeoutId !== null) clearTimeout(timeoutId);
+                resolve(projects);
+            };
+
+            const onLoaded = (event) => {
+                const detail = event && event.detail;
+                if (!detail || detail.requestId !== requestId) return;
+
+                if (!detail.ok) {
+                    console.warn('[Guild Territories] Native guild project loader failed:', detail.error || 'unknown error');
+                    finish(null);
+                    return;
+                }
+
+                try {
+                    const projects = JSON.parse(detail.projectsJson || '[]');
+                    finish(Array.isArray(projects) ? projects : []);
+                } catch (error) {
+                    console.warn('[Guild Territories] Could not read native guild projects:', error);
+                    finish(null);
+                }
+            };
+
+            pageWindow.addEventListener(eventName, onLoaded);
+            timeoutId = setTimeout(() => {
+                console.warn('[Guild Territories] Timed out waiting for native guild functions.');
+                finish(null);
+            }, 20000);
+
+            try {
+                const script = document.createElement('script');
+                script.textContent = `
+                    (() => {
+                        const eventName = ${JSON.stringify(eventName)};
+                        const requestId = ${JSON.stringify(requestId)};
+
+                        const dispatch = (ok, projectsJson, error) => {
+                            window.dispatchEvent(new CustomEvent(eventName, {
+                                detail: { requestId, ok, projectsJson, error }
+                            }));
+                        };
+
+                        const wait = (predicate, attempts = 80) => new Promise((resolveWait) => {
+                            let remaining = attempts;
+                            const check = () => {
+                                if (predicate()) {
+                                    resolveWait(true);
+                                } else if (--remaining <= 0) {
+                                    resolveWait(false);
+                                } else {
+                                    setTimeout(check, 250);
+                                }
+                            };
+                            check();
+                        });
+
+                        const hasAuth = () => {
+                            const token = typeof tokenUser !== 'undefined' ? tokenUser : null;
+                            const userId = typeof userData !== 'undefined' && userData
+                                ? userData.id
+                                : (typeof userID !== 'undefined' ? userID : null);
+                            return !!token && !!userId;
+                        };
+
+                        (async () => {
+                            try {
+                                const functionsReady = await wait(() =>
+                                    typeof fetchUserGuild === 'function' &&
+                                    typeof fetchGuildProjects === 'function'
+                                );
+                                if (!functionsReady || !(await wait(hasAuth))) {
+                                    throw new Error('Native guild functions or login state are not ready.');
+                                }
+
+                                await fetchUserGuild();
+                                if (typeof userGuildData === 'undefined' || !userGuildData || !userGuildData.id) {
+                                    dispatch(true, '[]', '');
+                                    return;
+                                }
+
+                                await fetchGuildProjects();
+                                const projects = Array.isArray(userGuildData.projects)
+                                    ? userGuildData.projects.map((project) => ({
+                                        id: project && project.id,
+                                        image: project && project.image,
+                                        imageGridX: project && project.imageGridX,
+                                        imageGridY: project && project.imageGridY
+                                    }))
+                                    : [];
+                                dispatch(true, JSON.stringify(projects), '');
+                            } catch (error) {
+                                dispatch(false, '[]', error && error.message ? error.message : String(error));
+                            }
+                        })();
+                    })();
+                `;
+                (document.head || document.documentElement).appendChild(script);
+                script.remove();
+            } catch (error) {
+                console.warn('[Guild Territories] Could not start native guild project loader:', error);
+                finish(null);
+            }
+        });
+    }
+
+    /**
+     * Refresh projects once at a time. The local fallback keeps older page
+     * contexts and test fixtures compatible when native functions are absent.
+     */
+    function refreshTerritoryProjects() {
+        if (territoryProjectsLoadPromise) return territoryProjectsLoadPromise;
+
+        territoryProjectsLoadPromise = (async () => {
+            const nativeProjects = await loadGuildProjectsInPageRealm();
+            if (Array.isArray(nativeProjects)) {
+                territoryProjects = nativeProjects;
+                return nativeProjects;
+            }
+
+            try {
+                if (typeof userGuildData !== 'undefined' && userGuildData && typeof fetchGuildProjects === 'function') {
+                    await fetchGuildProjects();
+                    territoryProjects = Array.isArray(userGuildData.projects) ? userGuildData.projects : [];
+                    return territoryProjects;
+                }
+            } catch (error) {
+                console.warn('[Guild Territories] Local guild project fallback failed:', error);
+            }
+
+            return null;
+        })().finally(() => {
+            territoryProjectsLoadPromise = null;
+        });
+
+        return territoryProjectsLoadPromise;
+    }
+
+    /**
      * Create the territory overlay canvas that sits on top of the map.
      * Similar approach to geopixels++ censor canvas but draws stroke-only rectangles.
      */
@@ -20543,19 +20880,24 @@ patch();
      * Each project has imageGridX, imageGridY (top-left) and an image (base64 PNG).
      * Width/height are the pixel dimensions of the PNG (1 pixel = 1 grid unit).
      */
-    async function buildTerritoryRects() {
-        if (typeof userGuildData === 'undefined' || !userGuildData || !userGuildData.projects) {
+    async function buildTerritoryRects(projects = null) {
+        const projectList = Array.isArray(projects)
+            ? projects
+            : (Array.isArray(territoryProjects)
+                ? territoryProjects
+                : (typeof userGuildData !== 'undefined' && userGuildData && Array.isArray(userGuildData.projects)
+                    ? userGuildData.projects
+                    : []));
+
+        if (projectList.length === 0) {
             console.warn('[Guild Territories] No guild data or projects available');
             return [];
         }
 
-        const projects = userGuildData.projects;
-        if (projects.length === 0) return [];
-
         const rects = [];
 
-        for (let i = 0; i < projects.length; i++) {
-            const project = projects[i];
+        for (let i = 0; i < projectList.length; i++) {
+            const project = projectList[i];
             try {
                 const dims = await getImageDimensionsFromSrc(project.image);
                 rects.push({
@@ -20586,12 +20928,8 @@ patch();
         }
 
         try {
-            // Ensure guild projects are fetched
-            if (typeof userGuildData !== 'undefined' && userGuildData && typeof fetchGuildProjects === 'function') {
-                await fetchGuildProjects();
-            }
-
-            const rects = await buildTerritoryRects();
+            const projects = await refreshTerritoryProjects();
+            const rects = await buildTerritoryRects(projects);
 
             if (rects.length === 0) {
                 alert('No guild projects found to export.');
@@ -20802,11 +21140,49 @@ patch();
     }
 
     /**
+     * Show the territory overlay, optionally suppressing the no-project alert
+     * used by the silent startup path.
+     */
+    async function showTerritories({ silent = false } = {}) {
+        const toggleBtn = document.getElementById('territoryToggleBtn');
+        if (toggleBtn) {
+            toggleBtn.disabled = true;
+            toggleBtn.innerHTML = '⏳ Processing...';
+        }
+
+        try {
+            const projects = await refreshTerritoryProjects();
+            territoryRects = await buildTerritoryRects(projects);
+
+            if (territoryRects.length === 0) {
+                if (!silent) alert('No guild projects found to display territories for.');
+                return false;
+            }
+
+            createTerritoryCanvas();
+            territoryVisible = true;
+            drawTerritories();
+            updateTerritoryToggleButton();
+            console.log(`[Guild Territories] Showing ${territoryRects.length} territories`);
+            return true;
+
+        } catch (err) {
+            console.error('[Guild Territories] Error building territories:', err);
+            if (!silent) alert('Failed to process territories: ' + err.message);
+            return false;
+        } finally {
+            if (toggleBtn) {
+                toggleBtn.disabled = false;
+                updateTerritoryToggleButton();
+            }
+        }
+    }
+
+    /**
      * Toggle territory overlay on/off. If turning on, process projects first.
      */
     async function toggleTerritories() {
         if (territoryVisible) {
-            // Turn off
             territoryVisible = false;
             if (territoryCanvas) {
                 const ctx = territoryCanvas.getContext('2d');
@@ -20817,43 +21193,7 @@ patch();
             return;
         }
 
-        // Turn on - process projects
-        const toggleBtn = document.getElementById('territoryToggleBtn');
-        if (toggleBtn) {
-            toggleBtn.disabled = true;
-            toggleBtn.innerHTML = '⏳ Processing...';
-        }
-
-        try {
-            // Ensure guild projects are fetched
-            if (typeof userGuildData !== 'undefined' && userGuildData && typeof fetchGuildProjects === 'function') {
-                await fetchGuildProjects();
-            }
-
-            territoryRects = await buildTerritoryRects();
-
-            if (territoryRects.length === 0) {
-                if (toggleBtn) {
-                    toggleBtn.disabled = false;
-                    toggleBtn.innerHTML = '🗺️ Show Territories';
-                    toggleBtn.className = 'territory-toggle-btn inactive';
-                }
-                alert('No guild projects found to display territories for.');
-                return;
-            }
-
-            createTerritoryCanvas();
-            territoryVisible = true;
-            drawTerritories();
-            updateTerritoryToggleButton();
-            console.log(`[Guild Territories] Showing ${territoryRects.length} territories`);
-
-        } catch (err) {
-            console.error('[Guild Territories] Error building territories:', err);
-            alert('Failed to process territories: ' + err.message);
-        }
-
-        if (toggleBtn) toggleBtn.disabled = false;
+        await showTerritories();
     }
 
     /**
@@ -20902,6 +21242,13 @@ patch();
         const fillOpacityPct = Math.round(territorySettings.fillAlpha * 100);
 
         content.innerHTML = `
+            <div class="territory-section-divider">Startup</div>
+            <div class="territory-setting-row">
+                    <label for="territoryAutoLoadCheck" title="Load your guild data and show territories automatically after the map loads">Automatically load territories when loading Geopixels</label>
+                <input type="checkbox" id="territoryAutoLoadCheck" ${territorySettings.autoLoadTerritories ? 'checked' : ''}
+                       class="w-4 h-4 cursor-pointer accent-blue-500"
+                       title="Load guild territories automatically when GeoPixels opens">
+            </div>
             <div class="territory-setting-row">
                 <label>Border Color</label>
                 <input type="color" id="territoryColorInput" value="${territorySettings.borderColor}"
@@ -21092,6 +21439,14 @@ patch();
                 document.getElementById(id)?.addEventListener('change', updatePreviewAndSave);
             });
             document.getElementById('territoryFillAlphaRange')?.addEventListener('input', updatePreviewAndSave);
+
+            document.getElementById('territoryAutoLoadCheck')?.addEventListener('change', (event) => {
+                territorySettings.autoLoadTerritories = event.target.checked;
+                saveTerritorySettings();
+                if (event.target.checked && !territoryVisible) {
+                    showTerritories({ silent: true });
+                }
+            });
         };
 
         // Defer event wiring until after DOM insertion
@@ -21677,10 +22032,8 @@ patch();
             if (territoryRects.length === 0) {
                 // Try to build territory rects (non-blocking, best-effort)
                 try {
-                    if (typeof userGuildData !== 'undefined' && userGuildData && typeof fetchGuildProjects === 'function') {
-                        await fetchGuildProjects();
-                    }
-                    territoryRects = await buildTerritoryRects();
+                    const projects = await refreshTerritoryProjects();
+                    territoryRects = await buildTerritoryRects(projects);
                 } catch (e) {
                     console.warn('[Guild Players] Could not build territory rects for coloring:', e);
                 }
@@ -22252,6 +22605,20 @@ patch();
 
     // --- Initialization ---
 
+    function scheduleAutoLoadTerritories() {
+        if (!territorySettings.autoLoadTerritories || territoryAutoLoadStarted) return;
+        territoryAutoLoadStarted = true;
+
+        // Let the native page finish its initial login/map setup before the
+        // page-realm guild loader starts. It will still wait for auth/functions
+        // briefly if the site is slower than this first task.
+        setTimeout(() => {
+            showTerritories({ silent: true }).then((shown) => {
+                if (!shown) console.log('[Guild Territories] Automatic territory display found no projects.');
+            });
+        }, 0);
+    }
+
     function init() {
         transformGuildModal();
         hookTerritoryToMap();
@@ -22271,6 +22638,7 @@ patch();
         });
 
         bodyObserver.observe(document.body, { childList: true, subtree: true });
+        scheduleAutoLoadTerritories();
     }
 
     if (document.readyState === 'loading') {
@@ -22290,6 +22658,7 @@ patch();
             console.error('[GeoPixelcons++] ❌ Guild Overhaul failed:', err);
         }
     }
+
 
 
     // ============================================================
@@ -26454,6 +26823,7 @@ patch();
 
     // ─── Constants ────────────────────────────────────────────────────────────────
     const PIXELS_PER_COLOR = 100; // Informational cost shown in the preview
+    const BULK_PURCHASE_WARNING_THRESHOLD = 50;
     const _pw = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
 
     // ─── Dark mode detection (geopixels++ compatibility) ──────────────────────────
@@ -26876,6 +27246,10 @@ patch();
     let _bulkOverlay = null;
     /** Original ordered list passed to openBulkModal (preserved for results display). */
     let _pendingColors = [];
+    /** Separate warning overlay shown before large purchases are submitted. */
+    let _bulkWarningOverlay = null;
+    /** Action resumed by Continue after the large-purchase warning. */
+    let _bulkWarningContinue = null;
 
     /** Per-status visual style config. */
     function getStatusStyles() {
@@ -26937,6 +27311,68 @@ patch();
         row.style.borderColor = s.border;
         const badge = row.querySelector('.gp-row-badge');
         if (badge) { badge.textContent = s.label; badge.style.color = s.textColor; }
+    }
+
+    function ensureBulkWarningModal() {
+        if (_bulkWarningOverlay) return;
+
+        const c = t();
+        const dark = isDarkMode();
+        const primaryBg = dark ? '#89b4fa' : '#3b82f6';
+        const primaryText = dark ? '#1e1e2e' : '#fff';
+
+        _bulkWarningOverlay = document.createElement('div');
+        _bulkWarningOverlay.id = 'gp-bulk-warning-overlay';
+        _bulkWarningOverlay.style.cssText =
+            'position:fixed;inset:0;z-index:10001;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);';
+        _bulkWarningOverlay.innerHTML = `
+<div id="gp-bulk-warning-panel" role="dialog" aria-modal="true" aria-labelledby="gp-bulk-warning-title"
+     style="background:${c.panelBg};color:${c.text};border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:90%;max-width:28rem;padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
+    <h2 id="gp-bulk-warning-title" style="margin:0;font-size:1.25rem;font-weight:700;color:${c.text};">⚠️ WARNING ⚠️</h2>
+    <p id="gp-bulk-warning-summary" style="margin:0;font-size:1rem;line-height:1.5;color:${c.textMed};"></p>
+    <p style="margin:0;font-size:0.85rem;line-height:1.45;color:${c.textSec};">Continue?</p>
+    <div style="display:flex;gap:0.75rem;">
+        <button id="gp-bulk-warning-cancel"
+                style="flex:1;padding:0.5rem 1rem;background:${c.cancelBg};border:none;border-radius:0.5rem;font-weight:600;cursor:pointer;font-size:0.9rem;color:${c.cancelText};">
+            Cancel
+        </button>
+        <button id="gp-bulk-warning-continue"
+                style="flex:1;padding:0.5rem 1rem;background:${primaryBg};color:${primaryText};border:none;border-radius:0.5rem;font-weight:600;cursor:pointer;font-size:0.9rem;">
+            Continue (buy all)
+        </button>
+    </div>
+</div>`;
+
+        document.body.appendChild(_bulkWarningOverlay);
+
+        document.getElementById('gp-bulk-warning-cancel').addEventListener('click', cancelBulkWarning);
+        document.getElementById('gp-bulk-warning-continue').addEventListener('click', continueBulkWarning);
+        _bulkWarningOverlay.addEventListener('click', e => { if (e.target === _bulkWarningOverlay) cancelBulkWarning(); });
+    }
+
+    function openBulkWarning(toBuyCount, onContinue) {
+        ensureBulkWarningModal();
+        _bulkWarningContinue = onContinue;
+        const cost = (toBuyCount * PIXELS_PER_COLOR).toLocaleString();
+        document.getElementById('gp-bulk-warning-summary').textContent =
+            `You are about to buy ${toBuyCount.toLocaleString()} colors for ${cost} Pixels.`;
+        _bulkWarningOverlay.style.display = 'flex';
+    }
+
+    function closeBulkWarning() {
+        if (_bulkWarningOverlay) _bulkWarningOverlay.style.display = 'none';
+    }
+
+    function cancelBulkWarning() {
+        closeBulkWarning();
+        _bulkWarningContinue = null;
+    }
+
+    function continueBulkWarning() {
+        const onContinue = _bulkWarningContinue;
+        _bulkWarningContinue = null;
+        closeBulkWarning();
+        if (typeof onContinue === 'function') onContinue();
     }
 
     function ensureBulkModal() {
@@ -27006,7 +27442,7 @@ patch();
      * All colors are shown in original order; already-owned ones get an
      * "Already Owned" badge and are non-destructively skipped on confirm.
      */
-    function openBulkModal(colors) {
+    function renderBulkPreview(colors) {
         ensureBulkModal();
 
         _pendingColors = colors;
@@ -27065,14 +27501,34 @@ patch();
         _bulkOverlay.style.display = 'flex';
     }
 
+    function openBulkModal(colors) {
+        const nextColors = Array.isArray(colors) ? [...colors] : [];
+        renderBulkPreview(nextColors);
+    }
+
     function closeBulkModal() {
         if (_bulkOverlay) _bulkOverlay.style.display = 'none';
+        closeBulkWarning();
+        _bulkWarningContinue = null;
         _pendingColors = [];
         // Sync the profile card queue now that the modal is gone
         if (document.getElementById('gp-bulk-queue-list')) refreshColorQueue();
     }
 
     async function onBulkConfirm() {
+        const colors = [..._pendingColors];
+        const ownedSet = buildOwnedSet();
+        const toBuyCount = colors.filter(color => !ownedSet.has(color)).length;
+
+        if (toBuyCount > BULK_PURCHASE_WARNING_THRESHOLD) {
+            openBulkWarning(toBuyCount, () => { void executeConfirmedBulkPurchase(); });
+            return;
+        }
+
+        await executeConfirmedBulkPurchase();
+    }
+
+    async function executeConfirmedBulkPurchase() {
         const confirmBtn = document.getElementById('gp-bulk-confirm');
         const cancelBtn  = document.getElementById('gp-bulk-cancel');
         const closeBtn   = document.getElementById('gp-bulk-close');
@@ -27768,6 +28224,7 @@ patch();
             console.error('[GeoPixelcons++] ❌ Bulk Purchase Colors failed:', err);
         }
     }
+
 
 
     // ============================================================
@@ -30312,6 +30769,155 @@ applyLockState();
             console.error('[GeoPixelcons++] \u274c Map Markers failed:', err);
         }
     }
+
+// ============================================================
+//  FEATURE: Profile Color List Collapse [profileColorsCollapse]
+// ============================================================
+if (_settings.profileColorsCollapse) {
+    try {
+        (function _init_profileColorsCollapse() {
+            const COLOR_CONTAINER_ID = 'userColorsContainer';
+            const TOGGLE_WRAPPER_ID = 'gpc-profile-colors-toggle';
+            const TOGGLE_BUTTON_ID = 'gpc-profile-colors-toggle-btn';
+            const MAX_VISIBLE_COLORS = 100;
+            const COLLAPSED_ATTR = 'data-gpc-profile-color-collapsed';
+
+            let isExpanded = false;
+            let watchedContainer = null;
+            let containerObserver = null;
+            let bodyObserver = null;
+            let refreshQueued = false;
+
+            function getColorSwatches(container) {
+                return Array.from(container.children).filter((child) => {
+                    return child.id !== TOGGLE_WRAPPER_ID;
+                });
+            }
+
+            function restoreCollapsedSwatches(swatches) {
+                swatches.forEach((swatch) => {
+                    if (!swatch.hasAttribute(COLLAPSED_ATTR)) return;
+                    swatch.classList.remove('hidden');
+                    swatch.removeAttribute('aria-hidden');
+                    swatch.removeAttribute(COLLAPSED_ATTR);
+                });
+            }
+
+            function getOrCreateToggle(container) {
+                const parent = container.parentElement;
+                if (!parent) return null;
+
+                let wrapper = parent.querySelector('#' + TOGGLE_WRAPPER_ID);
+                if (!wrapper) {
+                    wrapper = document.createElement('div');
+                    wrapper.id = TOGGLE_WRAPPER_ID;
+                    wrapper.className = 'mt-2 hidden';
+
+                    const button = document.createElement('button');
+                    button.id = TOGGLE_BUTTON_ID;
+                    button.type = 'button';
+                    button.className = 'px-3 py-1 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer';
+                    button.setAttribute('aria-controls', COLOR_CONTAINER_ID);
+                    button.addEventListener('click', () => {
+                        isExpanded = !isExpanded;
+                        applyVisibility(container);
+                    });
+
+                    wrapper.appendChild(button);
+                    parent.insertBefore(wrapper, container.nextSibling);
+                }
+
+                return wrapper;
+            }
+
+            function applyVisibility(container) {
+                if (!container || !container.isConnected) return;
+
+                const swatches = getColorSwatches(container);
+                const wrapper = getOrCreateToggle(container);
+                if (!wrapper) return;
+
+                restoreCollapsedSwatches(swatches);
+
+                const shouldCollapse = swatches.length > MAX_VISIBLE_COLORS;
+                wrapper.classList.toggle('hidden', !shouldCollapse);
+
+                const button = wrapper.querySelector('#' + TOGGLE_BUTTON_ID);
+                if (!button) return;
+
+                if (shouldCollapse && !isExpanded) {
+                    swatches.slice(MAX_VISIBLE_COLORS).forEach((swatch) => {
+                        swatch.classList.add('hidden');
+                        swatch.setAttribute('aria-hidden', 'true');
+                        swatch.setAttribute(COLLAPSED_ATTR, '1');
+                    });
+                }
+
+                button.textContent = isExpanded ? 'Show Less' : 'Show All';
+                button.setAttribute('aria-expanded', String(isExpanded));
+            }
+
+            function queueRefresh(container) {
+                if (refreshQueued) return;
+                refreshQueued = true;
+                queueMicrotask(() => {
+                    refreshQueued = false;
+                    applyVisibility(container);
+                });
+            }
+
+            function watchContainer(container) {
+                if (container === watchedContainer) {
+                    queueRefresh(container);
+                    return;
+                }
+
+                if (containerObserver) containerObserver.disconnect();
+                watchedContainer = container;
+                containerObserver = new MutationObserver(() => queueRefresh(container));
+                containerObserver.observe(container, { childList: true });
+                isExpanded = false;
+                applyVisibility(container);
+            }
+
+            function syncContainer() {
+                const container = document.getElementById(COLOR_CONTAINER_ID);
+                if (container) {
+                    watchContainer(container);
+                    if (bodyObserver) {
+                        bodyObserver.disconnect();
+                        bodyObserver = null;
+                    }
+                } else if (containerObserver) {
+                    containerObserver.disconnect();
+                    containerObserver = null;
+                    watchedContainer = null;
+                }
+            }
+
+            function init() {
+                syncContainer();
+                if (watchedContainer) return;
+
+                bodyObserver = new MutationObserver(syncContainer);
+                bodyObserver.observe(document.body, { childList: true, subtree: true });
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init, { once: true });
+            } else {
+                init();
+            }
+        })();
+        _featureStatus.profileColorsCollapse = 'ok';
+        console.log('[GeoPixelcons++] ✅ Profile Color List Collapse loaded');
+    } catch (err) {
+        _featureStatus.profileColorsCollapse = 'error';
+        dbgPush(`Profile Color List Collapse init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Profile Color List Collapse' });
+        console.error('[GeoPixelcons++] ❌ Profile Color List Collapse failed:', err);
+    }
+}
+
 
 
     // ============================================================

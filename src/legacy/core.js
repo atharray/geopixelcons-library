@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.1.0';
+    const VERSION = '2.5.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -18,6 +18,7 @@
         { key: 'regionsHighscore', name: 'Regions Highscore', icon: '🏆', desc: 'Displays regional pixel/color contribution rankings.', features: ['Sort rankings by player or guild', 'Filter by pixel count, color, or region', 'Historical contribution statistics'] },
         { key: 'themeEditor', name: 'Theme Editor', icon: '🎨', desc: 'Visual map theme editor — edit MapLibre GL styles with color pickers, save/load/manage custom themes.', features: ['Bundled themes (Fjord, Obsidian, Monokai, Ayu Mirage, etc.)', 'Simple & Full color editing modes', 'Live preview toggle for instant feedback', 'Import/export themes as JSON files', 'Quick theme-switch submenu in the dropdown', 'Theme manager with create, edit & delete'] },
         { key: 'mapMarkers', name: 'Map Markers', icon: '📌', desc: 'Place and manage image stickers on the map canvas. Images scale and persist with the map.', features: ['Upload PNG/JPEG/WebP files or use image URLs', 'Drag to define placement bounds (click-only rejected with prompt)', 'Hold Shift during drag to force aspect-ratio lock', 'Per-marker lock/unlock aspect ratio toggle', 'Per-marker opacity slider and visibility toggle', 'Edit mode with 8 fixed-size handles (corners + edge midpoints)', 'Drag-to-sort cards to reorder rendering order', 'Compact card view with click-to-expand controls', 'Draggable management modal', 'Persistent storage via IndexedDB'] },
+        { key: 'profileColorsCollapse', name: 'Profile Color List Collapse', icon: '🎨', desc: 'Keeps large owned-color lists compact in the Profile overlay.', features: ['Shows the first 100 colors initially', 'Expands the complete list with Show All', 'Collapses it again with Show Less'] },
     ];
 
     const EXTENSION_LIST = [
@@ -34,7 +35,7 @@
         { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Bottom paint controls span the full screen width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
     ];
 
-    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: false, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
+    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
     FEATURE_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = true);
     // Ghost++ deliberately opts out of the blanket "every feature defaults on" rule above:
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
@@ -435,6 +436,13 @@
                 bulkPurchaseColors: () => {
                     if (typeof _pw.toggleProfile === 'function') _pw.toggleProfile();
                     setTimeout(() => flashEl(document.querySelector('#gp-bulk-profile-card')), 400);
+                },
+                profileColorsCollapse: () => {
+                    const profileOverlay = document.getElementById('profileOverlay');
+                    if (profileOverlay && profileOverlay.classList.contains('hidden') && typeof _pw.toggleProfile === 'function') {
+                        _pw.toggleProfile();
+                    }
+                    setTimeout(() => flashEl(document.getElementById('userColorsContainer')), 400);
                 },
                 themeEditor: () => {
                     if (_themeEditor) _themeEditor.toggleModal();
@@ -1226,8 +1234,8 @@
     // ============================================================
     const CHANGELOG = [
         {
-            version: '2.1.0',
-            date: '2026-08-10',
+            version: '2.5.0',
+            date: '2026-08-16',
             items: [
                 { type: 'added', text: 'Mobile Painting (in development): bottom paint controls now span the full width of the screen when enabled' },
                 { type: 'added', text: 'Mobile Painting (in development): native color grid replaced with the focused Ghost++ template\'s own color grid, styled like the Ghost++ manager' },
@@ -1294,6 +1302,42 @@
                 { type: 'changed', text: 'Mobile Painting (in development): the template preview thumbnail is now a square, its width matching whatever height its own row ends up (was a plain rectangle sized to the image itself)' },
                 { type: 'fixed', text: 'Mobile Painting (in development): Enable, Sort, Filter, and Get hex values in the bottom controls row now close each other when a different one is opened, instead of leaving multiple of them visibly open on top of each other at once' },
                 { type: 'changed', text: 'Mobile Painting (in development): the "Visible rows" dropdown now defaults to 3 instead of 2' },
+            ]
+        },
+        {
+            version: '2.4.1',
+            date: '2026-08-16',
+            items: [
+                { type: 'changed', text: 'Compact Paint Controls is now enabled by default for new installs' },
+            ]
+        },
+        {
+            version: '2.4.0',
+            date: '2026-08-16',
+            items: [
+                { type: 'added', text: 'Bulk Purchase Colors now warns before buying more than 50 colors, showing the color count and total Pixel cost with Continue or Cancel options' },
+            ]
+        },
+        {
+            version: '2.3.0',
+            date: '2026-08-14',
+            items: [
+                { type: 'added', text: 'Guild Overhaul: optionally load and show guild territories automatically when the map opens' },
+            ]
+        },
+        {
+            version: '2.2.0',
+            date: '2026-08-13',
+            items: [
+                { type: 'added', text: 'Ghost++ compact view now includes the Palette view Grid/List toggle directly below Enable all and Disable all' },
+            ]
+        },
+        {
+            version: '2.1.0',
+            date: '2026-08-13',
+            items: [
+                { type: 'added', text: 'Profile overlay: owned-color lists over 100 colors now start compact with a Show All button, and can be collapsed again with Show Less' },
+                { type: 'fixed', text: 'Profile color list: the new enhancement no longer watches every page mutation after the native profile container is found, preventing unnecessary background work' },
             ]
         },
         {

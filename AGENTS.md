@@ -71,6 +71,24 @@ replaces only the `@require` line in their local Tampermonkey copy, tests on
 GeoPixels, restores the normal stable pin, and reports either failure details
 or explicit release approval. Never place a preview URL in Greasyfork.
 
+## Always announce the require line after a merge
+
+Every time a merge in this repository produces a new tag — a feature PR merge
+or update (preview tag) or a Release Please PR merge (stable tag) — proactively
+tell the user, without being asked, the exact resulting
+`@require`-ready line:
+
+```text
+https://cdn.jsdelivr.net/gh/atharray/geopixelcons-library@<tag>/dist/geopixelcons-library.js#sha256-<digest>
+```
+
+Compute `<digest>` from the bytes actually served by jsDelivr for that tag
+(fetch and hash them — do not assume the local build's hash matches until
+jsDelivr has picked up the tag), and confirm the URL returns HTTP 200 first.
+Say plainly whether it is a **preview** line (Tampermonkey-only, temporary,
+never for Greasyfork) or the new **stable** line (the one that belongs in
+`geopixelcons-plusplus`'s `library.require.json`).
+
 ## Cross-repository contract
 
 Release this repository first. After the stable tag is public, fetch the

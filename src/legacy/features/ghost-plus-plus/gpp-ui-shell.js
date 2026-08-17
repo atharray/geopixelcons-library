@@ -20,6 +20,31 @@
     // somewhat above the bare 480px floor, not only exactly at it.
     const GPP_NARROW_SWAP_MARGIN = 80;
 
+    // .gpp-head is a plain flex row (Ghost++ label, editing name, spacer,
+    // minify/close buttons) with no wrap -- a long ingested filename (image
+    // hashes, camera exports, etc. routinely run 40+ characters) grows the
+    // name span wide enough to shove the minify/close buttons straight off
+    // the modal's right edge. With the panel then stuck in minified mode
+    // (only Enable all/Disable all + the color grid shown, per that view's
+    // own CSS below) there was no other control left to toggle it back off
+    // -- reported by ReaCreations, 2026-08-13. Truncate the display copy
+    // here rather than the modal's overflow: hidden alone, so the name
+    // stays readable instead of just clipping mid-character.
+    // Ingested template names never actually carry an extension by this
+    // point -- gppIngestImageFile strips it before template.name is ever
+    // set (gpp-runtime.js), and JSON re-imports inherit that already-bare
+    // name -- but this still preserves one defensively in case a future
+    // ingest path ever sets a dotted name.
+    const GPP_EDITING_NAME_MAX = 10;
+    function gppTruncateEditingName(name) {
+        const safe = name || 'Untitled template';
+        const extMatch = /\.[a-z0-9]{2,4}$/i.exec(safe);
+        const ext = extMatch ? extMatch[0] : '';
+        const base = ext ? safe.slice(0, -ext.length) : safe;
+        if (base.length <= GPP_EDITING_NAME_MAX) return safe;
+        return base.slice(0, GPP_EDITING_NAME_MAX) + '...' + ext;
+    }
+
     // Rewrites the tag's content every call rather than no-op-ing once it
     // exists — t2()/isDarkMode() are evaluated fresh each time this runs, so
     // re-calling it (see gpp-init.js's theme-change observer) is how the UI
@@ -60,8 +85,9 @@
             #${GPP_IDS.modal}.gpp-hidden { display: none; }
             /* ── Minified view (per explicit user feedback) ──────────────
                Pure CSS toggle (see the minify button's click handler below)
-               -- hides everything except the Enable all/Disable all row and
-               the color grid itself, and shrinks the modal down to a small
+               -- hides everything except the Enable all/Disable all row, the
+               palette Grid/List control, and the color grid itself, and
+               shrinks the modal down to a small
                floating strip. The real sections/controllers underneath stay
                fully mounted and functional; only their visibility changes,
                so nothing needs to be re-rendered when toggling in or out. */
@@ -72,6 +98,11 @@
             #${GPP_IDS.modal}.gpp-minified #${GPP_IDS.right},
             #${GPP_IDS.modal}.gpp-minified .gpp-edge,
             #${GPP_IDS.modal}.gpp-minified .gpp-corner { display: none !important; }
+            /* The "Ghost++" title itself is dead weight in the already-cramped
+               260px minified strip -- the editing-name label next to it (see
+               gppTruncateEditingName above) already identifies the panel,
+               so drop the title to leave it more room before truncating. */
+            #${GPP_IDS.modal}.gpp-minified .gpp-head-title { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-left-body { overflow: hidden; }
             #${GPP_IDS.modal}.gpp-minified #gpp-left-body > *:not(#gpp-palette-section) { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > summary,
@@ -118,9 +149,32 @@
             #${GPP_IDS.modal} .gpp-head button {
                 border: none; background: transparent; color: inherit; cursor: pointer; font-size: 14px;
             }
+            /* Two stacked lines (name, then position) rather than one run-on
+               string -- a single-line version had the whole thing (name AND
+               the X/Y coordinates after it) subject to the same nowrap +
+               ellipsis rule below, so on anything narrower than the full
+               string's width the coordinates themselves got silently
+               ellipsis-clipped along with the name, not just the name (per
+               user follow-up on the original overflow fix). Splitting into
+               two lines lets each be truncated independently -- only
+               .gpp-editing-name (backstopping gppTruncateEditingName()) ever
+               needs to clip; .gpp-editing-coords is always short and fixed-
+               format ("X: n, Y: n") so it is never truncated. */
             #${GPP_IDS.editingLabel} {
+                display: flex; flex-direction: column; gap: 1px;
                 font-size: 11px; font-weight: 600;
                 color: ${t2('#475569', '#a6adc8')};
+                /* min-width: 0 lets this actually shrink inside the flex row
+                   (flex items default to min-width: auto -- content width --
+                   which is exactly what let a long name push the minify/close
+                   buttons off the modal before). */
+                min-width: 0;
+            }
+            #${GPP_IDS.editingLabel} .gpp-editing-name {
+                min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+            }
+            #${GPP_IDS.editingLabel} .gpp-editing-coords {
+                font-weight: 400; opacity: .85;
             }
             /* No overflow-y/scrollbar-gutter here — #gpp-left-body (its
                child, below) is the one that actually scrolls (.gpp-head
@@ -509,10 +563,13 @@
             <div class="gpp-corner se" data-gpp-resize="se"></div>
             <div id="${GPP_IDS.left}">
                 <div class="gpp-head" data-gpp-drag>
-                    <strong>Ghost++</strong>
-                    <span id="${GPP_IDS.editingLabel}"></span>
+                    <strong class="gpp-head-title">Ghost++</strong>
+                    <span id="${GPP_IDS.editingLabel}">
+                        <span class="gpp-editing-name"></span>
+                        <span class="gpp-editing-coords"></span>
+                    </span>
                     <span class="gpp-spacer"></span>
-                    <button type="button" data-gpp-action="minify" aria-label="Minified view" title="Compact view: just Enable all / Disable all and the color grid">▭</button>
+                    <button type="button" data-gpp-action="minify" aria-label="Minified view" title="Compact view: Enable/Disable all, palette view, and the color grid">▭</button>
                     <button type="button" data-gpp-action="close" aria-label="Close">✕</button>
                 </div>
                 <div id="gpp-left-body" style="flex:1; overflow-y:auto;"></div>
@@ -737,7 +794,8 @@
         // the box is now" / "would it be possible to make it collapsible...
         // or at least some type of minified view with only what you need to
         // paint"): a compact mode showing ONLY the Enable all/Disable all
-        // buttons and the color grid (height-capped to ~2 rows, scrollable)
+        // buttons, the palette Grid/List control, and the color grid
+        // (height-capped to ~2 rows, scrollable)
         // -- everything else (ingest, Progress, Error Settings, View
         // Settings, Template Settings, the whole right panel/library) is
         // hidden via the .gpp-minified CSS below. Pure CSS toggle, not a
@@ -779,7 +837,7 @@
                 if (event.target !== modal || event.propertyName !== 'opacity') return;
                 modal.removeEventListener('transitionend', onFadeOut);
                 const minified = modal.classList.toggle('gpp-minified'); // the actual (instant) layout swap, now hidden by the low opacity above
-                btn.title = minified ? 'Exit compact view' : 'Compact view: just Enable all / Disable all and the color grid';
+                btn.title = minified ? 'Exit compact view' : 'Compact view: Enable/Disable all, palette view, and the color grid';
                 btn.setAttribute('aria-label', minified ? 'Exit minified view' : 'Minified view');
                 modal.style.opacity = '1';
                 const onFadeIn = event2 => {

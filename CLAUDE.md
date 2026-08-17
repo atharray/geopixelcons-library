@@ -16,3 +16,8 @@ Release Please PR through normal branch protection. Never write directly to
 `main`, force-push, self-approve a required review, or change/delete tags. Run
 `npm run verify` before committing runtime or release changes. Greasyfork
 upload remains a manual user action.
+
+Every merge that produces a new tag — preview or stable — must be followed by
+proactively telling the user the resulting `@require` line (tag + SHA-256 SRI
+digest, computed from the bytes jsDelivr actually serves for that tag). See
+"Always announce the require line after a merge" in [AGENTS.md](AGENTS.md).

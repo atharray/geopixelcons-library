@@ -57,6 +57,29 @@
         style.textContent = `
             .gpp-palette-empty { font-size: 12px; color: ${t2('#64748b', '#a6adc8')}; padding: 6px 2px; }
             .gpp-palette-panel { display: flex; flex-direction: column; gap: 7px; margin: 8px 0; }
+            /* The compact panel gets the same Grid/List control as View
+               Settings, but it stays out of the normal palette layout so
+               the two controls never appear as duplicate rows. */
+            .gpp-palette-view-row.gpp-vs-row {
+                display: none; align-items: center; gap: 8px; margin: 0;
+            }
+            .gpp-minified .gpp-palette-view-row.gpp-vs-row { display: flex; }
+            .gpp-palette-view-row .gpp-vs-label {
+                flex: 1 1 auto; min-width: 0; font-size: 11px;
+                color: ${t2('#1f2937', '#e2e2f5')};
+            }
+            .gpp-palette-view-row .gpp-vs-view-toggle {
+                display: flex; border-radius: 6px; overflow: hidden; flex-shrink: 0;
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+            }
+            .gpp-palette-view-row .gpp-vs-view-btn {
+                font: inherit; font-size: 12px; line-height: 1; cursor: pointer; border: none; padding: 4px 8px;
+                background: ${t2('#ffffff', '#313244')}; color: ${t2('#64748b', '#a6adc8')};
+            }
+            .gpp-palette-view-row .gpp-vs-view-btn:hover { background: ${t2('#f3f4f6', '#45475a')}; }
+            .gpp-palette-view-row .gpp-vs-view-btn-active {
+                background: ${t2('#2563eb', '#89b4fa')}; color: ${t2('#ffffff', '#1e1e2e')};
+            }
             .gpp-gnc-group {
                 padding: 6px 0; border-bottom: 1px solid ${t2('#e5e7eb', '#313244')};
             }
@@ -600,10 +623,57 @@
                 target.setGhostColorsAsActivePalette();
             }
         });
+
+        // Compact-mode palette view — the same persisted Grid/List choice as
+        // View Settings, placed directly below Enable all / Disable all.
+        // These controls intentionally have no ids because the full View
+        // Settings section already owns the stable ids for its own pair.
+        const paletteViewRow = document.createElement('div');
+        paletteViewRow.className = 'gpp-vs-row gpp-palette-view-row';
+        const paletteViewLabel = document.createElement('span');
+        paletteViewLabel.className = 'gpp-vs-label';
+        paletteViewLabel.textContent = 'Palette view';
+        const paletteViewToggle = document.createElement('div');
+        paletteViewToggle.className = 'gpp-vs-view-toggle';
+        const compactGridBtn = document.createElement('button');
+        compactGridBtn.type = 'button';
+        compactGridBtn.className = 'gpp-vs-view-btn';
+        compactGridBtn.dataset.gppPaletteView = 'grid';
+        compactGridBtn.textContent = '▦';
+        compactGridBtn.title = 'Grid view';
+        compactGridBtn.setAttribute('aria-label', 'Grid view');
+        const compactListBtn = document.createElement('button');
+        compactListBtn.type = 'button';
+        compactListBtn.className = 'gpp-vs-view-btn';
+        compactListBtn.dataset.gppPaletteView = 'list';
+        compactListBtn.textContent = '☰';
+        compactListBtn.title = 'List view';
+        compactListBtn.setAttribute('aria-label', 'List view');
+        function syncCompactPaletteViewButtons() {
+            const mode = gppSettings.paletteViewMode === 'list' ? 'list' : 'grid';
+            compactGridBtn.classList.toggle('gpp-vs-view-btn-active', mode === 'grid');
+            compactListBtn.classList.toggle('gpp-vs-view-btn-active', mode === 'list');
+            compactGridBtn.setAttribute('aria-pressed', String(mode === 'grid'));
+            compactListBtn.setAttribute('aria-pressed', String(mode === 'list'));
+        }
+        function setCompactPaletteViewMode(mode) {
+            if (gppSettings.paletteViewMode === mode) return;
+            gppSettings.paletteViewMode = mode;
+            gppState.saveSettings();
+            syncCompactPaletteViewButtons();
+            performFilterSort();
+            if (typeof controller.onChange === 'function') controller.onChange();
+        }
+        compactGridBtn.addEventListener('click', () => setCompactPaletteViewMode('grid'));
+        compactListBtn.addEventListener('click', () => setCompactPaletteViewMode('list'));
+        paletteViewToggle.append(compactGridBtn, compactListBtn);
+        paletteViewRow.append(paletteViewLabel, paletteViewToggle);
+        syncCompactPaletteViewButtons();
+
         bulkRowTop.append(allBtn, noneBtn);
         bulkRowMiddle.append(ownedBtn, enableFilteredBtn);
         bulkRowBottom.append(activeBtn, setPaletteBtn);
-        panel.append(bulkRowTop, bulkRowMiddle, bulkRowBottom);
+        panel.append(bulkRowTop, paletteViewRow, bulkRowMiddle, bulkRowBottom);
 
         // No "Sync with selected color" button here — per explicit product
         // decision, that stays the legacy Ghost Palette Color Search tool's
@@ -1465,6 +1535,7 @@
         controller.update = function gppPaletteControllerUpdate(template, onChange) {
             controller.template = template || null;
             controller.onChange = typeof onChange === 'function' ? onChange : null;
+            syncCompactPaletteViewButtons();
             gppPaletteHideTooltip(); // avoid a stuck tooltip across a re-render/deselection
             if (!controller.template) {
                 emptyEl.style.display = '';

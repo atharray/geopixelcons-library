@@ -2553,8 +2553,21 @@ function buildDriverScript() {
     L.push('    var enteredMinified = await waitFor(function() { return modal.classList.contains("gpp-minified"); }, 2000);');
     L.push('    if (!enteredMinified) throw new Error("clicking the minify button did not add .gpp-minified to the modal in time");');
     L.push('    if (getComputedStyle(rightPanel).display !== "none") throw new Error("REGRESSION: the right panel (library/preview) is still visible in minified view");');
-    L.push('    if (getComputedStyle(progressSection).display !== "none") throw new Error("REGRESSION: the Progress section is still visible in minified view -- minified view must show ONLY Enable all/Disable all + the color grid");');
-    L.push('    if (getComputedStyle(bulkTop).display === "none") throw new Error("REGRESSION: the Enable all/Disable all row is hidden in minified view -- it is one of the two things minified view must always show");');
+    L.push('    if (getComputedStyle(progressSection).display !== "none") throw new Error("REGRESSION: the Progress section is still visible in minified view -- minified view must show only Enable all/Disable all, Palette view, and the color grid");');
+    L.push('    if (getComputedStyle(bulkTop).display === "none") throw new Error("REGRESSION: the Enable all/Disable all row is hidden in minified view -- it is one of the controls minified view must always show");');
+    L.push('    var compactPaletteViewRow = modal.querySelector(".gpp-palette-view-row");');
+    L.push('    if (!compactPaletteViewRow) throw new Error("compact minified view is missing the Palette view row");');
+    L.push('    if (getComputedStyle(compactPaletteViewRow).display === "none") throw new Error("REGRESSION: the Palette view row is hidden in minified view");');
+    L.push('    var compactGridBtn = compactPaletteViewRow.querySelector("[data-gpp-palette-view=grid]");');
+    L.push('    var compactListBtn = compactPaletteViewRow.querySelector("[data-gpp-palette-view=list]");');
+    L.push('    if (!compactGridBtn || !compactListBtn) throw new Error("compact minified view is missing its Grid/List palette buttons");');
+    L.push('    if (gppSettings.paletteViewMode !== "grid") compactGridBtn.click();');
+    L.push('    compactListBtn.click();');
+    L.push('    if (gppSettings.paletteViewMode !== "list") throw new Error("clicking the compact List button did not persist gppSettings.paletteViewMode=list");');
+    L.push('    if (!compactListBtn.classList.contains("gpp-vs-view-btn-active") || compactGridBtn.classList.contains("gpp-vs-view-btn-active")) throw new Error("compact Palette view buttons did not mark List active");');
+    L.push('    if (!document.querySelector(".gpp-palette-grid .gpp-swatch-list")) throw new Error("compact List button did not switch the palette swatches to list mode");');
+    L.push('    compactGridBtn.click();');
+    L.push('    if (gppSettings.paletteViewMode !== "grid") throw new Error("clicking the compact Grid button did not persist gppSettings.paletteViewMode=grid");');
     L.push('    var settledAtFull = await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000);');
     L.push('    if (!settledAtFull) throw new Error("the minify transition never finished (still fading) -- gpp-minify-transitioning was never removed");');
     L.push('    if (getComputedStyle(modal).opacity !== "1") throw new Error("REGRESSION: the modal did not fade back to full opacity after entering minified view, opacity=" + getComputedStyle(modal).opacity);');
@@ -2564,7 +2577,7 @@ function buildDriverScript() {
     L.push('    if (getComputedStyle(rightPanel).display === "none") throw new Error("REGRESSION: the right panel stayed hidden after exiting minified view");');
     L.push('    var settledAtNormal = await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000);');
     L.push('    if (!settledAtNormal) throw new Error("the exit-minify transition never finished (still fading)");');
-    L.push('    return "Rescale Ghost++ only applies once the slider is released (\'change\', not \'input\'), live-updating --gpp-scale and persisting to gppSettings.uiScale; the minify button cross-fades into/out of .gpp-minified (transitionend-driven, re-entrancy guarded) instead of snapping instantly, hiding the right panel/Progress section while keeping Enable all/Disable all visible, and fully restores on toggle-off";');
+    L.push('    return "Rescale Ghost++ only applies once the slider is released (\'change\', not \'input\'), live-updating --gpp-scale and persisting to gppSettings.uiScale; the minify button cross-fades into/out of .gpp-minified (transitionend-driven, re-entrancy guarded) instead of snapping instantly, hiding the right panel/Progress section while keeping Enable all/Disable all and the Palette view Grid/List control visible, and fully restores on toggle-off";');
     L.push('  });');
     L.push('');
     // ---- item uiShell.range-slider-blurs-on-change ----
