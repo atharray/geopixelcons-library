@@ -44,7 +44,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', desc: 'Superseded by Ghost++ Template Overlay. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
         { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', desc: 'Superseded by Ghost++ Template Overlay. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
-        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '📱', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive width for bottom paint controls', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
+        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '📱', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width while the optional scale changes controls and height', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
     ];
 
     const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
@@ -1255,7 +1255,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Painting Menu Overhaul: Filter within pixel count now exposes working minimum and maximum inputs' },
                 { type: 'changed', text: 'Painting Menu Overhaul: replaced the extra gap between the control row and compact palette with a small amount of breathing room' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: added a small amount of breathing room below the control row' },
-                { type: 'fixed', text: 'Painting Menu Overhaul: scaling no longer changes the site-sized bottom controls container' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: scaling now keeps the paint panel\'s visual width fixed; only its controls and height change' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: Paint Menu Controls and compact Brush Swap buttons now stay attached and scale with the paint surface' },
             ]
         },
@@ -15148,7 +15148,16 @@ window.changeColor=function(color){
         const colorsDiv = innerWrapper
             ? innerWrapper.querySelector(':scope > .control-container-colors')
             : null;
-        const swapParent = controlsRow?.parentElement;
+        // Painting Menu Overhaul may place these two live native nodes inside
+        // its scale-content layer after this feature initialized. Resolve their
+        // current shared parent inside updateState instead of retaining the old
+        // direct-wrapper parent, so a later collapse/dock never calls
+        // insertBefore() with a reference node that has moved.
+        const getSwapParent = () => (
+            controlsRow && colorsDiv && controlsRow.parentElement === colorsDiv.parentElement
+                ? controlsRow.parentElement
+                : null
+        );
 
         // --- 4. LOGIC ENGINE ---
 
@@ -15161,7 +15170,8 @@ window.changeColor=function(color){
                 bottomControls.style.top = '1rem';
 
                 // Reorder: colors first, controls second (buttons closer to map edge)
-                if (swapParent && colorsDiv && controlsRow) {
+                const swapParent = getSwapParent();
+                if (swapParent) {
                     swapParent.insertBefore(colorsDiv, controlsRow);
                 }
 
@@ -15183,7 +15193,8 @@ window.changeColor=function(color){
                 bottomControls.style.bottom = '1rem';
 
                 // Restore original order: controls first, colors second
-                if (swapParent && colorsDiv && controlsRow) {
+                const swapParent = getSwapParent();
+                if (swapParent) {
                     swapParent.insertBefore(controlsRow, colorsDiv);
                 }
 
@@ -31557,21 +31568,107 @@ if (_settings.profileColorsCollapse) {
         try { localStorage.setItem(PMO_SCALE_STORAGE_KEY, String(percent)); } catch (e) {}
     }
 
-    // Scale the existing inner bottom-controls wrapper instead of
-    // #bottomControls itself. The site remains responsible for the outer
-    // panel's natural width. Do not compensate the wrapper's width for the
-    // transform: CSS transforms do not participate in layout, and changing
-    // width here changes #bottomControls' intrinsic size (causing clipping at
-    // small scales and a detached outer panel at large scales).
+    // Keep the existing inner bottom-controls wrapper as the unscaled visual
+    // surface. Its width, background, border, and horizontal placement remain
+    // entirely the site's responsibility. A dedicated child is scaled instead:
+    // it is given the inverse layout width before its transform so its rendered
+    // left/right edges continue to meet the fixed-width surface at every scale.
+    // This preserves uniformly-sized controls without making the panel itself
+    // shrink at 75% or grow/clip at 125%.
+    function ensureMobileUiScaleContent() {
+        if (!liveState || !liveState.scaleRoot) return null;
+        if (liveState.scaleContent && liveState.scaleContent.isConnected) return liveState.scaleContent;
+
+        const root = liveState.scaleRoot;
+        let content = root.querySelector(':scope > .gpc-mobile-scale-content');
+        if (!content) {
+            content = document.createElement('div');
+            content.className = 'gpc-mobile-scale-content';
+            const existingChildren = Array.from(root.children);
+            root.appendChild(content);
+            existingChildren.forEach((child) => content.appendChild(child));
+        }
+        liveState.scaleContent = content;
+        return content;
+    }
+
+    // Paint Menu Controls captures the native children before this extension
+    // loads, then may briefly move them back to the surface during a collapse
+    // or dock action. Keep those live, already-wired nodes in the scale layer
+    // without changing any of their listeners or identities.
+    function restoreMobileUiScaleContent() {
+        if (!liveState || !liveState.scaleRoot || !liveState.scaleContent) return;
+        const { scaleRoot: root, scaleContent: content } = liveState;
+        Array.from(root.children).forEach((child) => {
+            if (child !== content) content.appendChild(child);
+        });
+    }
+
+    function measureMobileUiScaleHeight(root, content, scale) {
+        const previousHeight = root.style.height;
+        const previousTransform = content.style.transform;
+        root.style.height = '';
+        content.style.transform = 'none';
+        const contentHeight = content.getBoundingClientRect().height;
+        const style = getComputedStyle(root);
+        const verticalChrome = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+            .reduce((total, property) => total + (parseFloat(style[property]) || 0), 0);
+        content.style.transform = previousTransform;
+        if (!Number.isFinite(contentHeight) || contentHeight <= 0) {
+            root.style.height = previousHeight;
+            return;
+        }
+        root.style.height = `${Math.ceil(verticalChrome + contentHeight * scale)}px`;
+    }
+
+    function scheduleMobileUiScaleLayout() {
+        if (!liveState || !liveState.scaleContent || liveState.uiScalePercent === MP_SCALE_DEFAULT) return;
+        if (liveState.scaleLayoutFrame) return;
+        liveState.scaleLayoutFrame = requestAnimationFrame(() => {
+            if (!liveState) return;
+            liveState.scaleLayoutFrame = 0;
+            const root = liveState.scaleRoot;
+            const content = liveState.scaleContent;
+            if (!root || !content || liveState.uiScalePercent === MP_SCALE_DEFAULT) return;
+            measureMobileUiScaleHeight(root, content, liveState.uiScalePercent / 100);
+        });
+    }
+
     function applyMobileUiScale(percent) {
         if (!liveState || !liveState.scaleRoot) return;
         const appliedPercent = clampMobileUiScale(percent);
         const scale = appliedPercent / 100;
         const root = liveState.scaleRoot;
+        const content = ensureMobileUiScaleContent();
+        if (!content) return;
         root.style.setProperty('--gpc-mobile-ui-scale', String(scale));
-        root.style.transformOrigin = 'bottom center';
-        root.style.transform = `scale(${scale})`;
         root.dataset.gpcMobileUiScale = String(appliedPercent);
+        // At 100%, leave the surface at its native, responsive dimensions.
+        // The content wrapper remains only as a transparent ownership layer for
+        // the Paint Menu Controls toolbar and does not otherwise affect layout.
+        if (appliedPercent === MP_SCALE_DEFAULT) {
+            content.style.width = '';
+            content.style.marginLeft = '';
+            content.style.marginRight = '';
+            content.style.transformOrigin = '';
+            content.style.transform = '';
+            root.style.height = '';
+            liveState.uiScalePercent = appliedPercent;
+            return;
+        }
+
+        // `width / scale` plus symmetric inverse margins keeps the transformed
+        // content exactly within the unscaled surface horizontally. The scale
+        // therefore changes real button/font dimensions and vertical footprint,
+        // never the rendered width of #bottomControls' visual parent.
+        const inverseWidthPercent = 100 / scale;
+        const sideMarginPercent = (100 - inverseWidthPercent) / 2;
+        content.style.width = `${inverseWidthPercent}%`;
+        content.style.marginLeft = `${sideMarginPercent}%`;
+        content.style.marginRight = `${sideMarginPercent}%`;
+        content.style.transformOrigin = 'top center';
+        content.style.transform = `scale(${scale})`;
+        measureMobileUiScaleHeight(root, content, scale);
         liveState.uiScalePercent = appliedPercent;
     }
 
@@ -32242,11 +32339,15 @@ if (_settings.profileColorsCollapse) {
             .gpc-ctrl-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
             .gpc-ctrl-btn-arrow { font-size: 9px; opacity: .7; flex-shrink: 0; }
              .gpc-ctrl-dropdown { position: relative; display: inline-flex; min-width: 0; }
-             /* The scaled inner wrapper is a stacking context. Painting Menu Overhaul
-                adopts Paint Menu Controls' absolute auxiliary bar into this
-                surface at mount, so its collapse/drag/brush buttons scale and
-                remain attached to the panel rather than floating separately. */
-             .gpc-mobile-scale-root { position: relative; z-index: 30; }
+             /* The site-owned wrapper remains the fixed-width visual surface.
+                Only this child scales; its JS-supplied inverse width makes the
+                rendered content meet the surface's left/right edges at every
+                scale while the surface itself never widens or narrows. */
+             .gpc-mobile-scale-root { position: relative; z-index: 30; overflow: visible; }
+             .gpc-mobile-scale-content {
+                 position: relative; display: flex; flex-direction: column;
+                 width: 100%; box-sizing: border-box; gap: inherit; min-width: 0;
+             }
             /* Menus open UPWARD (bottom, not top) -- this row sits at the very
                bottom of the screen, so a downward menu would run off-page.
                z-index is well above the Paint Menu Controls feature's adopted
@@ -34235,25 +34336,25 @@ if (_settings.profileColorsCollapse) {
     //      performFilterSort() directly -- neither reaches subscribers.
     //      Polling is the only reliable way to catch either without patching
     //      more of Ghost++'s own code than the one renderState hook above.
-    let liveState = null; // { bottomControls, scaleRoot, uiScalePercent, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
+    let liveState = null; // { bottomControls, scaleRoot, scaleContent, uiScalePercent, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
 
     // Paint Menu Controls creates its toolbar as an absolute direct child of
-    // #bottomControls. That deliberately sits outside the native content
-    // wrapper, but Painting Menu Overhaul scales the wrapper alone so the site's
-    // outer panel keeps its own width/position. Leave the outer panel alone
-    // and move the already-wired toolbar into the wrapper instead: its
-    // absolute top/bottom offsets now use the wrapper as their containing
-    // block and inherit the same scale as every other paint control. The
-    // compact Brush Swap button lives in this exact toolbar, too.
-    function adoptPaintMenuToolbarIntoScaleRoot() {
+    // #bottomControls. Move that already-wired toolbar into the *content*
+    // layer, never the fixed-width visual surface: its absolute offsets then
+    // stay attached to the surface while its controls follow the same scale as
+    // the rest of the menu. The compact Brush Swap button lives here too.
+    function adoptPaintMenuToolbarIntoScaleContent() {
         if (!liveState || !liveState.bottomControls || !liveState.scaleRoot) return false;
+        const content = ensureMobileUiScaleContent();
+        if (!content) return false;
         const toggle = document.getElementById('gpc-hide-paint-toggle');
         const toolbar = toggle ? toggle.parentElement : null;
         if (!toolbar || !liveState.bottomControls.contains(toolbar)) return false;
-        if (toolbar.parentElement !== liveState.scaleRoot) {
+        if (toolbar.parentElement !== content) {
             if (!toolbar.id) toolbar.id = 'gpc-paint-menu-toolbar';
-            liveState.scaleRoot.appendChild(toolbar);
+            content.appendChild(toolbar);
         }
+        scheduleMobileUiScaleLayout();
         return true;
     }
 
@@ -34263,9 +34364,9 @@ if (_settings.profileColorsCollapse) {
     // delayed case without observing compact-grid redraws below the wrapper.
     function ensurePaintMenuToolbarSharesScaleRoot() {
         if (!_settings.hidePaintMenu || !liveState || !liveState.bottomControls) return;
-        if (adoptPaintMenuToolbarIntoScaleRoot()) return;
+        if (adoptPaintMenuToolbarIntoScaleContent()) return;
         const toolbarObserver = new MutationObserver(() => {
-            if (adoptPaintMenuToolbarIntoScaleRoot()) toolbarObserver.disconnect();
+            if (adoptPaintMenuToolbarIntoScaleContent()) toolbarObserver.disconnect();
         });
         toolbarObserver.observe(liveState.bottomControls, { childList: true });
         setTimeout(() => toolbarObserver.disconnect(), 15000);
@@ -34325,6 +34426,10 @@ if (_settings.profileColorsCollapse) {
         // an unrelated "did the grid's own content change" check.
         injectStyle();
         retintBorrowedScanButtons();
+        // Grid/placeholder rebuilds can add or remove rows. Re-measure on the
+        // next frame so the unscaled surface tracks the scaled content height
+        // without ever taking over its width.
+        scheduleMobileUiScaleLayout();
         const template = getFocusedTemplateWithPalette();
 
         if (!template) {
@@ -34469,14 +34574,30 @@ if (_settings.profileColorsCollapse) {
         if (nativeTopBar && !nativeTopBar.id) nativeTopBar.id = 'gpc-native-top-bar';
 
         liveState = {
-            bottomControls, scaleRoot: innerWrapperEl, uiScalePercent: readMobileUiScale(), savedNativeContainer: nativeContainer,
+            bottomControls, scaleRoot: innerWrapperEl, scaleContent: null, scaleLayoutFrame: 0,
+            uiScalePercent: readMobileUiScale(), savedNativeContainer: nativeContainer,
             wrap: null, grid: null, templateId: null, orderKey: null,
             paletteViewMode: null, scanSummaryRef: null, selectedHex: null,
             soloMode: true, enableSelectedMode: false, highlightNearest: false,
             highlightRequestId: 0, pendingHighlightTemplateId: null,
             pendingHighlightPaletteIndex: null, syncEnableSelectedModeUi: null,
         };
-        if (innerWrapperEl) innerWrapperEl.classList.add('gpc-mobile-scale-root');
+        if (innerWrapperEl) {
+            innerWrapperEl.classList.add('gpc-mobile-scale-root');
+            ensureMobileUiScaleContent();
+            let scaleContentRestoreQueued = false;
+            const scaleContentObserver = new MutationObserver(() => {
+                if (scaleContentRestoreQueued) return;
+                scaleContentRestoreQueued = true;
+                Promise.resolve().then(() => {
+                    scaleContentRestoreQueued = false;
+                    restoreMobileUiScaleContent();
+                    scheduleMobileUiScaleLayout();
+                });
+            });
+            scaleContentObserver.observe(innerWrapperEl, { childList: true });
+            liveState.scaleContentObserver = scaleContentObserver;
+        }
         ensurePaintMenuToolbarSharesScaleRoot();
         applyMobileUiScale(liveState.uiScalePercent);
 

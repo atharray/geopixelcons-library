@@ -331,7 +331,16 @@
         const colorsDiv = innerWrapper
             ? innerWrapper.querySelector(':scope > .control-container-colors')
             : null;
-        const swapParent = controlsRow?.parentElement;
+        // Painting Menu Overhaul may place these two live native nodes inside
+        // its scale-content layer after this feature initialized. Resolve their
+        // current shared parent inside updateState instead of retaining the old
+        // direct-wrapper parent, so a later collapse/dock never calls
+        // insertBefore() with a reference node that has moved.
+        const getSwapParent = () => (
+            controlsRow && colorsDiv && controlsRow.parentElement === colorsDiv.parentElement
+                ? controlsRow.parentElement
+                : null
+        );
 
         // --- 4. LOGIC ENGINE ---
 
@@ -344,7 +353,8 @@
                 bottomControls.style.top = '1rem';
 
                 // Reorder: colors first, controls second (buttons closer to map edge)
-                if (swapParent && colorsDiv && controlsRow) {
+                const swapParent = getSwapParent();
+                if (swapParent) {
                     swapParent.insertBefore(colorsDiv, controlsRow);
                 }
 
@@ -366,7 +376,8 @@
                 bottomControls.style.bottom = '1rem';
 
                 // Restore original order: controls first, colors second
-                if (swapParent && colorsDiv && controlsRow) {
+                const swapParent = getSwapParent();
+                if (swapParent) {
                     swapParent.insertBefore(controlsRow, colorsDiv);
                 }
 
