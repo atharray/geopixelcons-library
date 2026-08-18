@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/atharray/geopixelcons-library/compare/v2.4.1...v2.5.0) (2026-08-18)
+
+
+### Features
+
+* add guild activity last seen ([d682530](https://github.com/atharray/geopixelcons-library/commit/d6825300f2e7ea384c6fc070a3aa6f8e55ad7a60))
+
 ## [2.4.1](https://github.com/atharray/geopixelcons-library/compare/v2.4.0...v2.4.1) (2026-08-17)
 
 
