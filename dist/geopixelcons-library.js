@@ -1,7 +1,7 @@
-/* GeoPixelcons Library v2.5.0 - readable release bundle */
+/* GeoPixelcons Library v2.6.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
-    const LIBRARY_VERSION = '2.5.0'; // x-release-please-version
+    const LIBRARY_VERSION = '2.6.0'; // x-release-please-version
     let runtime = null;
     let booting = false;
 
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.5.1';
+    const VERSION = '2.6.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1242,7 +1242,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // ============================================================
     const CHANGELOG = [
         {
-            version: '2.5.1',
+            version: '2.6.0',
             date: '2026-08-17',
             items: [
                 { type: 'changed', text: 'Ghost++ compact view now opens at a short height and stays within the visible screen while resizing' },
