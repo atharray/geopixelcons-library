@@ -1241,7 +1241,8 @@
                 { type: 'added', text: 'Mobile Painting (in development): the upload panel now includes a UI scale slider for the entire bottom controls; scaling applies when the slider is released' },
                 { type: 'fixed', text: 'Mobile Painting (in development): control-row dropdowns now stay above the Paint Menu Controls buttons' },
                 { type: 'fixed', text: 'Mobile Painting (in development): Filter within pixel count now exposes working minimum and maximum inputs' },
-                { type: 'changed', text: 'Mobile Painting (in development): removed the extra gap between the control row and compact palette' },
+                { type: 'changed', text: 'Mobile Painting (in development): replaced the extra gap between the control row and compact palette with a small amount of breathing room' },
+                { type: 'fixed', text: 'Mobile Painting (in development): added a small amount of breathing room below the control row' },
             ]
         },
         {

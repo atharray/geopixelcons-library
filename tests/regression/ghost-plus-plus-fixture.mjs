@@ -2992,7 +2992,7 @@ function buildDriverScript() {
     L.push('    if (!enableButton) throw new Error("Mobile Painting Enable control was not mounted");');
     L.push('    if (getComputedStyle(row).justifyContent !== "center") throw new Error("REGRESSION: Mobile Painting control-row buttons are not centered within .gpc-mobile-controls-row");');
     L.push('    var paletteWrap = document.querySelector(".gpc-mobile-palette-wrap");');
-    L.push('    if (paletteWrap && row.getBoundingClientRect().bottom < paletteWrap.getBoundingClientRect().top - 1) throw new Error("REGRESSION: an unexpected gap remains between the Mobile Painting controls row and compact palette");');
+    L.push('    if (paletteWrap) { var rowPaletteGap = paletteWrap.getBoundingClientRect().top - row.getBoundingClientRect().bottom; if (rowPaletteGap < 2 || rowPaletteGap > 6) throw new Error("REGRESSION: expected a tiny 4px gap between the Mobile Painting controls row and compact palette, got " + rowPaletteGap + "px"); }');
     L.push('    var originalTryAutoScan = gppTryAutoScan; gppTryAutoScan = function() {};');
     L.push('    var filterButton = Array.from(row.querySelectorAll("button")).find(function(button) { return button.textContent.trim().indexOf("Filter") === 0; });');
     L.push('    if (!filterButton) throw new Error("Mobile Painting Filter control was not mounted");');

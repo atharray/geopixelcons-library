@@ -1253,7 +1253,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Mobile Painting (in development): the upload panel now includes a UI scale slider for the entire bottom controls; scaling applies when the slider is released' },
                 { type: 'fixed', text: 'Mobile Painting (in development): control-row dropdowns now stay above the Paint Menu Controls buttons' },
                 { type: 'fixed', text: 'Mobile Painting (in development): Filter within pixel count now exposes working minimum and maximum inputs' },
-                { type: 'changed', text: 'Mobile Painting (in development): removed the extra gap between the control row and compact palette' },
+                { type: 'changed', text: 'Mobile Painting (in development): replaced the extra gap between the control row and compact palette with a small amount of breathing room' },
+                { type: 'fixed', text: 'Mobile Painting (in development): added a small amount of breathing room below the control row' },
             ]
         },
         {
@@ -32041,7 +32042,7 @@ if (_settings.profileColorsCollapse) {
              }
              /* The host bottom-controls wrapper uses Tailwind gap-4 between
                 its children. The row's mount code cancels that one parent
-                gap dynamically, so the compact palette starts directly under
+                gap dynamically, leaving only a tiny 4px breathing room below
                 the row without changing spacing between the host's other
                 controls. */
              .gpc-mobile-controls-row + .control-container-colors,
@@ -34284,7 +34285,7 @@ if (_settings.profileColorsCollapse) {
         // one gap; do not alter spacing between the host's other children.
         const wrapperStyle = innerWrapperEl ? getComputedStyle(innerWrapperEl) : null;
         const rowGap = wrapperStyle ? parseFloat(wrapperStyle.rowGap || wrapperStyle.gap || '0') : 0;
-        controlsRowEl.style.marginBottom = Number.isFinite(rowGap) && rowGap > 0 ? `${-rowGap}px` : '0px';
+        controlsRowEl.style.marginBottom = Number.isFinite(rowGap) && rowGap > 0 ? `${-rowGap + 4}px` : '4px';
 
         // The Paint Menu Controls feature's own collapse toggle
         // (hide-paint-menu.js's #gpc-hide-paint-toggle / #gpc-paint-flip-pos)

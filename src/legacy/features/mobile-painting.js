@@ -701,7 +701,7 @@
              }
              /* The host bottom-controls wrapper uses Tailwind gap-4 between
                 its children. The row's mount code cancels that one parent
-                gap dynamically, so the compact palette starts directly under
+                gap dynamically, leaving only a tiny 4px breathing room below
                 the row without changing spacing between the host's other
                 controls. */
              .gpc-mobile-controls-row + .control-container-colors,
@@ -2944,7 +2944,7 @@
         // one gap; do not alter spacing between the host's other children.
         const wrapperStyle = innerWrapperEl ? getComputedStyle(innerWrapperEl) : null;
         const rowGap = wrapperStyle ? parseFloat(wrapperStyle.rowGap || wrapperStyle.gap || '0') : 0;
-        controlsRowEl.style.marginBottom = Number.isFinite(rowGap) && rowGap > 0 ? `${-rowGap}px` : '0px';
+        controlsRowEl.style.marginBottom = Number.isFinite(rowGap) && rowGap > 0 ? `${-rowGap + 4}px` : '4px';
 
         // The Paint Menu Controls feature's own collapse toggle
         // (hide-paint-menu.js's #gpc-hide-paint-toggle / #gpc-paint-flip-pos)
