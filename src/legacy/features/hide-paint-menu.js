@@ -365,7 +365,7 @@
             const STORAGE_KEY = 'geo++_paint_menu_controls_ui_scale';
             const PMO_STORAGE_KEY = 'geo++_painting_menu_overhaul_ui_scale';
             const LEGACY_STORAGE_KEY = 'geo++_mobile_painting_ui_scale';
-            const state = { content: null, percent: DEFAULT, frame: 0, widthLock: null };
+            const state = { content: null, percent: DEFAULT, frame: 0, viewportFrame: 0, widthLock: null };
             let tab = null;
             let popover = null;
             let input = null;
@@ -497,9 +497,10 @@
             // inverse width must not, however, become the auto-sized outer
             // panel's new intrinsic width. Lock the existing native width for
             // the duration of a non-100% scale, then restore the exact inline
-            // value when the user returns to 100%. This lets the site keep
-            // owning responsive width between adjustments while guaranteeing
-            // the scale action itself changes only the controls and height.
+            // value when the user returns to 100%. On a viewport resize we
+            // briefly release and refresh this lock, so GeoPixels still owns
+            // the normal responsive re-centering rather than preserving a
+            // stale pixel width from the old window size.
             const lockNativeWidth = () => {
                 if (state.widthLock) return;
                 const style = getComputedStyle(root);
@@ -553,6 +554,30 @@
                     const content = ensureContent();
                     if (state.percent !== DEFAULT) measureHeight(content, state.percent / 100);
                     alignToolbar();
+                });
+            };
+            const requestViewportReflow = () => {
+                if (state.viewportFrame) return;
+                state.viewportFrame = requestAnimationFrame(() => {
+                    state.viewportFrame = 0;
+                    if (state.percent === DEFAULT) {
+                        requestLayout();
+                        return;
+                    }
+                    // The host needs one layout frame without our temporary
+                    // pixel width before we take the new responsive width.
+                    releaseNativeWidth();
+                    root.style.height = '';
+                    requestAnimationFrame(() => {
+                        if (state.percent === DEFAULT) {
+                            requestLayout();
+                            return;
+                        }
+                        const content = ensureContent();
+                        lockNativeWidth();
+                        measureHeight(content, state.percent / 100);
+                        alignToolbar();
+                    });
                 });
             };
             const setPopoverOpen = (open) => {
@@ -659,6 +684,10 @@
                 const contentObserver = new MutationObserver(requestLayout);
                 contentObserver.observe(content, { childList: true, subtree: true });
                 topBar.addEventListener('click', requestLayout);
+                window.addEventListener('resize', requestViewportReflow, { passive: true });
+                if (window.visualViewport) {
+                    window.visualViewport.addEventListener('resize', requestViewportReflow, { passive: true });
+                }
                 apply(state.percent);
             };
             return Object.freeze({ get tab() { return tab; }, mount, requestLayout, apply, getRoot: () => root, getContent: () => ensureContent() });

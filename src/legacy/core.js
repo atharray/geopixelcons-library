@@ -1252,6 +1252,7 @@
                 { type: 'fixed', text: 'Painting Menu Overhaul: switching between the template preview and native controls now updates the scaled panel height immediately' },
                 { type: 'fixed', text: 'Paint Menu Controls: its toolbar sits flush against the scaled panel edge' },
                 { type: 'fixed', text: 'Paint Menu Controls: the scale slider keeps the exact released value, and its toolbar tab matches the selected theme' },
+                { type: 'fixed', text: 'Paint Menu Controls: a scaled paint panel now follows the site\'s normal responsive width and stays centered after resizing the window' },
             ]
         },
         {

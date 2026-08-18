@@ -101,6 +101,8 @@ test('makes scale a Paint Menu Controls capability independent of Painting Menu 
     assert.match(paintMenuControlsSource, /inverseWidthPercent/);
     assert.match(paintMenuControlsSource, /lockNativeWidth/);
     assert.match(paintMenuControlsSource, /releaseNativeWidth/);
+    assert.match(paintMenuControlsSource, /requestViewportReflow/);
+    assert.match(paintMenuControlsSource, /window\.addEventListener\('resize', requestViewportReflow/);
     assert.match(paintMenuControlsSource, /root\.style\.height/);
     assert.match(paintMenuControlsSource, /gpc-paint-flip-pos/);
     assert.match(paintMenuControlsSource, /making the scale tab a Paint Menu Controls capability/);
