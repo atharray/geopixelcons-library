@@ -79,5 +79,8 @@ test('tracks snapshot-observed guild activity and marks inactive players yellow'
     assert.match(artifact, /inactiveAfterDays: 7/);
     assert.match(artifact, /inactiveColor: '#eab308'/);
     assert.match(artifact, /Inactivity takes priority over the existing blue\/red territory colors/);
+    assert.match(artifact, /Unknown means there is no evidence of recent activity/);
+    assert.match(artifact, /Unknown members belong in Inactive/);
+    assert.match(artifact, /c\.type === 'left' \|\| !lastSeenAt \|\| isMemberInactive\(lastSeenAt\) \|\| c\.diff <= 0/);
     assert.match(artifact, /isMemberInactive\(lastSeenAt\)/);
 });

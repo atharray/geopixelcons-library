@@ -1247,6 +1247,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             items: [
                 { type: 'added', text: 'Guild Overhaul: XP Tracker and player markers now show each member\'s last observed activity from snapshot XP gains, with configurable inactive-after days and yellow inactive markers that take priority over territory colors' },
                 { type: 'fixed', text: 'Guild Overhaul: opening the XP Tracker now records activity that happened since the latest stored snapshot, so current tracker changes no longer appear as unknown' },
+                { type: 'changed', text: 'Guild Overhaul: members with unknown activity are now treated as inactive and shown with the inactive marker color until activity is observed' },
             ]
         },
         {
@@ -18910,9 +18911,10 @@ patch();
     function isMemberInactive(lastSeenAt) {
         const timestamp = Number(lastSeenAt);
         const thresholdDays = Number(playerSettings?.inactiveAfterDays);
-        if (!Number.isFinite(timestamp) || timestamp <= 0 || !Number.isFinite(thresholdDays) || thresholdDays <= 0) {
-            return false;
-        }
+        // Unknown means there is no evidence of recent activity, so it needs
+        // the same operational follow-up as an overdue known observation.
+        if (!Number.isFinite(timestamp) || timestamp <= 0) return true;
+        if (!Number.isFinite(thresholdDays) || thresholdDays <= 0) return false;
         return getVirtualNow() - timestamp >= thresholdDays * 24 * 60 * 60 * 1000;
     }
 
@@ -20417,13 +20419,17 @@ patch();
             // Apply filter
             if (filterMode === 'active') {
                 changes = changes.filter(c => {
-                    // Active = Joined OR Positive XP Gain
-                    return c.type === 'join' || c.diff > 0;
+                    // Active requires both a current positive change and a
+                    // known observation. Unknown members belong in Inactive.
+                    const lastSeenAt = getMemberActivityTimestamp(c.id);
+                    return !!lastSeenAt && (c.type === 'join' || c.diff > 0);
                 });
             } else if (filterMode === 'inactive') {
                 changes = changes.filter(c => {
-                    // Inactive = Left OR Zero/Negative XP Gain
-                    return c.type === 'left' || c.diff <= 0;
+                    // Unknown, overdue, left, and non-positive-change members
+                    // all need follow-up from the guild's point of view.
+                    const lastSeenAt = getMemberActivityTimestamp(c.id);
+                    return c.type === 'left' || !lastSeenAt || isMemberInactive(lastSeenAt) || c.diff <= 0;
                 });
             } else if (filterMode === 'in-territory') {
                 changes = changes.filter(c => {

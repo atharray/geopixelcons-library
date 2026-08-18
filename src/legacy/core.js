@@ -1235,6 +1235,7 @@
             items: [
                 { type: 'added', text: 'Guild Overhaul: XP Tracker and player markers now show each member\'s last observed activity from snapshot XP gains, with configurable inactive-after days and yellow inactive markers that take priority over territory colors' },
                 { type: 'fixed', text: 'Guild Overhaul: opening the XP Tracker now records activity that happened since the latest stored snapshot, so current tracker changes no longer appear as unknown' },
+                { type: 'changed', text: 'Guild Overhaul: members with unknown activity are now treated as inactive and shown with the inactive marker color until activity is observed' },
             ]
         },
         {

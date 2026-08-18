@@ -991,9 +991,10 @@
     function isMemberInactive(lastSeenAt) {
         const timestamp = Number(lastSeenAt);
         const thresholdDays = Number(playerSettings?.inactiveAfterDays);
-        if (!Number.isFinite(timestamp) || timestamp <= 0 || !Number.isFinite(thresholdDays) || thresholdDays <= 0) {
-            return false;
-        }
+        // Unknown means there is no evidence of recent activity, so it needs
+        // the same operational follow-up as an overdue known observation.
+        if (!Number.isFinite(timestamp) || timestamp <= 0) return true;
+        if (!Number.isFinite(thresholdDays) || thresholdDays <= 0) return false;
         return getVirtualNow() - timestamp >= thresholdDays * 24 * 60 * 60 * 1000;
     }
 
@@ -2498,13 +2499,17 @@
             // Apply filter
             if (filterMode === 'active') {
                 changes = changes.filter(c => {
-                    // Active = Joined OR Positive XP Gain
-                    return c.type === 'join' || c.diff > 0;
+                    // Active requires both a current positive change and a
+                    // known observation. Unknown members belong in Inactive.
+                    const lastSeenAt = getMemberActivityTimestamp(c.id);
+                    return !!lastSeenAt && (c.type === 'join' || c.diff > 0);
                 });
             } else if (filterMode === 'inactive') {
                 changes = changes.filter(c => {
-                    // Inactive = Left OR Zero/Negative XP Gain
-                    return c.type === 'left' || c.diff <= 0;
+                    // Unknown, overdue, left, and non-positive-change members
+                    // all need follow-up from the guild's point of view.
+                    const lastSeenAt = getMemberActivityTimestamp(c.id);
+                    return c.type === 'left' || !lastSeenAt || isMemberInactive(lastSeenAt) || c.diff <= 0;
                 });
             } else if (filterMode === 'in-territory') {
                 changes = changes.filter(c => {
