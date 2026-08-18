@@ -1251,6 +1251,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             items: [
                 { type: 'changed', text: 'Mobile Painting (in development): the bottom control-row buttons are now centered within their row' },
                 { type: 'added', text: 'Mobile Painting (in development): the upload panel now includes a UI scale slider for the entire bottom controls; scaling applies when the slider is released' },
+                { type: 'fixed', text: 'Mobile Painting (in development): control-row dropdowns now stay above the Paint Menu Controls buttons' },
+                { type: 'fixed', text: 'Mobile Painting (in development): Filter within pixel count now exposes working minimum and maximum inputs' },
+                { type: 'changed', text: 'Mobile Painting (in development): removed the extra gap between the control row and compact palette' },
             ]
         },
         {
@@ -32032,10 +32035,19 @@ if (_settings.profileColorsCollapse) {
                that stays unconditionally white regardless. Colors below are
                reused verbatim from this file's own #gpp-palette-tooltip
                block above, not reinvented. */
-            .gpc-mobile-controls-row {
-                width: 100%; box-sizing: border-box; margin-bottom: 6px;
-                display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
-            }
+             .gpc-mobile-controls-row {
+                 width: 100%; box-sizing: border-box; margin-bottom: 0;
+                 display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
+             }
+             /* The host bottom-controls wrapper uses Tailwind gap-4 between
+                its children. The row's mount code cancels that one parent
+                gap dynamically, so the compact palette starts directly under
+                the row without changing spacing between the host's other
+                controls. */
+             .gpc-mobile-controls-row + .control-container-colors,
+             .gpc-mobile-controls-row + .gpc-mobile-palette-wrap {
+                 margin-top: 0;
+             }
             .gpc-ctrl-btn {
                 max-width: 130px; box-sizing: border-box; min-width: 0;
                 border: 2px solid ${tc('#d1d5db', '#45475a')}; border-radius: 6px;
@@ -32047,7 +32059,11 @@ if (_settings.profileColorsCollapse) {
             .gpc-ctrl-btn:hover { background: ${tc('#f3f4f6', '#313244')}; }
             .gpc-ctrl-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
             .gpc-ctrl-btn-arrow { font-size: 9px; opacity: .7; flex-shrink: 0; }
-            .gpc-ctrl-dropdown { position: relative; display: inline-flex; min-width: 0; }
+             .gpc-ctrl-dropdown { position: relative; display: inline-flex; min-width: 0; }
+             /* The scaled inner wrapper is a stacking context. Keep it above
+                Paint Menu Controls' absolute top bar (z-index:20) so an
+                upward compact dropdown cannot be covered by those buttons. */
+             .gpc-mobile-scale-root { position: relative; z-index: 30; }
             /* Menus open UPWARD (bottom, not top) -- this row sits at the very
                bottom of the screen, so a downward menu would run off-page.
                z-index is well above the Paint Menu Controls feature's topBar
@@ -32069,7 +32085,17 @@ if (_settings.profileColorsCollapse) {
                 color: ${tc('#111827', '#f5f5f5')};
             }
             .gpc-ctrl-menu-option:hover { background: ${tc('#f3f4f6', '#313244')}; }
-            .gpc-ctrl-menu-option input { width: 13px; height: 13px; cursor: pointer; }
+             .gpc-ctrl-menu-option input { width: 13px; height: 13px; cursor: pointer; }
+             .gpc-ctrl-menu-count {
+                 display: flex; align-items: center; gap: 4px; padding: 2px 4px 3px 24px;
+             }
+             .gpc-ctrl-menu-count[hidden] { display: none; }
+             .gpc-ctrl-menu-count input {
+                 width: 58px; min-width: 0; box-sizing: border-box; padding: 2px 4px;
+                 border: 1px solid ${tc('#d1d5db', '#45475a')}; border-radius: 4px;
+                 background: ${tc('#ffffff', '#181825')}; color: ${tc('#111827', '#f5f5f5')};
+                 font-size: 11px;
+             }
             /* The nearest-pixel switch belongs to Enable > Selected rather
                than being a global palette preference. Hidden uses an
                explicit author rule because the base display:flex rule above
@@ -33428,11 +33454,14 @@ if (_settings.profileColorsCollapse) {
     function getRealPaletteFormControls() {
         const container = document.getElementById('gpp-palette-section');
         if (!container) return null;
+        const countInputs = Array.from(container.querySelectorAll('.gpp-palette-filter-count .gpp-palette-count-input'));
         return {
             container,
             searchInput: container.querySelector('.gpp-palette-search-input'),
             sortSelect: container.querySelector('.gpp-palette-sort-select'),
             filterInputs: Array.from(container.querySelectorAll('.gpp-palette-filter-menu input[type="checkbox"]')),
+            countMinInput: countInputs[0] || null,
+            countMaxInput: countInputs[1] || null,
         };
     }
 
@@ -33799,15 +33828,16 @@ if (_settings.profileColorsCollapse) {
         return buildDropdownButton('Sort', optionDefs).el;
     }
 
-    // Checkboxes cloned (value + label text) from the real filter menu's
-    // current checkboxes, same anti-drift reasoning as buildSortControl.
+    // Checkboxes and the optional pixel-count range cloned (value + label text)
+    // from the real filter menu's current controls, same anti-drift reasoning
+    // as buildSortControl.
     // Each one writes straight through to its real counterpart on change --
     // no local filter state of our own. Note: no search box here (out of
     // scope for this row), so "Show search results only" is inert unless a
     // search term also happens to be set in the real Ghost++ panel; and the
-    // "Filter within pixel count..." checkbox reuses whatever min/max the
-    // real panel currently has rather than adding a second pair of number
-    // inputs here.
+    // "Filter within pixel count..." forwards a local min/max pair to the
+    // real Ghost++ inputs, so the compact menu has the same range behavior
+    // rather than only toggling an otherwise unusable checkbox.
     function buildFilterControl() {
         ensurePaletteControllerReady();
         const real = getRealPaletteFormControls();
@@ -33818,6 +33848,9 @@ if (_settings.profileColorsCollapse) {
                 : realInput.value,
             checked: realInput.checked,
         }));
+        if (!optionDefs.length && typeof GPP_PALETTE_FILTER_OPTIONS !== 'undefined') {
+            GPP_PALETTE_FILTER_OPTIONS.forEach(({ value, text }) => optionDefs.push({ value, text, checked: false }));
+        }
 
         const dropdown = document.createElement('div');
         dropdown.className = 'gpc-ctrl-dropdown';
@@ -33834,8 +33867,21 @@ if (_settings.profileColorsCollapse) {
 
         const menu = document.createElement('div');
         menu.className = 'gpc-ctrl-menu';
+        const countSubRow = document.createElement('div');
+        countSubRow.className = 'gpc-ctrl-menu-count';
+        const countMinInput = document.createElement('input');
+        countMinInput.type = 'number'; countMinInput.min = '0'; countMinInput.placeholder = 'min';
+        countMinInput.setAttribute('aria-label', 'Minimum pixel count');
+        const countMaxInput = document.createElement('input');
+        countMaxInput.type = 'number'; countMaxInput.min = '0'; countMaxInput.placeholder = 'max';
+        countMaxInput.setAttribute('aria-label', 'Maximum pixel count');
+        const countDash = document.createElement('span');
+        countDash.textContent = '–'; countDash.style.opacity = '.6';
+        countSubRow.append(countMinInput, countDash, countMaxInput);
         const closeMenu = () => menu.classList.remove('gpc-open');
         openControlsRowMenus.push(closeMenu);
+        let countRangeToggle = null;
+        const localFilterInputs = new Map();
         optionDefs.forEach(({ value, text, checked }) => {
             const label = document.createElement('label');
             label.className = 'gpc-ctrl-menu-option';
@@ -33847,6 +33893,8 @@ if (_settings.profileColorsCollapse) {
             span.textContent = text;
             label.append(input, span);
             menu.appendChild(label);
+            if (value === 'countRange') countRangeToggle = input;
+            localFilterInputs.set(value, input);
 
             input.addEventListener('change', () => {
                 tryAutoScanFirst();
@@ -33855,12 +33903,50 @@ if (_settings.profileColorsCollapse) {
                 if (!target) return;
                 target.checked = input.checked;
                 target.dispatchEvent(new Event('change', { bubbles: true }));
+                if (value === 'countRange') syncCountRangeInputs();
             });
         });
+        menu.appendChild(countSubRow);
+
+        function syncCountRangeInputs() {
+            const fresh = getRealPaletteFormControls();
+            if (fresh) {
+                countMinInput.value = fresh.countMinInput ? fresh.countMinInput.value : '';
+                countMaxInput.value = fresh.countMaxInput ? fresh.countMaxInput.value : '';
+            }
+            countSubRow.hidden = !countRangeToggle || !countRangeToggle.checked;
+        }
+        function forwardCountRange() {
+            const fresh = getRealPaletteFormControls();
+            if (!fresh) return;
+            if (fresh.countMinInput) {
+                fresh.countMinInput.value = countMinInput.value;
+                fresh.countMinInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            if (fresh.countMaxInput) {
+                fresh.countMaxInput.value = countMaxInput.value;
+                fresh.countMaxInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        }
+        countMinInput.addEventListener('input', forwardCountRange);
+        countMaxInput.addEventListener('input', forwardCountRange);
+        syncCountRangeInputs();
+
+        function syncFilterFromReal() {
+            const fresh = getRealPaletteFormControls();
+            if (!fresh || !fresh.filterInputs.length) return;
+            fresh.filterInputs.forEach((realInput) => {
+                const localInput = localFilterInputs.get(realInput.value);
+                if (localInput) localInput.checked = realInput.checked;
+            });
+            syncCountRangeInputs();
+        }
 
         button.addEventListener('click', (event) => {
             event.stopPropagation();
+            ensurePaletteControllerReady();
             const opening = !menu.classList.contains('gpc-open');
+            if (opening) syncFilterFromReal();
             if (opening) closeOtherControlsRowMenus(closeMenu);
             menu.classList.toggle('gpc-open');
         });
@@ -34175,6 +34261,7 @@ if (_settings.profileColorsCollapse) {
             highlightRequestId: 0, pendingHighlightTemplateId: null,
             pendingHighlightPaletteIndex: null, syncEnableSelectedModeUi: null,
         };
+        if (innerWrapperEl) innerWrapperEl.classList.add('gpc-mobile-scale-root');
         applyMobileUiScale(liveState.uiScalePercent);
 
         // The native Sort button (sortAndSetColors()) is redundant with our
@@ -34192,6 +34279,12 @@ if (_settings.profileColorsCollapse) {
         // actually showing at any given moment (see showCompactGrid).
         const controlsRowEl = buildControlsRow();
         nativeContainer.insertAdjacentElement('beforebegin', controlsRowEl);
+        // The host wrapper normally contributes a flex column gap (gap-4)
+        // between the row and the native/compact palette. Cancel only that
+        // one gap; do not alter spacing between the host's other children.
+        const wrapperStyle = innerWrapperEl ? getComputedStyle(innerWrapperEl) : null;
+        const rowGap = wrapperStyle ? parseFloat(wrapperStyle.rowGap || wrapperStyle.gap || '0') : 0;
+        controlsRowEl.style.marginBottom = Number.isFinite(rowGap) && rowGap > 0 ? `${-rowGap}px` : '0px';
 
         // The Paint Menu Controls feature's own collapse toggle
         // (hide-paint-menu.js's #gpc-hide-paint-toggle / #gpc-paint-flip-pos)

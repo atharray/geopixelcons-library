@@ -70,6 +70,11 @@ test('keeps Mobile Painting responsive and exposes selected-colour scan feedback
     assert.match(artifact, /addEventListener\('change', commit\)/);
     assert.match(artifact, /addEventListener\('pointerup', commit\)/);
     assert.match(artifact, /applyMobileUiScale\(liveState\.uiScalePercent\)/);
+    assert.match(artifact, /gpc-ctrl-menu-count/);
+    assert.match(artifact, /Minimum pixel count/);
+    assert.match(artifact, /countMinInput\.dispatchEvent\(new Event\('input'/);
+    assert.match(artifact, /gpc-mobile-scale-root/);
+    assert.match(artifact, /controlsRowEl\.style\.marginBottom/);
 });
 test('includes a confirmation gate for large bulk purchases', () => {
     assert.match(artifact, /BULK_PURCHASE_WARNING_THRESHOLD = 50/);
