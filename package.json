@@ -1,7 +1,7 @@
 {
   "name": "geopixelcons-library",
   "private": true,
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Versioned GeoPixelcons++ feature library bundle",
   "scripts": {
     "build": "node build.js",

@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.6.0';
+    const VERSION = '2.7.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1234,8 +1234,8 @@
     // ============================================================
     const CHANGELOG = [
         {
-            version: '2.6.0',
-            date: '2026-08-18',
+            version: '2.7.0',
+            date: '2026-08-17',
             items: [
                 { type: 'changed', text: 'Mobile Painting (in development): the bottom control-row buttons are now centered within their row' },
                 { type: 'added', text: 'Mobile Painting (in development): the upload panel now includes a UI scale slider for the entire bottom controls; scaling applies when the slider is released' },
@@ -1244,6 +1244,14 @@
                 { type: 'changed', text: 'Mobile Painting (in development): replaced the extra gap between the control row and compact palette with a small amount of breathing room' },
                 { type: 'fixed', text: 'Mobile Painting (in development): added a small amount of breathing room below the control row' },
                 { type: 'fixed', text: 'Mobile Painting (in development): UI scaling no longer changes the site-sized bottom controls container' },
+                { type: 'fixed', text: 'Mobile Painting (in development): Paint Menu Controls and compact Brush Swap buttons now stay attached and scale with the paint surface' },
+            ]
+        },
+        {
+            version: '2.6.0',
+            date: '2026-08-17',
+            items: [
+                { type: 'changed', text: 'Ghost++ compact view now opens at a short height and stays within the visible screen while resizing' },
             ]
         },
         {

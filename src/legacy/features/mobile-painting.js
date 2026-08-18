@@ -720,17 +720,16 @@
             .gpc-ctrl-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
             .gpc-ctrl-btn-arrow { font-size: 9px; opacity: .7; flex-shrink: 0; }
              .gpc-ctrl-dropdown { position: relative; display: inline-flex; min-width: 0; }
-             /* The scaled inner wrapper is a stacking context. Keep it above
-                Paint Menu Controls' absolute top bar (z-index:20) so an
-                upward compact dropdown cannot be covered by those buttons. */
+             /* The scaled inner wrapper is a stacking context. Mobile Painting
+                adopts Paint Menu Controls' absolute auxiliary bar into this
+                surface at mount, so its collapse/drag/brush buttons scale and
+                remain attached to the panel rather than floating separately. */
              .gpc-mobile-scale-root { position: relative; z-index: 30; }
             /* Menus open UPWARD (bottom, not top) -- this row sits at the very
                bottom of the screen, so a downward menu would run off-page.
-               z-index is well above the Paint Menu Controls feature's topBar
-               (hide-paint-menu.js, inline z-index: 20, appended as a later
-               DOM sibling of this row inside the same #bottomControls) --
-               with equal z-index the later DOM element wins ties, which was
-               burying this menu under that toggle's button row. */
+               z-index is well above the Paint Menu Controls feature's adopted
+               top bar (hide-paint-menu.js, inline z-index: 20), so an open
+               compact menu cannot be covered by those buttons. */
             .gpc-ctrl-menu {
                 display: none; position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 1000;
                 min-width: 190px; max-width: 230px; padding: 6px; border-radius: 8px;
@@ -2716,6 +2715,40 @@
     //      more of Ghost++'s own code than the one renderState hook above.
     let liveState = null; // { bottomControls, scaleRoot, uiScalePercent, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
 
+    // Paint Menu Controls creates its toolbar as an absolute direct child of
+    // #bottomControls. That deliberately sits outside the native content
+    // wrapper, but Mobile Painting scales the wrapper alone so the site's
+    // outer panel keeps its own width/position. Leave the outer panel alone
+    // and move the already-wired toolbar into the wrapper instead: its
+    // absolute top/bottom offsets now use the wrapper as their containing
+    // block and inherit the same scale as every other paint control. The
+    // compact Brush Swap button lives in this exact toolbar, too.
+    function adoptPaintMenuToolbarIntoScaleRoot() {
+        if (!liveState || !liveState.bottomControls || !liveState.scaleRoot) return false;
+        const toggle = document.getElementById('gpc-hide-paint-toggle');
+        const toolbar = toggle ? toggle.parentElement : null;
+        if (!toolbar || !liveState.bottomControls.contains(toolbar)) return false;
+        if (toolbar.parentElement !== liveState.scaleRoot) {
+            if (!toolbar.id) toolbar.id = 'gpc-paint-menu-toolbar';
+            liveState.scaleRoot.appendChild(toolbar);
+        }
+        return true;
+    }
+
+    // Paint Menu Controls normally mounts earlier in the legacy source order,
+    // but it can wait briefly for late native DOM. Watch only direct children:
+    // its toolbar is appended directly to #bottomControls, so this catches the
+    // delayed case without observing compact-grid redraws below the wrapper.
+    function ensurePaintMenuToolbarSharesScaleRoot() {
+        if (!_settings.hidePaintMenu || !liveState || !liveState.bottomControls) return;
+        if (adoptPaintMenuToolbarIntoScaleRoot()) return;
+        const toolbarObserver = new MutationObserver(() => {
+            if (adoptPaintMenuToolbarIntoScaleRoot()) toolbarObserver.disconnect();
+        });
+        toolbarObserver.observe(liveState.bottomControls, { childList: true });
+        setTimeout(() => toolbarObserver.disconnect(), 15000);
+    }
+
     // Shown in .gpc-mobile-palette-wrap's usual spot whenever no Ghost++
     // template is focused -- most notably the very first time a mobile
     // painter ever opens this feature, before they've selected or imported
@@ -2922,6 +2955,7 @@
             pendingHighlightPaletteIndex: null, syncEnableSelectedModeUi: null,
         };
         if (innerWrapperEl) innerWrapperEl.classList.add('gpc-mobile-scale-root');
+        ensurePaintMenuToolbarSharesScaleRoot();
         applyMobileUiScale(liveState.uiScalePercent);
 
         // The native Sort button (sortAndSetColors()) is redundant with our

@@ -1,7 +1,7 @@
-/* GeoPixelcons Library v2.5.0 - readable release bundle */
+/* GeoPixelcons Library v2.6.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
-    const LIBRARY_VERSION = '2.5.0'; // x-release-please-version
+    const LIBRARY_VERSION = '2.6.0'; // x-release-please-version
     let runtime = null;
     let booting = false;
 
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.6.0';
+    const VERSION = '2.7.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1246,8 +1246,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // ============================================================
     const CHANGELOG = [
         {
-            version: '2.6.0',
-            date: '2026-08-18',
+            version: '2.7.0',
+            date: '2026-08-17',
             items: [
                 { type: 'changed', text: 'Mobile Painting (in development): the bottom control-row buttons are now centered within their row' },
                 { type: 'added', text: 'Mobile Painting (in development): the upload panel now includes a UI scale slider for the entire bottom controls; scaling applies when the slider is released' },
@@ -1256,6 +1256,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'changed', text: 'Mobile Painting (in development): replaced the extra gap between the control row and compact palette with a small amount of breathing room' },
                 { type: 'fixed', text: 'Mobile Painting (in development): added a small amount of breathing room below the control row' },
                 { type: 'fixed', text: 'Mobile Painting (in development): UI scaling no longer changes the site-sized bottom controls container' },
+                { type: 'fixed', text: 'Mobile Painting (in development): Paint Menu Controls and compact Brush Swap buttons now stay attached and scale with the paint surface' },
+            ]
+        },
+        {
+            version: '2.6.0',
+            date: '2026-08-17',
+            items: [
+                { type: 'changed', text: 'Ghost++ compact view now opens at a short height and stays within the visible screen while resizing' },
             ]
         },
         {
@@ -3932,7 +3940,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         errorSizeScale: 1,        // multiplier on the base marker size
         autoHideUnfocused: true, // when true, focusing a template hides every other one — see gppApplyAutoHideUnfocused
         grayDisabledSwatches: true, // when false, a disabled palette swatch only gets the diagonal slash, no grayscale/opacity dimming — see gpp-palette.js's .gpp-palette-gray-disabled
-        paletteViewMode: 'grid', // 'grid' | 'list' — see gpp-palette.js's gpp-palette-list-mode
+        paletteViewMode: 'grid', // 'grid' | 'list' for the full Ghost++ menu
+        compactPaletteViewMode: 'grid', // independent 'grid' | 'list' choice for the compact menu
+        compactWidth: 260,       // remembered compact-menu width in layout pixels
+        compactHeight: 160,      // remembered compact-menu height in layout pixels; short by default
         uiScale: 1,              // 0.5-1.5; whole-modal transform: scale() factor — see View Settings' "Rescale Ghost++" (gpp-view-settings.js) and gpp-ui-shell.js's --gpp-scale
     });
 
@@ -3958,7 +3969,12 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         try {
             const raw = localStorage.getItem(GPP_SETTINGS_KEY);
             if (!raw) return { ...GPP_DEFAULT_SETTINGS };
-            return { ...GPP_DEFAULT_SETTINGS, ...JSON.parse(raw) };
+            const settings = { ...GPP_DEFAULT_SETTINGS, ...JSON.parse(raw) };
+            // Preview builds before the compact-height setting used null to
+            // request content-sized height. Migrate that value so a large
+            // palette cannot reopen as a screen-filling compact window.
+            if (settings.compactHeight == null) settings.compactHeight = GPP_DEFAULT_SETTINGS.compactHeight;
+            return settings;
         } catch (_) {
             return { ...GPP_DEFAULT_SETTINGS };
         }
@@ -5265,18 +5281,22 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                fully mounted and functional; only their visibility changes,
                so nothing needs to be re-rendered when toggling in or out. */
             #${GPP_IDS.modal}.gpp-minified {
-                width: 260px !important; min-width: 0 !important;
-                height: auto !important; min-height: 0 !important;
+                width: min(var(--gpp-compact-width, 260px), calc(100vw - 16px)) !important; min-width: 0 !important;
+                height: min(var(--gpp-compact-height, 160px), calc(100vh - 16px)) !important; min-height: 0 !important;
             }
             #${GPP_IDS.modal}.gpp-minified #${GPP_IDS.right},
-            #${GPP_IDS.modal}.gpp-minified .gpp-edge,
-            #${GPP_IDS.modal}.gpp-minified .gpp-corner { display: none !important; }
+            #${GPP_IDS.modal}.gpp-minified .gpp-edge { display: none !important; }
+            /* Keep the corners active in compact mode so this window can be
+               resized and remembered independently of the full menu. */
+            #${GPP_IDS.modal}.gpp-minified .gpp-corner { display: block !important; }
             /* The "Ghost++" title itself is dead weight in the already-cramped
                260px minified strip -- the editing-name label next to it (see
                gppTruncateEditingName above) already identifies the panel,
                so drop the title to leave it more room before truncating. */
             #${GPP_IDS.modal}.gpp-minified .gpp-head-title { display: none !important; }
-            #${GPP_IDS.modal}.gpp-minified #gpp-left-body { overflow: hidden; }
+            #${GPP_IDS.modal}.gpp-minified #gpp-left-body {
+                min-height: 0; overflow: hidden !important;
+            }
             #${GPP_IDS.modal}.gpp-minified #gpp-left-body > *:not(#gpp-palette-section) { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > summary,
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-empty,
@@ -5284,10 +5304,23 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-bulk-row:not(#gpp-palette-bulk-top),
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-controls-row,
             #${GPP_IDS.modal}.gpp-minified details.gpp-collapsible#gpp-palette-gnc-details { display: none !important; }
-            #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details { border-top: none; padding: 6px; }
-            /* ~2 rows of swatches (26px min-height + 3px gap, doubled, plus
-               the grid's own 2px top/bottom padding) before scrolling. */
-            #${GPP_IDS.modal}.gpp-minified .gpp-palette-grid { max-height: 60px; }
+            #${GPP_IDS.modal}.gpp-minified #gpp-palette-section {
+                display: flex; flex: 1 1 auto; min-height: 0;
+            }
+            #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details {
+                display: flex; flex: 1 1 auto; flex-direction: column;
+                min-height: 0; border-top: none; padding: 6px;
+            }
+            #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > .gpp-body {
+                display: flex; flex: 1 1 auto; flex-direction: column;
+                min-height: 0; overflow: hidden;
+            }
+            #${GPP_IDS.modal}.gpp-minified .gpp-palette-panel {
+                flex: 1 1 auto; min-height: 0;
+            }
+            #${GPP_IDS.modal}.gpp-minified .gpp-palette-grid {
+                flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto;
+            }
             /* Only present for the duration of a collapse/expand toggle (see
                the toggle-right handler below) — ports ghost-template-manager.js's
                own .gpc-preview-animating: without a matching width transition
@@ -5869,6 +5902,17 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             // left panel's live width (exactly GTM's own leftW = currentW -
             // 34) and add back only the right panel's remembered width.
             modal.classList.add('gpp-modal-animating-width');
+            // Chromium normally emits transitionend for the width change.
+            // Keep a guarded fallback for hidden/background tabs and embedded
+            // browsers that suppress that event; otherwise the temporary
+            // class could remain forever and block the next panel toggle.
+            const widthTransitionToken = String((Number(modal.dataset.gppWidthTransitionToken) || 0) + 1);
+            modal.dataset.gppWidthTransitionToken = widthTransitionToken;
+            setTimeout(() => {
+                if (modal.dataset.gppWidthTransitionToken === widthTransitionToken) {
+                    modal.classList.remove('gpp-modal-animating-width');
+                }
+            }, 300);
             // Prefer the LOGICAL width this code (or the panel splitter's
             // own drag handler) last explicitly set, over offsetWidth --
             // both the modal (gated behind .gpp-modal-animating-width,
@@ -6010,6 +6054,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 if (event.target !== modal || event.propertyName !== 'opacity') return;
                 modal.removeEventListener('transitionend', onFadeOut);
                 const minified = modal.classList.toggle('gpp-minified'); // the actual (instant) layout swap, now hidden by the low opacity above
+                if (minified) gppApplyCompactSize(modal);
+                if (typeof gppRefreshPaletteViewMode === 'function') gppRefreshPaletteViewMode();
                 btn.title = minified ? 'Exit compact view' : 'Compact view: Enable/Disable all, palette view, and the color grid';
                 btn.setAttribute('aria-label', minified ? 'Exit minified view' : 'Minified view');
                 modal.style.opacity = '1';
@@ -6100,7 +6146,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 if (event.button !== 0 || event.target.closest('button')) return;
                 const rect = modal.getBoundingClientRect();
                 drag = { id: event.pointerId, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
-                handle.setPointerCapture(event.pointerId);
+                // A real pointerdown has an active pointer to capture. Some
+                // embedders and synthetic regression events do not; resize
+                // still works without capture because the handlers are
+                // attached to this handle, so treat capture as best-effort.
+                try { handle.setPointerCapture(event.pointerId); } catch (_) { /* no active pointer to capture */ }
                 event.stopPropagation();
             });
             handle.addEventListener('pointermove', event => {
@@ -6128,6 +6178,67 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         return (Number.isFinite(parsed) && parsed > 0) ? parsed : 1;
     }
 
+    const GPP_COMPACT_MIN_WIDTH = 180;
+    const GPP_COMPACT_MIN_HEIGHT = 72;
+
+    function gppCompactViewportLimit(modal, axis) {
+        const viewport = axis === 'width' ? window.innerWidth : window.innerHeight;
+        const safeViewport = Number.isFinite(viewport) && viewport > 0 ? viewport : (axis === 'width' ? 1200 : 900);
+        const positionProperty = axis === 'width' ? 'left' : 'top';
+        const position = parseFloat(getComputedStyle(modal).getPropertyValue(positionProperty));
+        const scale = gppReadModalScale(modal);
+        const available = (safeViewport - Math.max(0, Number.isFinite(position) ? position : 0) - 8) / scale;
+        return Math.max(axis === 'width' ? GPP_COMPACT_MIN_WIDTH : GPP_COMPACT_MIN_HEIGHT, available);
+    }
+
+    function gppClampCompactDimension(value, fallback, min, max) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+    }
+
+    function gppApplyCompactSize(modal) {
+        const width = gppClampCompactDimension(
+            gppSettings.compactWidth,
+            260,
+            GPP_COMPACT_MIN_WIDTH,
+            gppCompactViewportLimit(modal, 'width'),
+        );
+        modal.style.setProperty('--gpp-compact-width', `${width}px`);
+        if (typeof gppSettings.compactHeight === 'number' && Number.isFinite(gppSettings.compactHeight)) {
+            const height = gppClampCompactDimension(
+                gppSettings.compactHeight,
+                160,
+                GPP_COMPACT_MIN_HEIGHT,
+                gppCompactViewportLimit(modal, 'height'),
+            );
+            modal.style.setProperty('--gpp-compact-height', `${height}px`);
+        } else {
+            modal.style.removeProperty('--gpp-compact-height');
+        }
+    }
+
+    function gppPersistCompactSize(modal) {
+        if (!modal.classList.contains('gpp-minified')) return;
+        const widthStyle = parseFloat(modal.style.getPropertyValue('--gpp-compact-width'));
+        const heightStyle = parseFloat(modal.style.getPropertyValue('--gpp-compact-height'));
+        const width = gppClampCompactDimension(
+            widthStyle,
+            260,
+            GPP_COMPACT_MIN_WIDTH,
+            gppCompactViewportLimit(modal, 'width'),
+        );
+        const heightFallback = modal.offsetHeight > 0 ? modal.offsetHeight : 120;
+        const height = gppClampCompactDimension(
+            heightStyle,
+            heightFallback,
+            GPP_COMPACT_MIN_HEIGHT,
+            gppCompactViewportLimit(modal, 'height'),
+        );
+        gppSettings.compactWidth = width;
+        gppSettings.compactHeight = height;
+        gppState.saveSettings();
+    }
+
     function gppWireModalResize(modal) {
         modal.querySelectorAll('[data-gpp-resize]').forEach(handle => {
             const sides = handle.dataset.gppResize;
@@ -6135,6 +6246,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             handle.addEventListener('pointerdown', event => {
                 if (event.button !== 0) return;
                 const rect = modal.getBoundingClientRect(); // left/top only -- transform-origin: top left keeps these the same in layout and visual space regardless of scale
+                const compact = modal.classList.contains('gpp-minified');
                 drag = {
                     id: event.pointerId, startX: event.clientX, startY: event.clientY, rect,
                     // offsetWidth/Height are the LAYOUT (pre-transform) box
@@ -6146,8 +6258,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                     // unscaled layout property).
                     layoutWidth: modal.offsetWidth, layoutHeight: modal.offsetHeight,
                     scale: gppReadModalScale(modal),
+                    compact,
                 };
-                handle.setPointerCapture(event.pointerId);
+                // Pointer capture is best-effort: synthetic events and a few
+                // embedded browser contexts have no active pointer to capture.
+                try { handle.setPointerCapture(event.pointerId); } catch (_) { /* no active pointer to capture */ }
                 event.stopPropagation();
             });
             handle.addEventListener('pointermove', event => {
@@ -6160,23 +6275,56 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 // scale other than 100% drifted away from the cursor.
                 const dx = (event.clientX - drag.startX) / drag.scale;
                 const dy = (event.clientY - drag.startY) / drag.scale;
-                const minW = 480, minH = 320;
-                if (sides.includes('e')) modal.style.width = Math.max(minW, drag.layoutWidth + dx) + 'px';
-                if (sides.includes('s')) modal.style.height = Math.max(minH, drag.layoutHeight + dy) + 'px';
+                const minW = drag.compact ? GPP_COMPACT_MIN_WIDTH : 480;
+                const minH = drag.compact ? GPP_COMPACT_MIN_HEIGHT : 320;
+                const setWidth = width => {
+                    if (drag.compact) modal.style.setProperty('--gpp-compact-width', width + 'px');
+                    else modal.style.width = width + 'px';
+                };
+                const setHeight = height => {
+                    if (drag.compact) modal.style.setProperty('--gpp-compact-height', height + 'px');
+                    else modal.style.height = height + 'px';
+                };
+                if (sides.includes('e')) {
+                    const maxW = drag.compact ? gppCompactViewportLimit(modal, 'width') : Infinity;
+                    setWidth(Math.min(maxW, Math.max(minW, drag.layoutWidth + dx)));
+                }
+                if (sides.includes('s')) {
+                    const maxH = drag.compact ? gppCompactViewportLimit(modal, 'height') : Infinity;
+                    setHeight(Math.min(maxH, Math.max(minH, drag.layoutHeight + dy)));
+                }
                 if (sides.includes('w')) {
-                    const width = Math.max(minW, drag.layoutWidth - dx);
-                    modal.style.width = width + 'px';
+                    const maxW = drag.compact
+                        ? Math.min(
+                            gppCompactViewportLimit(modal, 'width'),
+                            Math.max(minW, (drag.rect.left + drag.rect.width - 8) / drag.scale),
+                        )
+                        : Infinity;
+                    const width = Math.min(maxW, Math.max(minW, drag.layoutWidth - dx));
+                    setWidth(width);
                     // Keep the visual right edge anchored under the cursor:
                     // the new VISUAL width is width * scale, not width.
                     modal.style.left = (drag.rect.left + drag.rect.width - width * drag.scale) + 'px';
                 }
                 if (sides.includes('n')) {
-                    const height = Math.max(minH, drag.layoutHeight - dy);
-                    modal.style.height = height + 'px';
+                    const maxH = drag.compact
+                        ? Math.min(
+                            gppCompactViewportLimit(modal, 'height'),
+                            Math.max(minH, (drag.rect.top + drag.rect.height - 8) / drag.scale),
+                        )
+                        : Infinity;
+                    const height = Math.min(maxH, Math.max(minH, drag.layoutHeight - dy));
+                    setHeight(height);
                     modal.style.top = (drag.rect.top + drag.rect.height - height * drag.scale) + 'px';
                 }
             });
-            handle.addEventListener('pointerup', event => { if (drag && drag.id === event.pointerId) drag = null; });
+            const finishResize = event => {
+                if (!drag || drag.id !== event.pointerId) return;
+                if (drag.compact) gppPersistCompactSize(modal);
+                drag = null;
+            };
+            handle.addEventListener('pointerup', finishResize);
+            handle.addEventListener('pointercancel', finishResize);
         });
     }
 
@@ -10149,6 +10297,22 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // garbage-collected.
     const gppPaletteControllers = new WeakMap();
 
+    function gppGetPaletteViewMode() {
+        const modal = document.getElementById(GPP_IDS.modal);
+        const setting = modal && modal.classList.contains('gpp-minified')
+            ? gppSettings.compactPaletteViewMode
+            : gppSettings.paletteViewMode;
+        return setting === 'list' ? 'list' : 'grid';
+    }
+
+    function gppRefreshPaletteViewMode() {
+        const container = document.getElementById('gpp-palette-section');
+        const controller = container && gppPaletteControllers.get(container);
+        if (controller && typeof controller.refreshViewMode === 'function') {
+            controller.refreshViewMode();
+        }
+    }
+
     function gppRenderPalette(container, template, onChange) {
         if (!container) return;
         gppInjectPaletteStyle();
@@ -10275,8 +10439,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             }
         });
 
-        // Compact-mode palette view — the same persisted Grid/List choice as
-        // View Settings, placed directly below Enable all / Disable all.
+        // Compact-mode palette view — an independent persisted Grid/List
+        // choice from the full View Settings palette preference, placed
+        // directly below Enable all / Disable all.
         // These controls intentionally have no ids because the full View
         // Settings section already owns the stable ids for its own pair.
         const paletteViewRow = document.createElement('div');
@@ -10301,15 +10466,15 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         compactListBtn.title = 'List view';
         compactListBtn.setAttribute('aria-label', 'List view');
         function syncCompactPaletteViewButtons() {
-            const mode = gppSettings.paletteViewMode === 'list' ? 'list' : 'grid';
+            const mode = gppSettings.compactPaletteViewMode === 'list' ? 'list' : 'grid';
             compactGridBtn.classList.toggle('gpp-vs-view-btn-active', mode === 'grid');
             compactListBtn.classList.toggle('gpp-vs-view-btn-active', mode === 'list');
             compactGridBtn.setAttribute('aria-pressed', String(mode === 'grid'));
             compactListBtn.setAttribute('aria-pressed', String(mode === 'list'));
         }
         function setCompactPaletteViewMode(mode) {
-            if (gppSettings.paletteViewMode === mode) return;
-            gppSettings.paletteViewMode = mode;
+            if (gppSettings.compactPaletteViewMode === mode) return;
+            gppSettings.compactPaletteViewMode = mode;
             gppState.saveSettings();
             syncCompactPaletteViewButtons();
             performFilterSort();
@@ -10903,9 +11068,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             // own CSS comment on this class.
             grid.classList.toggle('gpp-palette-gray-disabled', gppSettings.grayDisabledSwatches !== false);
             // Same live-read-every-call pattern as the line above — toggling
-            // View Settings > Global > "Palette view" updates an
-            // already-open palette immediately, no template switch needed.
-            grid.classList.toggle('gpp-palette-list-mode', gppSettings.paletteViewMode === 'list');
+            // either palette preference updates an already-open palette
+            // immediately, with the active preference following modal mode.
+            grid.classList.toggle('gpp-palette-list-mode', gppGetPaletteViewMode() === 'list');
 
             const searchTerms = searchInput.value.trim().split(/[\s,]+/).map(t => t.toUpperCase()).filter(Boolean);
             const checked = new Set(filterInputs.filter(entry => entry.input.checked).map(entry => entry.value));
@@ -11061,7 +11226,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             // Colour-only swatch — no hex text on the face; the hex/stats are
             // conveyed entirely via the custom mouse-following tooltip
             // (mouseenter/mousemove) rather than a native title attribute.
-            const listMode = gppSettings.paletteViewMode === 'list';
+            const listMode = gppGetPaletteViewMode() === 'list';
 
             const button = document.createElement('button');
             button.type = 'button';
@@ -11139,7 +11304,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             });
             const stats = { total, completed, remaining: Math.max(0, total - completed), remainingPercent: total > 0 ? (Math.max(0, total - completed) / total) * 100 : 0 };
 
-            const listMode = gppSettings.paletteViewMode === 'list';
+            const listMode = gppGetPaletteViewMode() === 'list';
 
             const button = document.createElement('button');
             button.type = 'button';
@@ -11197,6 +11362,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             emptyEl.style.display = 'none';
             panel.style.display = '';
             performFilterSort();
+        };
+
+        controller.refreshViewMode = function gppPaletteControllerRefreshViewMode() {
+            syncCompactPaletteViewButtons();
+            if (controller.template) performFilterSort();
         };
 
         return controller;
@@ -32062,17 +32232,16 @@ if (_settings.profileColorsCollapse) {
             .gpc-ctrl-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
             .gpc-ctrl-btn-arrow { font-size: 9px; opacity: .7; flex-shrink: 0; }
              .gpc-ctrl-dropdown { position: relative; display: inline-flex; min-width: 0; }
-             /* The scaled inner wrapper is a stacking context. Keep it above
-                Paint Menu Controls' absolute top bar (z-index:20) so an
-                upward compact dropdown cannot be covered by those buttons. */
+             /* The scaled inner wrapper is a stacking context. Mobile Painting
+                adopts Paint Menu Controls' absolute auxiliary bar into this
+                surface at mount, so its collapse/drag/brush buttons scale and
+                remain attached to the panel rather than floating separately. */
              .gpc-mobile-scale-root { position: relative; z-index: 30; }
             /* Menus open UPWARD (bottom, not top) -- this row sits at the very
                bottom of the screen, so a downward menu would run off-page.
-               z-index is well above the Paint Menu Controls feature's topBar
-               (hide-paint-menu.js, inline z-index: 20, appended as a later
-               DOM sibling of this row inside the same #bottomControls) --
-               with equal z-index the later DOM element wins ties, which was
-               burying this menu under that toggle's button row. */
+               z-index is well above the Paint Menu Controls feature's adopted
+               top bar (hide-paint-menu.js, inline z-index: 20), so an open
+               compact menu cannot be covered by those buttons. */
             .gpc-ctrl-menu {
                 display: none; position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 1000;
                 min-width: 190px; max-width: 230px; padding: 6px; border-radius: 8px;
@@ -34058,6 +34227,40 @@ if (_settings.profileColorsCollapse) {
     //      more of Ghost++'s own code than the one renderState hook above.
     let liveState = null; // { bottomControls, scaleRoot, uiScalePercent, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
 
+    // Paint Menu Controls creates its toolbar as an absolute direct child of
+    // #bottomControls. That deliberately sits outside the native content
+    // wrapper, but Mobile Painting scales the wrapper alone so the site's
+    // outer panel keeps its own width/position. Leave the outer panel alone
+    // and move the already-wired toolbar into the wrapper instead: its
+    // absolute top/bottom offsets now use the wrapper as their containing
+    // block and inherit the same scale as every other paint control. The
+    // compact Brush Swap button lives in this exact toolbar, too.
+    function adoptPaintMenuToolbarIntoScaleRoot() {
+        if (!liveState || !liveState.bottomControls || !liveState.scaleRoot) return false;
+        const toggle = document.getElementById('gpc-hide-paint-toggle');
+        const toolbar = toggle ? toggle.parentElement : null;
+        if (!toolbar || !liveState.bottomControls.contains(toolbar)) return false;
+        if (toolbar.parentElement !== liveState.scaleRoot) {
+            if (!toolbar.id) toolbar.id = 'gpc-paint-menu-toolbar';
+            liveState.scaleRoot.appendChild(toolbar);
+        }
+        return true;
+    }
+
+    // Paint Menu Controls normally mounts earlier in the legacy source order,
+    // but it can wait briefly for late native DOM. Watch only direct children:
+    // its toolbar is appended directly to #bottomControls, so this catches the
+    // delayed case without observing compact-grid redraws below the wrapper.
+    function ensurePaintMenuToolbarSharesScaleRoot() {
+        if (!_settings.hidePaintMenu || !liveState || !liveState.bottomControls) return;
+        if (adoptPaintMenuToolbarIntoScaleRoot()) return;
+        const toolbarObserver = new MutationObserver(() => {
+            if (adoptPaintMenuToolbarIntoScaleRoot()) toolbarObserver.disconnect();
+        });
+        toolbarObserver.observe(liveState.bottomControls, { childList: true });
+        setTimeout(() => toolbarObserver.disconnect(), 15000);
+    }
+
     // Shown in .gpc-mobile-palette-wrap's usual spot whenever no Ghost++
     // template is focused -- most notably the very first time a mobile
     // painter ever opens this feature, before they've selected or imported
@@ -34264,6 +34467,7 @@ if (_settings.profileColorsCollapse) {
             pendingHighlightPaletteIndex: null, syncEnableSelectedModeUi: null,
         };
         if (innerWrapperEl) innerWrapperEl.classList.add('gpc-mobile-scale-root');
+        ensurePaintMenuToolbarSharesScaleRoot();
         applyMobileUiScale(liveState.uiScalePercent);
 
         // The native Sort button (sortAndSetColors()) is redundant with our

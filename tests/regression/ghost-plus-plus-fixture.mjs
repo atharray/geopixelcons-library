@@ -160,7 +160,7 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('<button id="clearGhostImageBtn" type="button" style="display:none">Native clear</button>');
     // Deliberately plain site-like paint bar: Mobile Painting must preserve
     // these natural dimensions rather than forcing a full-viewport width.
-    lines.push('<div id="bottomControls"><div><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button></div><div class="control-container-colors"><button type="button">Native color</button></div></div></div>');
+    lines.push('<div id="bottomControls"><div><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button></div><div class="control-container-colors"><button type="button">Native color</button></div></div><div style="position:absolute;top:-24px;left:0;right:0;height:24px" id="gpc-paint-menu-toolbar"><button id="gpc-hide-paint-toggle" type="button">Toggle paint menu</button><button id="gpc-compact-brush" type="button">Brushes</button></div></div>');
     lines.push('<div id="map-shell"><div id="pixel-canvas"></div><canvas id="ghost-canvas"></canvas></div>');
     lines.push('<pre id="test-result" data-status="pending">pending</pre>');
     lines.push('<script>');
@@ -307,7 +307,7 @@ function buildFixtureHead(forceCanvas2D) {
     // mounts. The feature must consult the live computed root style instead
     // of only a later settings refresh.
     lines.push('document.documentElement.style.colorScheme = "dark";');
-    lines.push('let _settings = { ghostPlusPlus: true, mobilePaintingExtension: true };');
+    lines.push('let _settings = { ghostPlusPlus: true, mobilePaintingExtension: true, hidePaintMenu: true };');
     lines.push('function gpcMobileOverhaulAvailable() { return false; }');
     lines.push('let _featureStatus = {};');
     lines.push('function dbgPush(message, opts) { console.warn("[dbgPush]", message, opts); }');
@@ -2652,6 +2652,12 @@ function buildDriverScript() {
     L.push('    var progressSection = document.getElementById("gpp-progress-section");');
     L.push('    var bulkTop = document.getElementById("gpp-palette-bulk-top");');
     L.push('    if (!bulkTop) throw new Error("Enable all/Disable all row (#gpp-palette-bulk-top) not found -- cannot verify minified view keeps it visible");');
+    L.push('    var fullListBtn = document.getElementById("gpp-vs-palette-view-list");');
+    L.push('    if (!fullListBtn) throw new Error("full Ghost++ Palette view List button not found");');
+    L.push('    fullListBtn.click();');
+    L.push('    if (gppSettings.paletteViewMode !== "list") throw new Error("test setup: full Ghost++ view did not switch to List before entering compact mode");');
+    L.push('    gppSettings.compactPaletteViewMode = "grid";');
+    L.push('    gppState.saveSettings();');
     L.push('    // The minify button now cross-fades (gppRunMinifyTransition) rather than');
     L.push('    // toggling .gpp-minified synchronously -- wait for the transitionend-driven');
     L.push('    // swap to actually land instead of asserting immediately after .click().');
@@ -2667,13 +2673,38 @@ function buildDriverScript() {
     L.push('    var compactGridBtn = compactPaletteViewRow.querySelector("[data-gpp-palette-view=grid]");');
     L.push('    var compactListBtn = compactPaletteViewRow.querySelector("[data-gpp-palette-view=list]");');
     L.push('    if (!compactGridBtn || !compactListBtn) throw new Error("compact minified view is missing its Grid/List palette buttons");');
-    L.push('    if (gppSettings.paletteViewMode !== "grid") compactGridBtn.click();');
+    L.push('    if (gppSettings.compactPaletteViewMode !== "grid") throw new Error("compact mode did not start with its independent Grid preference");');
+    L.push('    if (!compactGridBtn.classList.contains("gpp-vs-view-btn-active") || compactListBtn.classList.contains("gpp-vs-view-btn-active")) throw new Error("expected compact Grid to be active independently of the full-menu List preference");');
+    L.push('    if (!document.querySelector(".gpp-palette-grid") || document.querySelector(".gpp-palette-grid").classList.contains("gpp-palette-list-mode")) throw new Error("compact mode did not render its independent Grid layout");');
     L.push('    compactListBtn.click();');
-    L.push('    if (gppSettings.paletteViewMode !== "list") throw new Error("clicking the compact List button did not persist gppSettings.paletteViewMode=list");');
+    L.push('    if (gppSettings.compactPaletteViewMode !== "list") throw new Error("clicking the compact List button did not persist gppSettings.compactPaletteViewMode=list");');
+    L.push('    if (gppSettings.paletteViewMode !== "list") throw new Error("compact List click incorrectly changed the full-menu palette preference");');
     L.push('    if (!compactListBtn.classList.contains("gpp-vs-view-btn-active") || compactGridBtn.classList.contains("gpp-vs-view-btn-active")) throw new Error("compact Palette view buttons did not mark List active");');
     L.push('    if (!document.querySelector(".gpp-palette-grid .gpp-swatch-list")) throw new Error("compact List button did not switch the palette swatches to list mode");');
     L.push('    compactGridBtn.click();');
-    L.push('    if (gppSettings.paletteViewMode !== "grid") throw new Error("clicking the compact Grid button did not persist gppSettings.paletteViewMode=grid");');
+    L.push('    if (gppSettings.compactPaletteViewMode !== "grid") throw new Error("clicking the compact Grid button did not persist gppSettings.compactPaletteViewMode=grid");');
+    L.push('    if (gppSettings.paletteViewMode !== "list") throw new Error("compact Grid click incorrectly changed the full-menu palette preference");');
+    L.push('    var compactHandle = modal.querySelector(".gpp-corner.se");');
+    L.push('    if (!compactHandle || getComputedStyle(compactHandle).display === "none") throw new Error("compact mode resize handle is not visible");');
+    L.push('    var compactWidthBefore = modal.offsetWidth;');
+    L.push('    var compactHeightBefore = modal.offsetHeight;');
+    L.push('    if (compactHeightBefore > 220) throw new Error("REGRESSION: compact mode defaulted to a content-sized height of " + compactHeightBefore + "px instead of a short bounded height");');
+    L.push('    var compactBoundsBefore = modal.getBoundingClientRect();');
+    L.push('    if (compactBoundsBefore.right > window.innerWidth + 1 || compactBoundsBefore.bottom > window.innerHeight + 1) throw new Error("REGRESSION: compact mode default bounds extend beyond the viewport: " + JSON.stringify({ right: compactBoundsBefore.right, bottom: compactBoundsBefore.bottom, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }));');
+    L.push('    var compactPointerId = 73;');
+    L.push('    compactHandle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: compactPointerId, clientX: 300, clientY: 220 }));');
+    L.push('    compactHandle.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, button: 0, pointerId: compactPointerId, clientX: 340, clientY: 260 }));');
+    L.push('    compactHandle.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, pointerId: compactPointerId, clientX: 340, clientY: 260 }));');
+    L.push('    if (!(gppSettings.compactWidth > compactWidthBefore)) throw new Error("resizing compact mode did not persist a larger compact width");');
+    L.push('    if (!(gppSettings.compactHeight > compactHeightBefore)) throw new Error("resizing compact mode did not persist a larger compact height");');
+    L.push('    var boundPointerId = 74;');
+    L.push('    compactHandle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: boundPointerId, clientX: 300, clientY: 220 }));');
+    L.push('    compactHandle.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, button: 0, pointerId: boundPointerId, clientX: window.innerWidth * 4, clientY: window.innerHeight * 4 }));');
+    L.push('    compactHandle.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, pointerId: boundPointerId, clientX: window.innerWidth * 4, clientY: window.innerHeight * 4 }));');
+    L.push('    var compactBoundsAfterLimit = modal.getBoundingClientRect();');
+    L.push('    if (compactBoundsAfterLimit.right > window.innerWidth + 1 || compactBoundsAfterLimit.bottom > window.innerHeight + 1) throw new Error("REGRESSION: compact resize exceeded the viewport: " + JSON.stringify({ right: compactBoundsAfterLimit.right, bottom: compactBoundsAfterLimit.bottom, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }));');
+    L.push('    var compactWidthRemembered = gppSettings.compactWidth;');
+    L.push('    var compactHeightRemembered = gppSettings.compactHeight;');
     L.push('    var settledAtFull = await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000);');
     L.push('    if (!settledAtFull) throw new Error("the minify transition never finished (still fading) -- gpp-minify-transitioning was never removed");');
     L.push('    if (getComputedStyle(modal).opacity !== "1") throw new Error("REGRESSION: the modal did not fade back to full opacity after entering minified view, opacity=" + getComputedStyle(modal).opacity);');
@@ -2683,7 +2714,17 @@ function buildDriverScript() {
     L.push('    if (getComputedStyle(rightPanel).display === "none") throw new Error("REGRESSION: the right panel stayed hidden after exiting minified view");');
     L.push('    var settledAtNormal = await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000);');
     L.push('    if (!settledAtNormal) throw new Error("the exit-minify transition never finished (still fading)");');
-    L.push('    return "Rescale Ghost++ only applies once the slider is released (\'change\', not \'input\'), live-updating --gpp-scale and persisting to gppSettings.uiScale; the minify button cross-fades into/out of .gpp-minified (transitionend-driven, re-entrancy guarded) instead of snapping instantly, hiding the right panel/Progress section while keeping Enable all/Disable all and the Palette view Grid/List control visible, and fully restores on toggle-off";');
+    L.push('    minifyBtn.click();');
+    L.push('    var reenteredMinified = await waitFor(function() { return modal.classList.contains("gpp-minified"); }, 2000);');
+    L.push('    if (!reenteredMinified) throw new Error("compact mode did not re-enter after the resize persistence check");');
+    L.push('    if (Math.abs(gppSettings.compactWidth - compactWidthRemembered) > 0.1 || Math.abs(gppSettings.compactHeight - compactHeightRemembered) > 0.1) throw new Error("compact dimensions changed unexpectedly after re-entering compact mode");');
+    L.push('    if (gppSettings.paletteViewMode !== "list" || gppSettings.compactPaletteViewMode !== "grid") throw new Error("full and compact palette preferences were not retained independently after re-entry");');
+    L.push('    var settledAtReentry = await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000);');
+    L.push('    if (!settledAtReentry) throw new Error("the compact re-entry transition never finished");');
+    L.push('    minifyBtn.click();');
+    L.push('    var exitedAfterResize = await waitFor(function() { return !modal.classList.contains("gpp-minified"); }, 2000);');
+    L.push('    if (!exitedAfterResize) throw new Error("clicking the minify button after the resize persistence check did not exit compact view");');
+    L.push('    return "Rescale Ghost++ only applies once the slider is released (\'change\', not \'input\'), live-updating --gpp-scale and persisting to gppSettings.uiScale; full and compact palette Grid/List preferences stay independent, and compact corner resizing persists width/height across compact re-entry";');
     L.push('  });');
     L.push('');
     // ---- item uiShell.range-slider-blurs-on-change ----
@@ -2972,6 +3013,8 @@ function buildDriverScript() {
     // the scan settles.
     L.push('  await step("mobile-painting.live-controller", async function() {');
     L.push('    if (!template || !template.id) throw new Error("test setup: expected the original template id for Mobile Painting coverage");');
+    L.push('    // The preceding compact-menu scenario intentionally leaves the full Ghost++ palette in List mode. Force Grid here because the assertion below exercises the grid-only circular progress badge; List mode instead renders its progress as text and a bar.');
+    L.push('    gppSettings.paletteViewMode = "grid"; gppState.saveSettings();');
     L.push('    var originalTemplateId = template.id;');
     L.push('    await gppState.focusTemplate(originalTemplateId);');
     L.push('    template = gppState.getFocusedTemplate();');
@@ -3074,6 +3117,8 @@ function buildDriverScript() {
     L.push('    var scaleBefore = scaleRoot && scaleRoot.dataset.gpcMobileUiScale;');
     L.push('    var bottomWidthBeforeScale = bottom.getBoundingClientRect().width;');
     L.push('    var bottomStyleWidthBeforeScale = bottom.style.width;');
+    L.push('    var paintMenuToolbar = document.getElementById("gpc-paint-menu-toolbar");');
+    L.push('    if (!paintMenuToolbar || paintMenuToolbar.parentElement !== scaleRoot || !paintMenuToolbar.querySelector("#gpc-compact-brush")) throw new Error("REGRESSION: Paint Menu Controls toolbar (including compact Brush Swap) was not adopted into the Mobile Painting scale root");');
     L.push('    previewCanvas.click();');
     L.push('    var placeholderReady = await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && !group.classList.contains("gpc-hidden") && !!document.getElementById("gpc-mobile-ui-scale"); }, 5000);');
     L.push('    if (!placeholderReady) throw new Error("Mobile Painting placeholder mode did not expose the UI scale slider under #gpc-mobile-upload-panel");');
@@ -3085,6 +3130,9 @@ function buildDriverScript() {
     L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== scaleBefore || getComputedStyle(scaleRoot).transform === "none") throw new Error("REGRESSION: UI scale changed while the slider was still being dragged");');
     L.push('    scaleInput.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));');
     L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== "80" || getComputedStyle(scaleRoot).transform === "none") throw new Error("REGRESSION: UI scale did not apply on slider release");');
+    L.push('    var toolbarHeightAt80 = paintMenuToolbar.getBoundingClientRect().height;');
+    L.push('    if (Math.abs(toolbarHeightAt80 - 19.2) > 1.5) throw new Error("REGRESSION: Paint Menu Controls toolbar did not scale with the surface at 80% (height=" + toolbarHeightAt80 + ")");');
+    L.push('    if (Math.abs(paintMenuToolbar.getBoundingClientRect().bottom - scaleRoot.getBoundingClientRect().top) > 1.5) throw new Error("REGRESSION: scaled Paint Menu Controls toolbar is detached from the scaled paint surface at 80%");');
     L.push('    var bottomWidthAfterSmallScale = bottom.getBoundingClientRect().width;');
     L.push('    if (Math.abs(bottomWidthAfterSmallScale - bottomWidthBeforeScale) > 1) throw new Error("REGRESSION: scaling changed #bottomControls outer width at 80% (before=" + bottomWidthBeforeScale + ", after=" + bottomWidthAfterSmallScale + ")");');
     L.push('    if (bottom.style.width !== bottomStyleWidthBeforeScale) throw new Error("REGRESSION: scaling rewrote #bottomControls inline width");');
@@ -3094,6 +3142,9 @@ function buildDriverScript() {
     L.push('    var bottomWidthAfterLargeScale = bottom.getBoundingClientRect().width;');
     L.push('    if (Math.abs(bottomWidthAfterLargeScale - bottomWidthBeforeScale) > 1) throw new Error("REGRESSION: scaling changed #bottomControls outer width at 120% (before=" + bottomWidthBeforeScale + ", after=" + bottomWidthAfterLargeScale + ")");');
     L.push('    if (bottom.style.width !== bottomStyleWidthBeforeScale) throw new Error("REGRESSION: large-scale commit rewrote #bottomControls inline width");');
+    L.push('    var toolbarHeightAt120 = paintMenuToolbar.getBoundingClientRect().height;');
+    L.push('    if (Math.abs(toolbarHeightAt120 - 28.8) > 1.5) throw new Error("REGRESSION: Paint Menu Controls toolbar did not scale with the surface at 120% (height=" + toolbarHeightAt120 + ")");');
+    L.push('    if (Math.abs(paintMenuToolbar.getBoundingClientRect().bottom - scaleRoot.getBoundingClientRect().top) > 1.5) throw new Error("REGRESSION: scaled Paint Menu Controls toolbar is detached from the scaled paint surface at 120%");');
     L.push('    scaleInput.value = "100";');
     L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
     L.push('    scaleInput.dispatchEvent(new Event("change", { bubbles: true }));');

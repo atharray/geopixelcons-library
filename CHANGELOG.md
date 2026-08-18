@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.6.0](https://github.com/atharray/geopixelcons-library/compare/v2.5.0...v2.6.0) (2026-08-18)
+
+
+### Features
+
+* **ghost:** separate compact palette state and size ([6e7f35c](https://github.com/atharray/geopixelcons-library/commit/6e7f35c89a32ab209f40662f3cafb69f7cf5d3bf))
+
+
+### Bug Fixes
+
+* **ghost:** bound compact view height ([9adca9c](https://github.com/atharray/geopixelcons-library/commit/9adca9c6f68ca98ac11e94a8f225b111c3d7aec4))
+* **ghost:** record compact view bounds update ([313015f](https://github.com/atharray/geopixelcons-library/commit/313015f9d5fcfc0d1e5b46576a2cd5c938a94cf6))
+
 ## [2.5.0](https://github.com/atharray/geopixelcons-library/compare/v2.4.1...v2.5.0) (2026-08-18)
 
 
