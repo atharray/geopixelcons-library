@@ -1,6 +1,6 @@
 
     // ============================================================
-    //  EXTENSION: Mobile Painting [mobilePaintingExtension]
+    //  EXTENSION: Painting Menu Overhaul [mobilePaintingExtension]
     // ============================================================
     // In-development extension. Implementation is intentionally being built
     // up in small, explicitly-requested increments -- do not add behavior
@@ -10,7 +10,11 @@
             (function _ext_mobilePainting() {
 
     const MP_STYLE_ID = 'gpc-mobile-painting-style';
-    const MP_SCALE_STORAGE_KEY = 'geo++_mobile_painting_ui_scale';
+    // The new key names the feature users see in Settings. Keep the previous
+    // preview key as a read-only migration source so an existing user's
+    // preferred scale survives this rename.
+    const PMO_SCALE_STORAGE_KEY = 'geo++_painting_menu_overhaul_ui_scale';
+    const LEGACY_MP_SCALE_STORAGE_KEY = 'geo++_mobile_painting_ui_scale';
     const MP_SCALE_MIN = 75;
     const MP_SCALE_MAX = 125;
     const MP_SCALE_STEP = 5;
@@ -25,14 +29,20 @@
 
     function readMobileUiScale() {
         try {
-            const stored = localStorage.getItem(MP_SCALE_STORAGE_KEY);
+            const stored = localStorage.getItem(PMO_SCALE_STORAGE_KEY);
             if (stored !== null) return clampMobileUiScale(stored);
+            const legacyStored = localStorage.getItem(LEGACY_MP_SCALE_STORAGE_KEY);
+            if (legacyStored !== null) {
+                const migrated = clampMobileUiScale(legacyStored);
+                localStorage.setItem(PMO_SCALE_STORAGE_KEY, String(migrated));
+                return migrated;
+            }
         } catch (e) {}
         return MP_SCALE_DEFAULT;
     }
 
     function persistMobileUiScale(percent) {
-        try { localStorage.setItem(MP_SCALE_STORAGE_KEY, String(percent)); } catch (e) {}
+        try { localStorage.setItem(PMO_SCALE_STORAGE_KEY, String(percent)); } catch (e) {}
     }
 
     // Scale the existing inner bottom-controls wrapper instead of
@@ -720,7 +730,7 @@
             .gpc-ctrl-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
             .gpc-ctrl-btn-arrow { font-size: 9px; opacity: .7; flex-shrink: 0; }
              .gpc-ctrl-dropdown { position: relative; display: inline-flex; min-width: 0; }
-             /* The scaled inner wrapper is a stacking context. Mobile Painting
+             /* The scaled inner wrapper is a stacking context. Painting Menu Overhaul
                 adopts Paint Menu Controls' absolute auxiliary bar into this
                 surface at mount, so its collapse/drag/brush buttons scale and
                 remain attached to the panel rather than floating separately. */
@@ -1280,7 +1290,7 @@
 
     // Unlike the regular borrowed controls, gpp-scan.js intentionally bakes
     // these four buttons' theme colors into inline style.cssText. Refresh that
-    // presentation whenever the Mobile Painting theme stylesheet refreshes so
+    // presentation whenever the Painting Menu Overhaul theme stylesheet refreshes so
     // a live GeoPixels++ theme switch cannot leave placeholder Scan controls
     // with their old colors until something else rebuilds the whole panel.
     function retintBorrowedScanButtons() {
@@ -1344,7 +1354,7 @@
     //
     // The zone's own real heading/format-list/"load from a URL" text is
     // written for desktop (mentions drag/drop and paste, plus a URL-upload
-    // flow); per explicit product decision mobile painters only ever tap
+    // flow); per explicit product decision touch painters only ever tap
     // to pick a file, so those three real elements (#gpp-drop-zone-heading/
     // -hint ids added in gpp-init.js's ensureShellBuilt specifically for
     // this, #gpp-url-upload-btn already had one) are hidden in place --
@@ -1366,7 +1376,7 @@
         labelRow.className = 'gpc-mobile-scale-label-row';
         const label = document.createElement('label');
         label.htmlFor = 'gpc-mobile-ui-scale';
-        label.textContent = 'UI scale';
+        label.textContent = 'Painting Menu scale';
         const value = document.createElement('output');
         value.className = 'gpc-mobile-scale-value';
         value.htmlFor = 'gpc-mobile-ui-scale';
@@ -1380,8 +1390,8 @@
         input.max = String(MP_SCALE_MAX);
         input.step = String(MP_SCALE_STEP);
         input.value = String(liveState ? liveState.uiScalePercent : readMobileUiScale());
-        input.title = 'Scale the entire Mobile Painting bottom controls';
-        input.setAttribute('aria-label', 'Mobile Painting UI scale');
+        input.title = 'Scale the entire Painting Menu Overhaul';
+        input.setAttribute('aria-label', 'Painting Menu Overhaul scale');
 
         const updateReadout = () => { value.textContent = `${input.value}%`; };
         const commit = () => {
@@ -1572,7 +1582,7 @@
         group.classList.toggle('gpc-hidden', !switchingToPlaceholders);
         if (nativeTopBar) nativeTopBar.classList.toggle('gpc-hidden', switchingToPlaceholders);
         if (controlsRow) controlsRow.classList.toggle('gpc-hidden', switchingToPlaceholders);
-        dbgPush('Mobile Painting: preview thumbnail tapped -- switched to ' + (switchingToPlaceholders ? 'placeholder panels' : 'native controls') + '.', { uiComponent: 'Mobile Painting' });
+        dbgPush('Painting Menu Overhaul: preview thumbnail tapped -- switched to ' + (switchingToPlaceholders ? 'placeholder panels' : 'native controls') + '.', { uiComponent: 'Painting Menu Overhaul' });
     }
 
     // ── Larger-preview modal (eye icon on .gpc-mobile-preview-frame) ───────
@@ -1868,7 +1878,7 @@
             if (typeof pw.changeColor === 'function') pw.changeColor(hex);
             updateHexDisplay(hex);
             gppState.persistTemplateState(template).catch((err) => {
-                console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
+                console.error('[GeoPixelcons++] Painting Menu Overhaul: failed to persist template state', err);
             });
             // A fresh Selected-mode colour makes any existing guide obsolete
             // immediately, even if the next lookup has to wait for the Scan
@@ -1914,7 +1924,7 @@
                 updateHexDisplay(hex);
             }
             gppState.persistTemplateState(template).catch((err) => {
-                console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
+                console.error('[GeoPixelcons++] Painting Menu Overhaul: failed to persist template state', err);
             });
             if (typeof gppRendererSchedule === 'function') gppRendererSchedule();
             if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
@@ -2126,7 +2136,7 @@
 
     function notifyMaskChanged(template) {
         gppState.persistTemplateState(template).catch((err) => {
-            console.error('[GeoPixelcons++] Mobile Painting: failed to persist template state', err);
+            console.error('[GeoPixelcons++] Painting Menu Overhaul: failed to persist template state', err);
         });
         if (typeof gppRendererSchedule === 'function') gppRendererSchedule();
         if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
@@ -2222,7 +2232,7 @@
         syncEnableSelectedModeUi();
         const hex = liveState && liveState.selectedHex;
         if (!hex) {
-            dbgPush('Mobile Painting: switched to solo mode, but no color is currently selected to re-solo.', { uiComponent: 'Mobile Painting' });
+            dbgPush('Painting Menu Overhaul: switched to solo mode, but no color is currently selected to re-solo.', { uiComponent: 'Painting Menu Overhaul' });
             return;
         }
         let targetIndex = -1;
@@ -2230,7 +2240,7 @@
             if (core.packedToHex(template.palette[index]) === hex) { targetIndex = index; break; }
         }
         if (targetIndex === -1) {
-            dbgPush('Mobile Painting: switched to solo mode, but the selected color is not in this template\'s palette.', { uiComponent: 'Mobile Painting' });
+            dbgPush('Painting Menu Overhaul: switched to solo mode, but the selected color is not in this template\'s palette.', { uiComponent: 'Painting Menu Overhaul' });
             return;
         }
         for (let index = 0; index < template.palette.length; index++) {
@@ -2317,7 +2327,7 @@
             }
             if (result && result.ok) gppScanStartSelectedColorGlow(template.id, result.gridX, result.gridY);
         }).catch((err) => {
-            console.error('[GeoPixelcons++] Mobile Painting: nearest selected-color highlight failed', err);
+            console.error('[GeoPixelcons++] Painting Menu Overhaul: nearest selected-color highlight failed', err);
         });
     }
 
@@ -2624,7 +2634,7 @@
             return () => {
                 const template = getFocusedTemplateWithPalette();
                 if (!template) {
-                    dbgPush('Mobile Painting: control row action ignored -- no focused Ghost++ template.', { uiComponent: 'Mobile Painting' });
+                    dbgPush('Painting Menu Overhaul: control row action ignored -- no focused Ghost++ template.', { uiComponent: 'Painting Menu Overhaul' });
                     return;
                 }
                 fn(template, gppCreateCore());
@@ -2717,7 +2727,7 @@
 
     // Paint Menu Controls creates its toolbar as an absolute direct child of
     // #bottomControls. That deliberately sits outside the native content
-    // wrapper, but Mobile Painting scales the wrapper alone so the site's
+    // wrapper, but Painting Menu Overhaul scales the wrapper alone so the site's
     // outer panel keeps its own width/position. Leave the outer panel alone
     // and move the already-wired toolbar into the wrapper instead: its
     // absolute top/bottom offsets now use the wrapper as their containing
@@ -2828,7 +2838,7 @@
                 // native sync ticks log "Color container
                 // '.control-container-colors' not found." to the console.
                 liveState.savedNativeContainer.style.display = '';
-                dbgPush('Mobile Painting: no focused Ghost++ template anymore -- restored the native color grid.', { uiComponent: 'Mobile Painting' });
+                dbgPush('Painting Menu Overhaul: no focused Ghost++ template anymore -- restored the native color grid.', { uiComponent: 'Painting Menu Overhaul' });
                 liveState.wrap = null;
                 liveState.grid = null;
                 liveState.templateId = null;
@@ -2886,7 +2896,7 @@
         liveState.paletteViewMode = paletteViewMode;
         liveState.scanSummaryRef = scanSummaryRef;
         retryPendingSelectedNearestHighlight(template);
-        dbgPush('Mobile Painting: (re)built palette grid for template "' + template.id + '" (' + order.length + '/' + template.palette.length + ' colors visible).', { uiComponent: 'Mobile Painting' });
+        dbgPush('Painting Menu Overhaul: (re)built palette grid for template "' + template.id + '" (' + order.length + '/' + template.palette.length + ' colors visible).', { uiComponent: 'Painting Menu Overhaul' });
     }
 
     // Swaps the compact grid in without ever detaching
@@ -2910,11 +2920,11 @@
         // the DOM. resync() continues to refresh this stylesheet afterward
         // for live theme changes.
         injectStyle();
-        dbgPush('Mobile Painting: #bottomControls found -- keeping the site-controlled responsive width.', { uiComponent: 'Mobile Painting' });
+        dbgPush('Painting Menu Overhaul: #bottomControls found -- keeping the site-controlled responsive width.', { uiComponent: 'Painting Menu Overhaul' });
 
         const nativeContainer = bottomControls.querySelector('.control-container-colors');
         if (!nativeContainer) {
-            dbgPush('Mobile Painting: no .control-container-colors found inside #bottomControls -- nothing to replace.', { uiComponent: 'Mobile Painting' });
+            dbgPush('Painting Menu Overhaul: no .control-container-colors found inside #bottomControls -- nothing to replace.', { uiComponent: 'Painting Menu Overhaul' });
             return;
         }
 
@@ -3026,7 +3036,7 @@
             setTimeout(() => {
                 clearInterval(retryInterval);
                 if (!liveState.grid) {
-                    dbgPush('Mobile Painting: gave up after 15s -- no focused Ghost++ template with a decoded palette was found; left the native color grid in place.', { uiComponent: 'Mobile Painting' });
+                    dbgPush('Painting Menu Overhaul: gave up after 15s -- no focused Ghost++ template with a decoded palette was found; left the native color grid in place.', { uiComponent: 'Painting Menu Overhaul' });
                 }
             }, 15000);
         }
@@ -3044,7 +3054,7 @@
             const el = document.getElementById('bottomControls');
             if (el) {
                 observer.disconnect();
-                dbgPush('Mobile Painting: #bottomControls appeared ' + (Date.now() - watchStartedAt) + 'ms after watching started -- mounting now.', { uiComponent: 'Mobile Painting' });
+                dbgPush('Painting Menu Overhaul: #bottomControls appeared ' + (Date.now() - watchStartedAt) + 'ms after watching started -- mounting now.', { uiComponent: 'Painting Menu Overhaul' });
                 mount(el);
             }
         });
@@ -3052,18 +3062,18 @@
         setTimeout(() => {
             observer.disconnect();
             if (!document.getElementById('bottomControls')) {
-                dbgPush('Mobile Painting: gave up after 15s -- #bottomControls was never found.', { uiComponent: 'Mobile Painting' });
-                console.error('[GeoPixelcons++] Mobile Painting: never found #bottomControls.');
+                dbgPush('Painting Menu Overhaul: gave up after 15s -- #bottomControls was never found.', { uiComponent: 'Painting Menu Overhaul' });
+                console.error('[GeoPixelcons++] Painting Menu Overhaul: never found #bottomControls.');
             }
         }, 15000);
     }
 
             })();
             _featureStatus.mobilePaintingExtension = 'ok';
-            console.log('[GeoPixelcons++] ✅ Mobile Painting loaded');
+            console.log('[GeoPixelcons++] ✅ Painting Menu Overhaul loaded');
         } catch (err) {
             _featureStatus.mobilePaintingExtension = 'error';
-            dbgPush(`Mobile Painting init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Mobile Painting' });
-            console.error('[GeoPixelcons++] ❌ Mobile Painting failed:', err);
+            dbgPush(`Painting Menu Overhaul init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Painting Menu Overhaul' });
+            console.error('[GeoPixelcons++] ❌ Painting Menu Overhaul failed:', err);
         }
     }

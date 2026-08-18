@@ -51,7 +51,7 @@ test('includes the opt-in native guild territory auto-loader', () => {
 test('defaults Compact Paint Controls on for new installs', () => {
     assert.match(artifact, /compactPaintOverflow: true/);
 });
-test('keeps Mobile Painting responsive and exposes selected-colour scan feedback', () => {
+test('keeps Painting Menu Overhaul responsive and exposes selected-colour scan feedback', () => {
     assert.doesNotMatch(artifact, /function applyFullWidthBottomControls\(/);
     assert.doesNotMatch(artifact, /style\.width = '100vw'/);
     assert.match(artifact, /rootStyle\.colorScheme/);
@@ -66,6 +66,9 @@ test('keeps Mobile Painting responsive and exposes selected-colour scan feedback
     assert.match(artifact, /retintBorrowedScanButtons/);
     assert.match(artifact, /justify-content: center/);
     assert.match(artifact, /gpc-mobile-ui-scale/);
+    assert.match(artifact, /Painting Menu Overhaul/);
+    assert.match(artifact, /geo\+\+_painting_menu_overhaul_ui_scale/);
+    assert.match(artifact, /geo\+\+_mobile_painting_ui_scale/);
     assert.match(artifact, /addEventListener\('input', updateReadout\)/);
     assert.match(artifact, /addEventListener\('change', commit\)/);
     assert.match(artifact, /addEventListener\('pointerup', commit\)/);

@@ -158,7 +158,7 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('<input id="ghostImageInput" type="file" accept="image/*" style="display:none">');
     lines.push('<button id="initiatePlaceGhostBtn" type="button" style="display:none">Native place</button>');
     lines.push('<button id="clearGhostImageBtn" type="button" style="display:none">Native clear</button>');
-    // Deliberately plain site-like paint bar: Mobile Painting must preserve
+    // Deliberately plain site-like paint bar: Painting Menu Overhaul must preserve
     // these natural dimensions rather than forcing a full-viewport width.
     lines.push('<div id="bottomControls"><div><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button></div><div class="control-container-colors"><button type="button">Native color</button></div></div><div style="position:absolute;top:-24px;left:0;right:0;height:24px" id="gpc-paint-menu-toolbar"><button id="gpc-hide-paint-toggle" type="button">Toggle paint menu</button><button id="gpc-compact-brush" type="button">Brushes</button></div></div>');
     lines.push('<div id="map-shell"><div id="pixel-canvas"></div><canvas id="ghost-canvas"></canvas></div>');
@@ -303,10 +303,11 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('    document.getElementById(id).addEventListener(type, function() { window.__nativeControlEvents++; });');
     lines.push('});');
     lines.push('');
-    // Start as though Simple Black was already applied before Mobile Painting
+    // Start as though Simple Black was already applied before Painting Menu Overhaul
     // mounts. The feature must consult the live computed root style instead
     // of only a later settings refresh.
     lines.push('document.documentElement.style.colorScheme = "dark";');
+    lines.push('localStorage.setItem("geo++_mobile_painting_ui_scale", "90");');
     lines.push('let _settings = { ghostPlusPlus: true, mobilePaintingExtension: true, hidePaintMenu: true };');
     lines.push('function gpcMobileOverhaulAvailable() { return false; }');
     lines.push('let _featureStatus = {};');
@@ -909,7 +910,7 @@ function buildDriverScript() {
     L.push('');
 
     // ---- item scan.manual-button-refreshes-public-subscribers ----
-    // The compact Mobile Painting palette subscribes through
+    // The compact Painting Menu Overhaul palette subscribes through
     // gppSubscribeUiRefresh(). Its borrowed Scan progress button used to call
     // only the private panel callback, leaving mobile checkmarks/status stale
     // even when the scan itself completed. Exercise the real button and prove
@@ -938,7 +939,7 @@ function buildDriverScript() {
     L.push('      if (priorTile) tileImageCache.set("0,0", priorTile); else tileImageCache.delete("0,0");');
     L.push('      bitmap.close();');
     L.push('    }');
-    L.push('    return "clicking the real Scan progress button now notifies public UI subscribers at both busy and completion states, so Mobile Painting can refresh its palette status without waiting for its fallback poll";');
+    L.push('    return "clicking the real Scan progress button now notifies public UI subscribers at both busy and completion states, so Painting Menu Overhaul can refresh its palette status without waiting for its fallback poll";');
     L.push('  });');
     L.push('');
     // ---- open real modal (integration + needed for item i) ----
@@ -3004,21 +3005,21 @@ function buildDriverScript() {
     L.push('  });');
     L.push('');
     // ---- item mobile-painting.live-controller ----
-    // Loads the real Mobile Painting source after Ghost++ in the same browser
+    // Loads the real Painting Menu Overhaul source after Ghost++ in the same browser
     // page. Covers the regressions that a scan-only fixture cannot: natural
     // host width, Simple Black present before mount, compact palette status
     // rebuild after the public completed-scan refresh, and a rapid A -> B
     // selection cancelling A.  The preceding manual-scan test separately
     // proves that its button emits that public refresh synchronously and when
     // the scan settles.
-    L.push('  await step("mobile-painting.live-controller", async function() {');
-    L.push('    if (!template || !template.id) throw new Error("test setup: expected the original template id for Mobile Painting coverage");');
+    L.push('  await step("painting-menu-overhaul.live-controller", async function() {');
+    L.push('    if (!template || !template.id) throw new Error("test setup: expected the original template id for Painting Menu Overhaul coverage");');
     L.push('    // The preceding compact-menu scenario intentionally leaves the full Ghost++ palette in List mode. Force Grid here because the assertion below exercises the grid-only circular progress badge; List mode instead renders its progress as text and a bar.');
     L.push('    gppSettings.paletteViewMode = "grid"; gppState.saveSettings();');
     L.push('    var originalTemplateId = template.id;');
     L.push('    await gppState.focusTemplate(originalTemplateId);');
     L.push('    template = gppState.getFocusedTemplate();');
-    L.push('    if (!template || template.id !== originalTemplateId || !template.position) throw new Error("test setup: expected the current positioned original template for Mobile Painting coverage");');
+    L.push('    if (!template || template.id !== originalTemplateId || !template.position) throw new Error("test setup: expected the current positioned original template for Painting Menu Overhaul coverage");');
     L.push('    var focusScanSettled = await waitFor(function() { return !gppScanRunning; }, 8000);');
     L.push('    if (!focusScanSettled) throw new Error("test setup: focus-triggered scan did not settle before rapid-selection coverage");');
     L.push('    var seededTotal = 0, seededPerColour = [];');
@@ -3027,23 +3028,23 @@ function buildDriverScript() {
     L.push('    template.scanSummary = { scannedAt: new Date().toISOString(), total: seededTotal, correct: seededTotal, wrong: 0, missing: 0, unknown: 0, perColour: seededPerColour, states: new Uint8Array(template.width * template.height) };');
     L.push('    gppRequestUiRefresh();');
     L.push('    var gridReady = await waitFor(function() { return !!document.getElementById("gpc-mobile-palette-grid"); }, 5000);');
-    L.push('    if (!gridReady) throw new Error("Mobile Painting never mounted its compact palette grid");');
+    L.push('    if (!gridReady) throw new Error("Painting Menu Overhaul never mounted its compact palette grid");');
     L.push('    var bottom = document.getElementById("bottomControls");');
-    L.push('    if (!bottom || bottom.style.width || bottom.style.maxWidth || bottom.style.left || bottom.style.right || bottom.style.transform) throw new Error("REGRESSION: Mobile Painting imposed inline full-width/position styles on #bottomControls");');
+    L.push('    if (!bottom || bottom.style.width || bottom.style.maxWidth || bottom.style.left || bottom.style.right || bottom.style.transform) throw new Error("REGRESSION: Painting Menu Overhaul imposed inline full-width/position styles on #bottomControls");');
     L.push('    var row = document.querySelector(".gpc-mobile-controls-row");');
     L.push('    var enableButton = row && Array.from(row.querySelectorAll("button")).find(function(button) { return button.textContent.trim().indexOf("Enable") === 0; });');
-    L.push('    if (!enableButton) throw new Error("Mobile Painting Enable control was not mounted");');
-    L.push('    if (getComputedStyle(row).justifyContent !== "center") throw new Error("REGRESSION: Mobile Painting control-row buttons are not centered within .gpc-mobile-controls-row");');
+    L.push('    if (!enableButton) throw new Error("Painting Menu Overhaul Enable control was not mounted");');
+    L.push('    if (getComputedStyle(row).justifyContent !== "center") throw new Error("REGRESSION: Painting Menu Overhaul control-row buttons are not centered within .gpc-mobile-controls-row");');
     L.push('    var paletteWrap = document.querySelector(".gpc-mobile-palette-wrap");');
-    L.push('    if (paletteWrap) { var rowPaletteGap = paletteWrap.getBoundingClientRect().top - row.getBoundingClientRect().bottom; if (rowPaletteGap < 2 || rowPaletteGap > 6) throw new Error("REGRESSION: expected a tiny 4px gap between the Mobile Painting controls row and compact palette, got " + rowPaletteGap + "px"); }');
+    L.push('    if (paletteWrap) { var rowPaletteGap = paletteWrap.getBoundingClientRect().top - row.getBoundingClientRect().bottom; if (rowPaletteGap < 2 || rowPaletteGap > 6) throw new Error("REGRESSION: expected a tiny 4px gap between the Painting Menu Overhaul controls row and compact palette, got " + rowPaletteGap + "px"); }');
     L.push('    var originalTryAutoScan = gppTryAutoScan; gppTryAutoScan = function() {};');
     L.push('    var filterButton = Array.from(row.querySelectorAll("button")).find(function(button) { return button.textContent.trim().indexOf("Filter") === 0; });');
-    L.push('    if (!filterButton) throw new Error("Mobile Painting Filter control was not mounted");');
+    L.push('    if (!filterButton) throw new Error("Painting Menu Overhaul Filter control was not mounted");');
     L.push('    filterButton.click();');
     L.push('    var filterMenu = filterButton.parentElement.querySelector(".gpc-ctrl-menu");');
     L.push('    var countOption = filterMenu && Array.from(filterMenu.querySelectorAll("label.gpc-ctrl-menu-option")).find(function(option) { return option.textContent.indexOf("Filter within pixel count") !== -1; });');
     L.push('    var countCheckbox = countOption && countOption.querySelector("input[type=checkbox]");');
-    L.push('    if (!countCheckbox) throw new Error("Mobile Painting Filter is missing the pixel-count option");');
+    L.push('    if (!countCheckbox) throw new Error("Painting Menu Overhaul Filter is missing the pixel-count option");');
     L.push('    countCheckbox.click();');
     L.push('    var compactCountRow = filterMenu.querySelector(".gpc-ctrl-menu-count");');
     L.push('    var compactCountInputs = compactCountRow && compactCountRow.querySelectorAll("input[type=number]");');
@@ -3053,7 +3054,7 @@ function buildDriverScript() {
     L.push('    var realCountInputs = document.querySelectorAll("#gpp-palette-section .gpp-palette-filter-count .gpp-palette-count-input");');
     L.push('    if (realCountInputs.length !== 2 || realCountInputs[0].value !== "2" || realCountInputs[1].value !== "9") throw new Error("REGRESSION: compact pixel-count range did not forward to Ghost++: " + Array.from(realCountInputs).map(function(input) { return input.value; }).join(","));');
     L.push('    countCheckbox.click(); document.body.click();');
-    L.push('    if (getComputedStyle(enableButton).backgroundColor !== "rgb(30, 30, 46)") throw new Error("REGRESSION: Simple Black already applied at mount did not dark-theme Mobile Painting controls: " + getComputedStyle(enableButton).backgroundColor);');
+    L.push('    if (getComputedStyle(enableButton).backgroundColor !== "rgb(30, 30, 46)") throw new Error("REGRESSION: Simple Black already applied at mount did not dark-theme Painting Menu Overhaul controls: " + getComputedStyle(enableButton).backgroundColor);');
     L.push('    var originalFindNearest = gppScanFindNearestError;');
     L.push('    var originalStartGlow = gppScanStartSelectedColorGlow;');
     L.push('    var originalClearGlow = gppScanClearSelectedColorGlow;');
@@ -3063,7 +3064,7 @@ function buildDriverScript() {
     L.push('      enableButton.click();');
     L.push('      var enableMenu = enableButton.parentElement.querySelector(".gpc-ctrl-menu");');
     L.push('      var selectedOption = Array.from(enableMenu.querySelectorAll(".gpc-ctrl-menu-option")).find(function(option) { return option.textContent.trim() === "Selected"; });');
-    L.push('      if (!selectedOption) throw new Error("Mobile Painting Enable > Selected option is missing");');
+    L.push('      if (!selectedOption) throw new Error("Painting Menu Overhaul Enable > Selected option is missing");');
     L.push('      selectedOption.click();');
     L.push('      var highlightOption = enableMenu.querySelector("label.gpc-ctrl-menu-option-nested");');
     L.push('      var highlightInput = highlightOption && highlightOption.querySelector("input[type=checkbox]");');
@@ -3073,7 +3074,7 @@ function buildDriverScript() {
     L.push('      gppScanFindNearestError = function(_template, options) { return new Promise(function(resolve) { deferred.push({ resolve: resolve, paletteIndex: options.paletteIndex }); }); };');
     L.push('      gppScanStartSelectedColorGlow = function(templateId, gridX, gridY) { glowCalls.push({ templateId: templateId, gridX: gridX, gridY: gridY }); };');
     L.push('      var swatches = Array.from(document.querySelectorAll("#gpc-mobile-palette-grid .gpp-swatch"));');
-    L.push('      if (swatches.length < 2) throw new Error("test setup: Mobile Painting needs two swatches for stale-selection coverage");');
+    L.push('      if (swatches.length < 2) throw new Error("test setup: Painting Menu Overhaul needs two swatches for stale-selection coverage");');
     L.push('      swatches[0].click();');
     L.push('      swatches[1].click();');
     L.push('      if (deferred.length !== 2) throw new Error("test setup: expected one nearest lookup per rapid A -> B selection, got " + deferred.length + " (busy=" + gppScanRunning + ", focused=" + (gppState.getFocusedTemplate() && gppState.getFocusedTemplate().id) + ", summary=" + !!template.scanSummary + ", changed=" + JSON.stringify(window.__changedColors.slice(-2)) + ")");');
@@ -3108,28 +3109,31 @@ function buildDriverScript() {
     L.push('    template.scanSummary = { scannedAt: new Date().toISOString(), total: seededTotal, correct: 0, wrong: seededTotal, missing: 0, unknown: 0, perColour: refreshedPerColour, states: new Uint8Array(template.width * template.height).fill(core.constants.ERROR_STATE.WRONG) };');
     L.push('    gppRequestUiRefresh();');
     L.push('    var compactUpdated = await waitFor(function() { var grid = document.getElementById("gpc-mobile-palette-grid"); return grid && grid !== compactBeforeCompletedScan; }, 5000);');
-    L.push('    if (!compactUpdated) throw new Error("REGRESSION: completed Scan progress refresh did not rebuild Mobile Painting per-colour status/badges");');
+    L.push('    if (!compactUpdated) throw new Error("REGRESSION: completed Scan progress refresh did not rebuild Painting Menu Overhaul per-colour status/badges");');
     L.push('    var firstUpdatedBadge = document.querySelector("#gpc-mobile-palette-grid .gpp-swatch-progress");');
     L.push('    if (!firstUpdatedBadge || !firstUpdatedBadge.classList.contains("gpp-swatch-progress-unstarted")) throw new Error("REGRESSION: compact palette did not consume the completed Scan progress status for its per-colour badge");');
     L.push('    var previewCanvas = document.querySelector(".gpc-mobile-preview-frame canvas");');
-    L.push('    if (!previewCanvas) throw new Error("test setup: Mobile Painting preview canvas was not mounted");');
+    L.push('    if (!previewCanvas) throw new Error("test setup: Painting Menu Overhaul preview canvas was not mounted");');
     L.push('    var scaleRoot = bottom.querySelector(":scope > div");');
     L.push('    var scaleBefore = scaleRoot && scaleRoot.dataset.gpcMobileUiScale;');
     L.push('    var bottomWidthBeforeScale = bottom.getBoundingClientRect().width;');
     L.push('    var bottomStyleWidthBeforeScale = bottom.style.width;');
     L.push('    var paintMenuToolbar = document.getElementById("gpc-paint-menu-toolbar");');
-    L.push('    if (!paintMenuToolbar || paintMenuToolbar.parentElement !== scaleRoot || !paintMenuToolbar.querySelector("#gpc-compact-brush")) throw new Error("REGRESSION: Paint Menu Controls toolbar (including compact Brush Swap) was not adopted into the Mobile Painting scale root");');
+    L.push('    if (!paintMenuToolbar || paintMenuToolbar.parentElement !== scaleRoot || !paintMenuToolbar.querySelector("#gpc-compact-brush")) throw new Error("REGRESSION: Paint Menu Controls toolbar (including compact Brush Swap) was not adopted into the Painting Menu Overhaul scale root");');
     L.push('    previewCanvas.click();');
     L.push('    var placeholderReady = await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && !group.classList.contains("gpc-hidden") && !!document.getElementById("gpc-mobile-ui-scale"); }, 5000);');
-    L.push('    if (!placeholderReady) throw new Error("Mobile Painting placeholder mode did not expose the UI scale slider under #gpc-mobile-upload-panel");');
+    L.push('    if (!placeholderReady) throw new Error("Painting Menu Overhaul placeholder mode did not expose its scale slider under #gpc-mobile-upload-panel");');
     L.push('    var uploadPanel = document.getElementById("gpc-mobile-upload-panel");');
     L.push('    var scaleInput = document.getElementById("gpc-mobile-ui-scale");');
-    L.push('    if (!uploadPanel || !uploadPanel.contains(scaleInput)) throw new Error("REGRESSION: UI scale slider is not inside #gpc-mobile-upload-panel");');
+    L.push('    if (!uploadPanel || !uploadPanel.contains(scaleInput)) throw new Error("REGRESSION: Painting Menu scale slider is not inside #gpc-mobile-upload-panel");');
+    L.push('    var scaleLabel = uploadPanel.querySelector("label[for=\\\"gpc-mobile-ui-scale\\\"]");');
+    L.push('    if (!scaleLabel || scaleLabel.textContent.trim() !== "Painting Menu scale") throw new Error("REGRESSION: scale slider did not use the Painting Menu Overhaul brand");');
+    L.push('    if (scaleInput.value !== "90" || localStorage.getItem("geo++_painting_menu_overhaul_ui_scale") !== "90") throw new Error("REGRESSION: scale setting did not migrate the previous preview value into the Painting Menu Overhaul key");');
     L.push('    scaleInput.value = "80";');
     L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
-    L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== scaleBefore || getComputedStyle(scaleRoot).transform === "none") throw new Error("REGRESSION: UI scale changed while the slider was still being dragged");');
+    L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== scaleBefore || getComputedStyle(scaleRoot).transform === "none") throw new Error("REGRESSION: Painting Menu scale changed while the slider was still being dragged");');
     L.push('    scaleInput.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));');
-    L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== "80" || getComputedStyle(scaleRoot).transform === "none") throw new Error("REGRESSION: UI scale did not apply on slider release");');
+    L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== "80" || getComputedStyle(scaleRoot).transform === "none" || localStorage.getItem("geo++_painting_menu_overhaul_ui_scale") !== "80") throw new Error("REGRESSION: Painting Menu scale did not apply and persist on slider release");');
     L.push('    var toolbarHeightAt80 = paintMenuToolbar.getBoundingClientRect().height;');
     L.push('    if (Math.abs(toolbarHeightAt80 - 19.2) > 1.5) throw new Error("REGRESSION: Paint Menu Controls toolbar did not scale with the surface at 80% (height=" + toolbarHeightAt80 + ")");');
     L.push('    if (Math.abs(paintMenuToolbar.getBoundingClientRect().bottom - scaleRoot.getBoundingClientRect().top) > 1.5) throw new Error("REGRESSION: scaled Paint Menu Controls toolbar is detached from the scaled paint surface at 80%");');
@@ -3148,10 +3152,10 @@ function buildDriverScript() {
     L.push('    scaleInput.value = "100";');
     L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
     L.push('    scaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
-    L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== "100") throw new Error("REGRESSION: UI scale did not reset after a committed change");');
+    L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== "100") throw new Error("REGRESSION: Painting Menu scale did not reset after a committed change");');
     L.push('    previewCanvas.click();');
     L.push('    await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && group.classList.contains("gpc-hidden"); }, 5000);');
-    L.push('    return "Mobile Painting centers its control row, preserves native bar width, sees Simple Black at first mount, exposes a default-off Selected-only highlight, cancels stale A -> B lookups, rebuilds compact status, and applies its bottom-controls UI scale only on release";');
+    L.push('    return "Painting Menu Overhaul centers its control row, preserves native bar width, sees Simple Black at first mount, exposes a default-off Selected-only highlight, cancels stale A -> B lookups, rebuilds compact status, migrates the previous preview scale setting, and applies its Painting Menu scale only on release";');
     L.push('  });');
     L.push('');
     L.push('  var resultEl = document.getElementById("test-result");');

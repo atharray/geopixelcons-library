@@ -32,7 +32,7 @@
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', desc: 'Superseded by Ghost++ Template Overlay. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
         { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', desc: 'Superseded by Ghost++ Template Overlay. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
-        { key: 'mobilePaintingExtension', name: 'Mobile Painting (in development)', icon: '📱', desc: 'Mobile-first painting layout adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive width for bottom paint controls', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
+        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '📱', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive width for bottom paint controls', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
     ];
 
     const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
@@ -1237,14 +1237,14 @@
             version: '2.7.0',
             date: '2026-08-17',
             items: [
-                { type: 'changed', text: 'Mobile Painting (in development): the bottom control-row buttons are now centered within their row' },
-                { type: 'added', text: 'Mobile Painting (in development): the upload panel now includes a UI scale slider for the entire bottom controls; scaling applies when the slider is released' },
-                { type: 'fixed', text: 'Mobile Painting (in development): control-row dropdowns now stay above the Paint Menu Controls buttons' },
-                { type: 'fixed', text: 'Mobile Painting (in development): Filter within pixel count now exposes working minimum and maximum inputs' },
-                { type: 'changed', text: 'Mobile Painting (in development): replaced the extra gap between the control row and compact palette with a small amount of breathing room' },
-                { type: 'fixed', text: 'Mobile Painting (in development): added a small amount of breathing room below the control row' },
-                { type: 'fixed', text: 'Mobile Painting (in development): UI scaling no longer changes the site-sized bottom controls container' },
-                { type: 'fixed', text: 'Mobile Painting (in development): Paint Menu Controls and compact Brush Swap buttons now stay attached and scale with the paint surface' },
+                { type: 'changed', text: 'Painting Menu Overhaul: the bottom control-row buttons are now centered within their row' },
+                { type: 'added', text: 'Painting Menu Overhaul: the upload panel now includes a Painting Menu scale slider for the entire bottom controls; scaling applies when the slider is released' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: control-row dropdowns now stay above the Paint Menu Controls buttons' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: Filter within pixel count now exposes working minimum and maximum inputs' },
+                { type: 'changed', text: 'Painting Menu Overhaul: replaced the extra gap between the control row and compact palette with a small amount of breathing room' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: added a small amount of breathing room below the control row' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: scaling no longer changes the site-sized bottom controls container' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: Paint Menu Controls and compact Brush Swap buttons now stay attached and scale with the paint surface' },
             ]
         },
         {
