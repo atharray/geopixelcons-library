@@ -1259,6 +1259,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Painting Menu Overhaul: Paint Menu Controls and compact Brush Swap buttons now stay attached and scale with the paint surface' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: switching between the template preview and native controls now updates the scaled panel height immediately' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: Paint Menu Controls toolbar now sits flush against the scaled panel edge' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: the scale slider now keeps the exact released value, and its toolbar tab matches the Paint Menu Controls theme' },
             ]
         },
         {
@@ -32425,14 +32426,7 @@ if (_settings.profileColorsCollapse) {
             }
             .gpc-ctrl-menu-option[hidden] { display: none; }
             #gpc-mobile-scale-tab {
-                pointer-events: auto; width: 28px; height: 24px; margin-left: 2px;
-                border: 1px solid ${tc('#e5e7eb', '#45475a')}; border-bottom: none;
-                border-radius: 8px 8px 0 0; cursor: pointer; font-size: 14px;
-                display: flex; align-items: center; justify-content: center;
-                background: ${tc('#ffffff', '#313244')}; color: ${tc('#64748b', '#cdd6f4')};
-            }
-            #gpc-mobile-scale-tab:hover, #gpc-mobile-scale-tab[aria-expanded="true"] {
-                background: ${tc('#f3f4f6', '#45475a')}; color: ${tc('#111827', '#f5f5f5')};
+                pointer-events: auto; margin-left: 2px;
             }
             #gpc-paint-menu-toolbar.gpc-mobile-scale-popover-open { z-index: 1200 !important; }
             #gpc-mobile-scale-popover {
@@ -33062,6 +33056,7 @@ if (_settings.profileColorsCollapse) {
         const toolbar = document.getElementById('gpc-paint-menu-toolbar');
         if (!toolbar) return false;
 
+        const flipButton = document.getElementById('gpc-paint-flip-pos');
         let tab = document.getElementById('gpc-mobile-scale-tab');
         let popover = document.getElementById('gpc-mobile-scale-popover');
         if (!tab) {
@@ -33081,7 +33076,16 @@ if (_settings.profileColorsCollapse) {
             });
         }
 
-        const flipButton = document.getElementById('gpc-paint-flip-pos');
+        // Paint Menu Controls owns the toolbar's visual theme (including
+        // Simple Black). Copy the neighboring flip button rather than adding
+        // a competing background/color rule that can fall out of sync.
+        if (flipButton) {
+            tab.className = flipButton.className;
+            const flipStyle = flipButton.getAttribute('style');
+            if (flipStyle === null) tab.removeAttribute('style');
+            else tab.setAttribute('style', flipStyle);
+            tab.style.marginLeft = '2px';
+        }
         if (flipButton && tab.previousElementSibling !== flipButton) {
             flipButton.insertAdjacentElement('afterend', tab);
         } else if (tab.parentElement !== toolbar) {
@@ -33122,22 +33126,31 @@ if (_settings.profileColorsCollapse) {
             input.setAttribute('aria-label', 'Painting Menu Overhaul scale');
 
             const updateReadout = () => { value.textContent = `${input.value}%`; };
+            let pendingCommitFrame = 0;
             const commit = () => {
                 const next = clampMobileUiScale(input.value);
                 input.value = String(next);
-                if (!liveState || liveState.uiScalePercent !== next) {
-                    applyMobileUiScale(next);
-                    persistMobileUiScale(next);
-                }
                 updateReadout();
+                // A native range control finalizes its exact thumb position
+                // as part of the release/change sequence. Apply the captured
+                // committed value on the next frame, after that native work
+                // finishes, so scaling cannot move the active slider under
+                // the pointer and select a different value.
+                if (pendingCommitFrame) cancelAnimationFrame(pendingCommitFrame);
+                pendingCommitFrame = requestAnimationFrame(() => {
+                    pendingCommitFrame = 0;
+                    if (!liveState || liveState.uiScalePercent !== next) {
+                        applyMobileUiScale(next);
+                        persistMobileUiScale(next);
+                    }
+                });
             };
             updateReadout();
-            // The control is display-only while dragged. `change` covers
-            // keyboard/native commits and `pointerup` preserves the explicit
-            // release-to-apply behavior for mouse and touch input.
+            // The control is display-only while dragged. Native range
+            // `change` is the one committed-value signal for mouse, touch,
+            // and keyboard input; deliberately do not resize in pointerup.
             input.addEventListener('input', updateReadout);
             input.addEventListener('change', commit);
-            input.addEventListener('pointerup', commit);
             control.append(labelRow, input);
             popover.appendChild(control);
             toolbar.appendChild(popover);

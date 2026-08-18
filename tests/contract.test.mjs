@@ -71,7 +71,8 @@ test('keeps Painting Menu Overhaul responsive and exposes selected-colour scan f
     assert.match(artifact, /geo\+\+_mobile_painting_ui_scale/);
     assert.match(artifact, /addEventListener\('input', updateReadout\)/);
     assert.match(artifact, /addEventListener\('change', commit\)/);
-    assert.match(artifact, /addEventListener\('pointerup', commit\)/);
+    assert.doesNotMatch(artifact, /addEventListener\('pointerup', commit\)/);
+    assert.match(artifact, /pendingCommitFrame/);
     assert.match(artifact, /applyMobileUiScale\(liveState\.uiScalePercent\)/);
     assert.doesNotMatch(artifact, /root\.style\.width\s*=/);
     assert.doesNotMatch(artifact, /root\.style\.transform\s*=/);

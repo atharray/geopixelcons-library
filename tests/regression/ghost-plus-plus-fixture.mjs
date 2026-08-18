@@ -160,7 +160,7 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('<button id="clearGhostImageBtn" type="button" style="display:none">Native clear</button>');
     // Deliberately plain site-like paint bar: Painting Menu Overhaul must preserve
     // these natural dimensions rather than forcing a full-viewport width.
-    lines.push('<div id="bottomControls"><div style="padding:12px;box-sizing:border-box"><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button></div><div class="control-container-colors"><button type="button">Native color</button></div></div><div style="position:absolute;top:-24px;left:0;right:0;height:24px" id="gpc-paint-menu-toolbar"><button id="gpc-hide-paint-toggle" type="button">Toggle paint menu</button><button id="gpc-paint-flip-pos" type="button">Flip paint menu</button><button id="gpc-compact-brush" type="button">Brushes</button></div></div>');
+    lines.push('<div id="bottomControls"><div style="padding:12px;box-sizing:border-box"><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button></div><div class="control-container-colors"><button type="button">Native color</button></div></div><div style="position:absolute;top:-24px;left:0;right:0;height:24px" id="gpc-paint-menu-toolbar"><button id="gpc-hide-paint-toggle" type="button">Toggle paint menu</button><button id="gpc-paint-flip-pos" class="gpc-toolbar-test-button" style="background:rgb(7, 11, 19);color:rgb(191, 200, 219);border:1px solid rgb(69, 71, 90);border-bottom:none;border-radius:8px 8px 0 0" type="button">Flip paint menu</button><button id="gpc-compact-brush" type="button">Brushes</button></div></div>');
     lines.push('<div id="map-shell"><div id="pixel-canvas"></div><canvas id="ghost-canvas"></canvas></div>');
     lines.push('<pre id="test-result" data-status="pending">pending</pre>');
     lines.push('<script>');
@@ -3128,6 +3128,8 @@ function buildDriverScript() {
     L.push('    var scalePopover = document.getElementById("gpc-mobile-scale-popover");');
     L.push('    var flipPaintMenu = document.getElementById("gpc-paint-flip-pos");');
     L.push('    if (!scaleTab || !scalePopover || scaleTab.previousElementSibling !== flipPaintMenu || !scalePopover.hidden) throw new Error("REGRESSION: Painting Menu scale tab was not mounted immediately to the right of Paint Menu Controls flip button");');
+    L.push('    var flipPaintStyle = getComputedStyle(flipPaintMenu); var scaleTabStyle = getComputedStyle(scaleTab);');
+    L.push('    if (scaleTab.className !== flipPaintMenu.className || scaleTabStyle.backgroundColor !== flipPaintStyle.backgroundColor || scaleTabStyle.color !== flipPaintStyle.color || scaleTabStyle.borderTopColor !== flipPaintStyle.borderTopColor) throw new Error("REGRESSION: Painting Menu scale tab did not inherit Paint Menu Controls button styling");');
     L.push('    previewCanvas.click();');
     L.push('    var placeholderReady = await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && !group.classList.contains("gpc-hidden"); }, 5000);');
     L.push('    if (!placeholderReady) throw new Error("Painting Menu Overhaul placeholder mode did not open");');
@@ -3143,6 +3145,9 @@ function buildDriverScript() {
     L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
     L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== scaleBefore || getComputedStyle(scaleContent).transform === "none") throw new Error("REGRESSION: Painting Menu scale changed while the slider was still being dragged");');
     L.push('    scaleInput.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));');
+    L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== scaleBefore) throw new Error("REGRESSION: Painting Menu scale committed before the native range release completed");');
+    L.push('    scaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
     L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== "80" || getComputedStyle(scaleRoot).transform !== "none" || getComputedStyle(scaleContent).transform === "none" || localStorage.getItem("geo++_painting_menu_overhaul_ui_scale") !== "80") throw new Error("REGRESSION: Painting Menu scale did not apply to content and persist on slider release");');
     L.push('    var toolbarHeightAt80 = paintMenuToolbar.getBoundingClientRect().height;');
     L.push('    if (Math.abs(toolbarHeightAt80 - 19.2) > 1.5) throw new Error("REGRESSION: Paint Menu Controls toolbar did not scale with the surface at 80% (height=" + toolbarHeightAt80 + ")");');
@@ -3169,6 +3174,8 @@ function buildDriverScript() {
     L.push('    scaleInput.value = "120";');
     L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
     L.push('    scaleInput.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));');
+    L.push('    scaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
     L.push('    var bottomWidthAfterLargeScale = bottom.getBoundingClientRect().width;');
     L.push('    var surfaceWidthAt120 = scaleRoot.getBoundingClientRect().width;');
     L.push('    var surfaceHeightAt120 = scaleRoot.getBoundingClientRect().height;');
@@ -3182,6 +3189,7 @@ function buildDriverScript() {
     L.push('    scaleInput.value = "100";');
     L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
     L.push('    scaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
     L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== "100") throw new Error("REGRESSION: Painting Menu scale did not reset after a committed change");');
     L.push('    if (scaleRoot.style.height) throw new Error("REGRESSION: 100% Painting Menu scale left a fixed inline surface height behind");');
     L.push('    var paintMenuToggle = paintMenuToolbar.querySelector("#gpc-hide-paint-toggle");');
