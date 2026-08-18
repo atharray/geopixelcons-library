@@ -1245,6 +1245,8 @@
                 { type: 'fixed', text: 'Painting Menu Overhaul: added a small amount of breathing room below the control row' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: scaling now keeps the paint panel\'s visual width fixed; only its controls and height change' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: Paint Menu Controls and compact Brush Swap buttons now stay attached and scale with the paint surface' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: switching between the template preview and native controls now updates the scaled panel height immediately' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: Paint Menu Controls toolbar now sits flush against the scaled panel edge' },
             ]
         },
         {

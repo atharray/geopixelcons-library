@@ -1257,6 +1257,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Painting Menu Overhaul: added a small amount of breathing room below the control row' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: scaling now keeps the paint panel\'s visual width fixed; only its controls and height change' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: Paint Menu Controls and compact Brush Swap buttons now stay attached and scale with the paint surface' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: switching between the template preview and native controls now updates the scaled panel height immediately' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: Paint Menu Controls toolbar now sits flush against the scaled panel edge' },
             ]
         },
         {
@@ -31621,16 +31623,48 @@ if (_settings.profileColorsCollapse) {
         root.style.height = `${Math.ceil(verticalChrome + contentHeight * scale)}px`;
     }
 
+    // The Paint Menu Controls toolbar is absolutely positioned inside the
+    // scale content so it can scale with its buttons. That content begins
+    // after the site's own panel padding, however, while the toolbar belongs
+    // flush against the OUTER panel edge. Compensate for the content inset in
+    // unscaled coordinates. This works for both the usual bottom dock (bar
+    // above the panel) and Paint Menu Controls' top dock (bar below it).
+    function alignPaintMenuToolbarToScaleSurface() {
+        if (!liveState || !liveState.scaleRoot || !liveState.scaleContent) return;
+        const root = liveState.scaleRoot;
+        const content = liveState.scaleContent;
+        const toolbar = document.getElementById('gpc-paint-menu-toolbar');
+        if (!toolbar || toolbar.parentElement !== content || !toolbar.offsetHeight) return;
+
+        const scale = clampMobileUiScale(liveState.uiScalePercent) / 100;
+        const toolbarHeight = toolbar.offsetHeight;
+        const formatPixels = (value) => `${Math.round(value * 1000) / 1000}px`;
+        if (toolbar.style.top !== 'auto') {
+            const desiredTop = -toolbarHeight - (content.offsetTop / scale);
+            const value = formatPixels(desiredTop);
+            if (toolbar.style.top !== value) toolbar.style.top = value;
+            return;
+        }
+
+        const surfaceEndInset = Math.max(0, root.offsetHeight - (content.offsetTop + content.offsetHeight * scale));
+        const desiredBottom = -toolbarHeight - (surfaceEndInset / scale);
+        const value = formatPixels(desiredBottom);
+        if (toolbar.style.bottom !== value) toolbar.style.bottom = value;
+    }
+
     function scheduleMobileUiScaleLayout() {
-        if (!liveState || !liveState.scaleContent || liveState.uiScalePercent === MP_SCALE_DEFAULT) return;
+        if (!liveState || !liveState.scaleContent) return;
         if (liveState.scaleLayoutFrame) return;
         liveState.scaleLayoutFrame = requestAnimationFrame(() => {
             if (!liveState) return;
             liveState.scaleLayoutFrame = 0;
             const root = liveState.scaleRoot;
             const content = liveState.scaleContent;
-            if (!root || !content || liveState.uiScalePercent === MP_SCALE_DEFAULT) return;
-            measureMobileUiScaleHeight(root, content, liveState.uiScalePercent / 100);
+            if (!root || !content) return;
+            if (liveState.uiScalePercent !== MP_SCALE_DEFAULT) {
+                measureMobileUiScaleHeight(root, content, liveState.uiScalePercent / 100);
+            }
+            alignPaintMenuToolbarToScaleSurface();
         });
     }
 
@@ -31654,6 +31688,7 @@ if (_settings.profileColorsCollapse) {
             content.style.transform = '';
             root.style.height = '';
             liveState.uiScalePercent = appliedPercent;
+            alignPaintMenuToolbarToScaleSurface();
             return;
         }
 
@@ -31668,8 +31703,9 @@ if (_settings.profileColorsCollapse) {
         content.style.marginRight = `${sideMarginPercent}%`;
         content.style.transformOrigin = 'top center';
         content.style.transform = `scale(${scale})`;
-        measureMobileUiScaleHeight(root, content, scale);
         liveState.uiScalePercent = appliedPercent;
+        measureMobileUiScaleHeight(root, content, scale);
+        alignPaintMenuToolbarToScaleSurface();
     }
 
     // Narrower than core.js's shared isDarkMode(): only the GeoPixels++
@@ -32346,7 +32382,7 @@ if (_settings.profileColorsCollapse) {
              .gpc-mobile-scale-root { position: relative; z-index: 30; overflow: visible; }
              .gpc-mobile-scale-content {
                  position: relative; display: flex; flex-direction: column;
-                 width: 100%; box-sizing: border-box; gap: inherit; min-width: 0;
+                 flex: 0 0 auto; width: 100%; box-sizing: border-box; gap: inherit; min-width: 0;
              }
             /* Menus open UPWARD (bottom, not top) -- this row sits at the very
                bottom of the screen, so a downward menu would run off-page.
@@ -32717,6 +32753,7 @@ if (_settings.profileColorsCollapse) {
         if (scanPanel) { scanPanel.innerHTML = ''; buildPlaceholder1Content(scanPanel); }
         if (uploadPanel) { uploadPanel.innerHTML = ''; buildPlaceholder2Content(uploadPanel); }
         if (placementPanel) { placementPanel.innerHTML = ''; buildPlaceholder3Content(placementPanel); }
+        scheduleMobileUiScaleLayout();
     }
 
     // Keeps everything borrowed from the real Ghost++ modal live-synced
@@ -33195,6 +33232,10 @@ if (_settings.profileColorsCollapse) {
         group.classList.toggle('gpc-hidden', !switchingToPlaceholders);
         if (nativeTopBar) nativeTopBar.classList.toggle('gpc-hidden', switchingToPlaceholders);
         if (controlsRow) controlsRow.classList.toggle('gpc-hidden', switchingToPlaceholders);
+        // This click changes which block contributes to the scale content's
+        // height. Re-measure on the next rendered frame, not on the next
+        // mouse movement or one-second live-sync poll.
+        scheduleMobileUiScaleLayout();
         dbgPush('Painting Menu Overhaul: preview thumbnail tapped -- switched to ' + (switchingToPlaceholders ? 'placeholder panels' : 'native controls') + '.', { uiComponent: 'Painting Menu Overhaul' });
     }
 
@@ -34353,6 +34394,13 @@ if (_settings.profileColorsCollapse) {
         if (toolbar.parentElement !== content) {
             if (!toolbar.id) toolbar.id = 'gpc-paint-menu-toolbar';
             content.appendChild(toolbar);
+        }
+        // Paint Menu Controls changes the toolbar's top/bottom edge when its
+        // own dock control is pressed. Queue alignment after that click has
+        // completed, rather than competing with its live handler.
+        if (!toolbar.dataset.gpcMobileScaleAlignment) {
+            toolbar.dataset.gpcMobileScaleAlignment = 'true';
+            toolbar.addEventListener('click', () => scheduleMobileUiScaleLayout());
         }
         scheduleMobileUiScaleLayout();
         return true;

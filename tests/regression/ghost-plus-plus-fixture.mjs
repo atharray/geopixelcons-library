@@ -160,7 +160,7 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('<button id="clearGhostImageBtn" type="button" style="display:none">Native clear</button>');
     // Deliberately plain site-like paint bar: Painting Menu Overhaul must preserve
     // these natural dimensions rather than forcing a full-viewport width.
-    lines.push('<div id="bottomControls"><div><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button></div><div class="control-container-colors"><button type="button">Native color</button></div></div><div style="position:absolute;top:-24px;left:0;right:0;height:24px" id="gpc-paint-menu-toolbar"><button id="gpc-hide-paint-toggle" type="button">Toggle paint menu</button><button id="gpc-compact-brush" type="button">Brushes</button></div></div>');
+    lines.push('<div id="bottomControls"><div style="padding:12px;box-sizing:border-box"><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button></div><div class="control-container-colors"><button type="button">Native color</button></div></div><div style="position:absolute;top:-24px;left:0;right:0;height:24px" id="gpc-paint-menu-toolbar"><button id="gpc-hide-paint-toggle" type="button">Toggle paint menu</button><button id="gpc-compact-brush" type="button">Brushes</button></div></div>');
     lines.push('<div id="map-shell"><div id="pixel-canvas"></div><canvas id="ghost-canvas"></canvas></div>');
     lines.push('<pre id="test-result" data-status="pending">pending</pre>');
     lines.push('<script>');
@@ -3119,6 +3119,8 @@ function buildDriverScript() {
     L.push('    var scaleBefore = scaleRoot && scaleRoot.dataset.gpcMobileUiScale;');
     L.push('    var bottomWidthBeforeScale = bottom.getBoundingClientRect().width;');
     L.push('    var surfaceWidthBeforeScale = scaleRoot.getBoundingClientRect().width;');
+    L.push('    var surfaceStyle = getComputedStyle(scaleRoot);');
+    L.push('    var surfaceContentWidth = surfaceWidthBeforeScale - parseFloat(surfaceStyle.paddingLeft || "0") - parseFloat(surfaceStyle.paddingRight || "0") - parseFloat(surfaceStyle.borderLeftWidth || "0") - parseFloat(surfaceStyle.borderRightWidth || "0");');
     L.push('    var bottomStyleWidthBeforeScale = bottom.style.width;');
     L.push('    var paintMenuToolbar = document.getElementById("gpc-paint-menu-toolbar");');
     L.push('    if (!scaleContent || !paintMenuToolbar || paintMenuToolbar.parentElement !== scaleContent || !paintMenuToolbar.querySelector("#gpc-compact-brush")) throw new Error("REGRESSION: Paint Menu Controls toolbar (including compact Brush Swap) was not adopted into the Painting Menu Overhaul scale content");');
@@ -3143,8 +3145,21 @@ function buildDriverScript() {
     L.push('    var surfaceWidthAt80 = scaleRoot.getBoundingClientRect().width;');
     L.push('    var surfaceHeightAt80 = scaleRoot.getBoundingClientRect().height;');
     L.push('    if (Math.abs(bottomWidthAfterSmallScale - bottomWidthBeforeScale) > 1) throw new Error("REGRESSION: scaling changed #bottomControls outer width at 80% (before=" + bottomWidthBeforeScale + ", after=" + bottomWidthAfterSmallScale + ")");');
-    L.push('    if (Math.abs(surfaceWidthAt80 - surfaceWidthBeforeScale) > 1 || Math.abs(scaleContent.getBoundingClientRect().width - surfaceWidthAt80) > 1) throw new Error("REGRESSION: Painting Menu scale changed the visual surface width at 80% instead of only its height");');
+    L.push('    if (Math.abs(surfaceWidthAt80 - surfaceWidthBeforeScale) > 1 || Math.abs(scaleContent.getBoundingClientRect().width - surfaceContentWidth) > 1) throw new Error("REGRESSION: Painting Menu scale changed the visual surface width at 80% instead of only its height");');
     L.push('    if (bottom.style.width !== bottomStyleWidthBeforeScale) throw new Error("REGRESSION: scaling rewrote #bottomControls inline width");');
+    L.push('    var placeholderSurfaceHeightAt80 = scaleRoot.getBoundingClientRect().height;');
+    L.push('    previewCanvas.click();');
+    L.push('    await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && group.classList.contains("gpc-hidden"); }, 5000);');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
+    L.push('    var nativeSurfaceHeightAt80 = scaleRoot.getBoundingClientRect().height;');
+    L.push('    if (Math.abs(nativeSurfaceHeightAt80 - placeholderSurfaceHeightAt80) < 1) throw new Error("REGRESSION: preview-frame switch left the scaled surface height stale until another interaction");');
+    L.push('    previewCanvas.click();');
+    L.push('    await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && !group.classList.contains("gpc-hidden") && !!document.getElementById("gpc-mobile-ui-scale"); }, 5000);');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
+    L.push('    var restoredPlaceholderHeightAt80 = scaleRoot.getBoundingClientRect().height;');
+    L.push('    if (Math.abs(restoredPlaceholderHeightAt80 - placeholderSurfaceHeightAt80) > 2) throw new Error("REGRESSION: preview-frame return did not restore the scaled placeholder height immediately");');
+    L.push('    scaleInput = document.getElementById("gpc-mobile-ui-scale");');
+    L.push('    if (!scaleInput || scaleInput.value !== "80") throw new Error("REGRESSION: preview-frame switch did not retain the committed Painting Menu scale");');
     L.push('    scaleInput.value = "120";');
     L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
     L.push('    scaleInput.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));');
@@ -3152,7 +3167,7 @@ function buildDriverScript() {
     L.push('    var surfaceWidthAt120 = scaleRoot.getBoundingClientRect().width;');
     L.push('    var surfaceHeightAt120 = scaleRoot.getBoundingClientRect().height;');
     L.push('    if (Math.abs(bottomWidthAfterLargeScale - bottomWidthBeforeScale) > 1) throw new Error("REGRESSION: scaling changed #bottomControls outer width at 120% (before=" + bottomWidthBeforeScale + ", after=" + bottomWidthAfterLargeScale + ")");');
-    L.push('    if (Math.abs(surfaceWidthAt120 - surfaceWidthBeforeScale) > 1 || Math.abs(scaleContent.getBoundingClientRect().width - surfaceWidthAt120) > 1) throw new Error("REGRESSION: Painting Menu scale changed the visual surface width at 120% instead of only its height");');
+    L.push('    if (Math.abs(surfaceWidthAt120 - surfaceWidthBeforeScale) > 1 || Math.abs(scaleContent.getBoundingClientRect().width - surfaceContentWidth) > 1) throw new Error("REGRESSION: Painting Menu scale changed the visual surface width at 120% instead of only its height");');
     L.push('    if (surfaceHeightAt120 <= surfaceHeightAt80 + 1) throw new Error("REGRESSION: Painting Menu scale did not change the fixed-width surface height (80%=" + surfaceHeightAt80 + ", 120%=" + surfaceHeightAt120 + ")");');
     L.push('    if (bottom.style.width !== bottomStyleWidthBeforeScale) throw new Error("REGRESSION: large-scale commit rewrote #bottomControls inline width");');
     L.push('    var toolbarHeightAt120 = paintMenuToolbar.getBoundingClientRect().height;');
