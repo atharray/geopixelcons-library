@@ -35,7 +35,7 @@
         { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '📱', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
     ];
 
-    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
+    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, controlsUiScale: 100, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
     FEATURE_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = true);
     // Ghost++ deliberately opts out of the blanket "every feature defaults on" rule above:
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
@@ -74,6 +74,9 @@
     }
 
     const _settings = loadSettings();
+    // Assigned by features/controls-scale.js later in the assembled IIFE.
+    // The dropdown's click handler runs only after every feature has loaded.
+    let gpcControlsScale = null;
 
     // ============================================================
     //  DEBUG SYSTEM
@@ -1238,6 +1241,7 @@
             date: '2026-08-17',
             items: [
                 { type: 'changed', text: 'Painting Menu Overhaul: the bottom control-row buttons are now centered within their row' },
+                { type: 'added', text: 'Controls Scale: a new GeoPixelcons++ dropdown setting scales both left and right native control clusters together' },
                 { type: 'changed', text: 'Paint Menu Controls: the scale slider opens upward from a toolbar tab beside its flip button, applies when released, and works without Painting Menu Overhaul enabled' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: control-row dropdowns now stay above the Paint Menu Controls buttons' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: Filter within pixel count now exposes working minimum and maximum inputs' },
@@ -2735,6 +2739,12 @@
                 if (_mapMarkers) _mapMarkers.openModal();
             }));
         }
+
+        // Controls scale is deliberately a standalone dropdown setting: it
+        // applies to both native side clusters, independent of any paint UI.
+        dropdown.appendChild(makeSubBtn('↔️', 'Controls scale', () => {
+            if (gpcControlsScale) gpcControlsScale.open();
+        }));
 
         // Settings button (always visible)
         dropdown.appendChild(makeSubBtn('⚙️', 'Settings...', createSettingsModal));

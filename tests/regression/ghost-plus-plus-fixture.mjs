@@ -65,6 +65,7 @@ import { fileURLToPath } from 'node:url';
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const GPP_DIR = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'ghost-plus-plus');
 const HIDE_PAINT_MENU_FILE = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'hide-paint-menu.js');
+const CONTROLS_SCALE_FILE = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'controls-scale.js');
 const MOBILE_PAINTING_FILE = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'mobile-painting.js');
 
 // Exactly the 13-file slice of build.js's SRC_ORDER for Ghost++, in the same
@@ -97,10 +98,15 @@ function readPaintMenuControlsSource() {
     return readFileSync(HIDE_PAINT_MENU_FILE, 'utf8');
 }
 
+function readControlsScaleSource() {
+    return readFileSync(CONTROLS_SCALE_FILE, 'utf8');
+}
+
 function readFixtureFeatureSource() {
     return [
         readGhostPlusPlusSource(),
         readPaintMenuControlsSource(),
+        readControlsScaleSource(),
         readMobilePaintingSource(),
     ].join('\n');
 }
@@ -325,7 +331,9 @@ function buildFixtureHead(forceCanvas2D) {
     // of only a later settings refresh.
     lines.push('document.documentElement.style.colorScheme = "dark";');
     lines.push('localStorage.setItem("geo++_mobile_painting_ui_scale", "90");');
-    lines.push('let _settings = { ghostPlusPlus: true, mobilePaintingExtension: true, hidePaintMenu: true, compactPaintOverflow: true };');
+    lines.push('let _settings = { ghostPlusPlus: true, mobilePaintingExtension: true, hidePaintMenu: true, compactPaintOverflow: true, controlsUiScale: 100 };');
+    lines.push('function saveSettings(settings) { localStorage.setItem("geopixelcons_settings", JSON.stringify(settings)); }');
+    lines.push('let gpcControlsScale = null;');
     lines.push('function gpcMobileOverhaulAvailable() { return false; }');
     lines.push('let _featureStatus = {};');
     lines.push('function dbgPush(message, opts) { console.warn("[dbgPush]", message, opts); }');
@@ -3019,6 +3027,37 @@ function buildDriverScript() {
     L.push('    if (!dismissedByDeadline) throw new Error("REGRESSION: the tooltip never auto-dismissed by ~11.5s of continuous hovering (no mouseleave fired) -- expected it to disappear on its own after 10s");');
     L.push('    gapLabel.dispatchEvent(new MouseEvent("mouseleave", { bubbles: false }));');
     L.push('    return "a tooltip left open (continuously hovered, no mouseleave) stays visible through ~9s and auto-dismisses on its own by ~11.5s, matching the requested 10s auto-dismiss";');
+    L.push('  });');
+    L.push('');
+    // ---- item controls-scale ----
+    // The side clusters remain live native containers. This checks that one
+    // release-applied slider scales both clusters without wrapping/reparenting
+    // either, and that late extension buttons inherit the chosen scale.
+    L.push('  await step("controls-scale", async function() {');
+    L.push('    var controlsLeft = document.createElement("div"); controlsLeft.id = "controls-left"; controlsLeft.style.cssText = "position:fixed;top:12px;left:12px;display:flex;gap:4px"; controlsLeft.append(Object.assign(document.createElement("button"), { type: "button", textContent: "Left control" }));');
+    L.push('    var controlsRight = document.createElement("div"); controlsRight.id = "controls-right"; controlsRight.style.cssText = "position:fixed;top:12px;right:12px;display:flex;gap:4px"; controlsRight.append(Object.assign(document.createElement("button"), { type: "button", textContent: "Right control" }));');
+    L.push('    document.body.append(controlsLeft, controlsRight);');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(resolve); });');
+    L.push('    if (!controlsLeft || !controlsRight || !gpcControlsScale) throw new Error("test setup: Controls Scale did not mount for both native clusters");');
+    L.push('    if (controlsLeft.style.scale || controlsRight.style.scale) throw new Error("REGRESSION: Controls Scale changed native clusters at its default 100% value");');
+    L.push('    gpcControlsScale.open();');
+    L.push('    var controlsScalePopover = document.getElementById("gpc-controls-scale-popover");');
+    L.push('    var controlsScaleInput = document.getElementById("gpc-controls-ui-scale");');
+    L.push('    if (!controlsScalePopover || controlsScalePopover.hidden || !controlsScaleInput) throw new Error("REGRESSION: Controls Scale did not open its dropdown setting slider");');
+    L.push('    controlsScaleInput.value = "80"; controlsScaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
+    L.push('    if (controlsLeft.style.scale || controlsRight.style.scale) throw new Error("REGRESSION: Controls Scale applied while the slider was still being dragged");');
+    L.push('    controlsScaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(resolve); });');
+    L.push('    var leftOrigin = controlsLeft.style.transformOrigin; var rightOrigin = controlsRight.style.transformOrigin;');
+    L.push('    if (controlsLeft.style.scale !== "0.8" || controlsRight.style.scale !== "0.8" || (leftOrigin !== "top left" && leftOrigin !== "left top") || (rightOrigin !== "top right" && rightOrigin !== "right top")) throw new Error("REGRESSION: Controls Scale did not apply the same anchored scale to both side clusters: " + JSON.stringify({ leftScale: controlsLeft.style.scale, rightScale: controlsRight.style.scale, leftOrigin: leftOrigin, rightOrigin: rightOrigin }));');
+    L.push('    var persistedControlsScale = JSON.parse(localStorage.getItem("geopixelcons_settings") || "{}").controlsUiScale;');
+    L.push('    if (persistedControlsScale !== 80) throw new Error("REGRESSION: Controls Scale did not persist its committed value");');
+    L.push('    var lateControl = document.createElement("button"); lateControl.textContent = "Late control"; lateControl.style.height = "40px"; controlsRight.appendChild(lateControl);');
+    L.push('    if (Math.abs(lateControl.getBoundingClientRect().height - 32) > 1) throw new Error("REGRESSION: a late controls-right button did not inherit the active cluster scale");');
+    L.push('    controlsScaleInput.value = "100"; controlsScaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(resolve); });');
+    L.push('    if (controlsLeft.style.scale || controlsRight.style.scale) throw new Error("REGRESSION: Controls Scale did not restore native clusters at 100%");');
+    L.push('    return "one release-applied slider scales both untouched native side clusters, persists the shared value, and restores their original sizing at 100%";');
     L.push('  });');
     L.push('');
     // ---- item mobile-painting.live-controller ----

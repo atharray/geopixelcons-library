@@ -4,7 +4,9 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const artifact = readFileSync(new URL('../dist/geopixelcons-library.js', import.meta.url), 'utf8');
+const legacyCoreSource = readFileSync(new URL('../src/legacy/core.js', import.meta.url), 'utf8');
 const paintMenuControlsSource = readFileSync(new URL('../src/legacy/features/hide-paint-menu.js', import.meta.url), 'utf8');
+const controlsScaleSource = readFileSync(new URL('../src/legacy/features/controls-scale.js', import.meta.url), 'utf8');
 const paintingMenuOverhaulSource = readFileSync(new URL('../src/legacy/features/mobile-painting.js', import.meta.url), 'utf8');
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -103,6 +105,21 @@ test('makes scale a Paint Menu Controls capability independent of Painting Menu 
     assert.match(paintMenuControlsSource, /gpc-paint-flip-pos/);
     assert.match(paintMenuControlsSource, /making the scale tab a Paint Menu Controls capability/);
     assert.doesNotMatch(paintingMenuOverhaulSource, /gpc-pmc-scale-tab/);
+});
+test('keeps native controls scale independent and places its setting below Map Markers', () => {
+    assert.match(artifact, /gpc-controls-scale-popover/);
+    assert.match(artifact, /controlsUiScale: 100/);
+    assert.match(controlsScaleSource, /document\.getElementById\('controls-left'\)/);
+    assert.match(controlsScaleSource, /document\.getElementById\('controls-right'\)/);
+    assert.match(controlsScaleSource, /element\.style\.scale = String\(percent \/ 100\)/);
+    assert.match(controlsScaleSource, /top left/);
+    assert.match(controlsScaleSource, /top right/);
+    assert.match(controlsScaleSource, /addEventListener\('change'/);
+    assert.doesNotMatch(controlsScaleSource, /addEventListener\('pointerup'/);
+    const mapMarkersEntry = legacyCoreSource.lastIndexOf("dropdown.appendChild(makeSubBtn('📌', 'Map Markers'");
+    const scaleEntry = legacyCoreSource.lastIndexOf("dropdown.appendChild(makeSubBtn('↔️', 'Controls scale'");
+    const settingsEntry = legacyCoreSource.lastIndexOf("dropdown.appendChild(makeSubBtn('⚙️', 'Settings...'");
+    assert.ok(mapMarkersEntry !== -1 && mapMarkersEntry < scaleEntry && scaleEntry < settingsEntry);
 });
 test('keeps compact Ghost++ palette state and size separate from the full menu', () => {
     assert.match(artifact, /compactPaletteViewMode: 'grid'/);
