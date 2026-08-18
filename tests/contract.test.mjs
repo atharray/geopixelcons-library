@@ -69,7 +69,10 @@ test('includes a confirmation gate for large bulk purchases', () => {
 test('tracks snapshot-observed guild activity and marks inactive players yellow', () => {
     assert.match(artifact, /GUILD_ACTIVITY_STORAGE_KEY = 'guild_xp_last_activity_v1'/);
     assert.match(artifact, /function recordGuildActivity\(previousMembers, currentMembers, observedAt\)/);
-    assert.match(artifact, /getXp\(currentValue\) > getXp\(previousMembers\[memberId\]\)/);
+    assert.match(artifact, /function recordCurrentGuildActivity\(history, currentMembers, observedAt = getVirtualNow\(\)\)/);
+    assert.match(artifact, /recordCurrentGuildActivity\(history, currentMembers\)/);
+    assert.match(artifact, /currentXp <= getXp\(previousMembers\[memberId\]\)/);
+    assert.match(artifact, /observedXp: currentXp/);
     assert.match(artifact, /function rebuildGuildActivityHistory\(history\)/);
     assert.match(artifact, /function formatLastSeenLabel\(timestamp\)/);
     assert.match(artifact, /<th>Last Seen<\/th>/);

@@ -1246,6 +1246,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             date: '2026-08-17',
             items: [
                 { type: 'added', text: 'Guild Overhaul: XP Tracker and player markers now show each member\'s last observed activity from snapshot XP gains, with configurable inactive-after days and yellow inactive markers that take priority over territory colors' },
+                { type: 'fixed', text: 'Guild Overhaul: opening the XP Tracker now records activity that happened since the latest stored snapshot, so current tracker changes no longer appear as unknown' },
             ]
         },
         {
@@ -18806,9 +18807,29 @@ patch();
         GM_setValue(GUILD_ACTIVITY_STORAGE_KEY, records);
     }
 
+    function getMemberActivityRecord(memberId, records = getGuildActivityRecords()) {
+        const stored = records[memberId];
+        if (stored && typeof stored === 'object') {
+            const timestamp = Number(stored.timestamp);
+            const observedXp = Number(stored.observedXp);
+            if (Number.isFinite(timestamp) && timestamp > 0) {
+                return {
+                    timestamp,
+                    observedXp: Number.isFinite(observedXp) ? observedXp : null
+                };
+            }
+        }
+
+        // The first preview stored plain timestamps. Keep them readable and
+        // upgrade them naturally when a later observation has a known XP total.
+        const timestamp = Number(stored);
+        return Number.isFinite(timestamp) && timestamp > 0
+            ? { timestamp, observedXp: null }
+            : null;
+    }
+
     function getMemberActivityTimestamp(memberId, records = getGuildActivityRecords()) {
-        const timestamp = Number(records[memberId]);
-        return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
+        return getMemberActivityRecord(memberId, records)?.timestamp || null;
     }
 
     function recordGuildActivity(previousMembers, currentMembers, observedAt) {
@@ -18818,10 +18839,14 @@ patch();
 
         for (const [memberId, currentValue] of Object.entries(currentMembers)) {
             if (!Object.prototype.hasOwnProperty.call(previousMembers, memberId)) continue;
-            if (getXp(currentValue) > getXp(previousMembers[memberId])) {
-                records[memberId] = observedAt;
-                changed = true;
-            }
+            const currentXp = getXp(currentValue);
+            if (currentXp <= getXp(previousMembers[memberId])) continue;
+
+            const previousRecord = getMemberActivityRecord(memberId, records);
+            if (previousRecord && previousRecord.observedXp !== null && currentXp <= previousRecord.observedXp) continue;
+
+            records[memberId] = { timestamp: observedAt, observedXp: currentXp };
+            changed = true;
         }
 
         if (changed) saveGuildActivityRecords(records);
@@ -18841,7 +18866,9 @@ patch();
                 if (!Object.prototype.hasOwnProperty.call(previous.members, memberId)) continue;
                 if (getXp(currentValue) > getXp(previous.members[memberId])) {
                     const timestamp = Number(current.timestamp);
-                    if (Number.isFinite(timestamp) && timestamp > 0) records[memberId] = timestamp;
+                    if (Number.isFinite(timestamp) && timestamp > 0) {
+                        records[memberId] = { timestamp, observedXp: getXp(currentValue) };
+                    }
                 }
             }
         }
@@ -18852,6 +18879,13 @@ patch();
 
     function clearGuildActivityHistory() {
         saveGuildActivityRecords({});
+    }
+
+    function recordCurrentGuildActivity(history, currentMembers, observedAt = getVirtualNow()) {
+        const lastEntry = Array.isArray(history) ? history[history.length - 1] : null;
+        const changed = recordGuildActivity(lastEntry && lastEntry.members, currentMembers, observedAt);
+        if (changed && playersVisible) refreshPlayerActivity();
+        return changed;
     }
 
     function formatLastSeenAge(timestamp, now = getVirtualNow()) {
@@ -20128,6 +20162,11 @@ patch();
             container.innerHTML = '<p class="text-gray-500">Please wait for members to load...</p>';
             return;
         }
+
+        // The comparison view already sees changes after the latest stored
+        // snapshot. Record those observations immediately, without silently
+        // creating or replacing a snapshot just because the user opened it.
+        recordCurrentGuildActivity(history, currentMembers);
 
         // --- Controls ---
         const controls = document.createElement('div');
