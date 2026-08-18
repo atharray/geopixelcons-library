@@ -54,7 +54,7 @@ test('defaults Compact Paint Controls on for new installs', () => {
 test('keeps compact Ghost++ palette state and size separate from the full menu', () => {
     assert.match(artifact, /compactPaletteViewMode: 'grid'/);
     assert.match(artifact, /compactWidth: 260/);
-    assert.match(artifact, /compactHeight: null/);
+    assert.match(artifact, /compactHeight: 160/);
     assert.match(artifact, /gppSettings\.compactPaletteViewMode/);
     assert.match(artifact, /--gpp-compact-width/);
     assert.match(artifact, /--gpp-compact-height/);

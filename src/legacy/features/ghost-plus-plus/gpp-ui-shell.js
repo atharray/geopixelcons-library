@@ -92,8 +92,8 @@
                fully mounted and functional; only their visibility changes,
                so nothing needs to be re-rendered when toggling in or out. */
             #${GPP_IDS.modal}.gpp-minified {
-                width: var(--gpp-compact-width, 260px) !important; min-width: 0 !important;
-                height: var(--gpp-compact-height, auto) !important; min-height: 0 !important;
+                width: min(var(--gpp-compact-width, 260px), calc(100vw - 16px)) !important; min-width: 0 !important;
+                height: min(var(--gpp-compact-height, 160px), calc(100vh - 16px)) !important; min-height: 0 !important;
             }
             #${GPP_IDS.modal}.gpp-minified #${GPP_IDS.right},
             #${GPP_IDS.modal}.gpp-minified .gpp-edge { display: none !important; }
@@ -992,10 +992,14 @@
     const GPP_COMPACT_MIN_WIDTH = 180;
     const GPP_COMPACT_MIN_HEIGHT = 72;
 
-    function gppCompactViewportLimit(axis) {
+    function gppCompactViewportLimit(modal, axis) {
         const viewport = axis === 'width' ? window.innerWidth : window.innerHeight;
         const safeViewport = Number.isFinite(viewport) && viewport > 0 ? viewport : (axis === 'width' ? 1200 : 900);
-        return Math.max(axis === 'width' ? GPP_COMPACT_MIN_WIDTH : GPP_COMPACT_MIN_HEIGHT, safeViewport - 16);
+        const positionProperty = axis === 'width' ? 'left' : 'top';
+        const position = parseFloat(getComputedStyle(modal).getPropertyValue(positionProperty));
+        const scale = gppReadModalScale(modal);
+        const available = (safeViewport - Math.max(0, Number.isFinite(position) ? position : 0) - 8) / scale;
+        return Math.max(axis === 'width' ? GPP_COMPACT_MIN_WIDTH : GPP_COMPACT_MIN_HEIGHT, available);
     }
 
     function gppClampCompactDimension(value, fallback, min, max) {
@@ -1008,15 +1012,15 @@
             gppSettings.compactWidth,
             260,
             GPP_COMPACT_MIN_WIDTH,
-            gppCompactViewportLimit('width'),
+            gppCompactViewportLimit(modal, 'width'),
         );
         modal.style.setProperty('--gpp-compact-width', `${width}px`);
         if (typeof gppSettings.compactHeight === 'number' && Number.isFinite(gppSettings.compactHeight)) {
             const height = gppClampCompactDimension(
                 gppSettings.compactHeight,
-                120,
+                160,
                 GPP_COMPACT_MIN_HEIGHT,
-                gppCompactViewportLimit('height'),
+                gppCompactViewportLimit(modal, 'height'),
             );
             modal.style.setProperty('--gpp-compact-height', `${height}px`);
         } else {
@@ -1032,14 +1036,14 @@
             widthStyle,
             260,
             GPP_COMPACT_MIN_WIDTH,
-            gppCompactViewportLimit('width'),
+            gppCompactViewportLimit(modal, 'width'),
         );
         const heightFallback = modal.offsetHeight > 0 ? modal.offsetHeight : 120;
         const height = gppClampCompactDimension(
             heightStyle,
             heightFallback,
             GPP_COMPACT_MIN_HEIGHT,
-            gppCompactViewportLimit('height'),
+            gppCompactViewportLimit(modal, 'height'),
         );
         gppSettings.compactWidth = width;
         gppSettings.compactHeight = height;
@@ -1092,17 +1096,35 @@
                     if (drag.compact) modal.style.setProperty('--gpp-compact-height', height + 'px');
                     else modal.style.height = height + 'px';
                 };
-                if (sides.includes('e')) setWidth(Math.max(minW, drag.layoutWidth + dx));
-                if (sides.includes('s')) setHeight(Math.max(minH, drag.layoutHeight + dy));
+                if (sides.includes('e')) {
+                    const maxW = drag.compact ? gppCompactViewportLimit(modal, 'width') : Infinity;
+                    setWidth(Math.min(maxW, Math.max(minW, drag.layoutWidth + dx)));
+                }
+                if (sides.includes('s')) {
+                    const maxH = drag.compact ? gppCompactViewportLimit(modal, 'height') : Infinity;
+                    setHeight(Math.min(maxH, Math.max(minH, drag.layoutHeight + dy)));
+                }
                 if (sides.includes('w')) {
-                    const width = Math.max(minW, drag.layoutWidth - dx);
+                    const maxW = drag.compact
+                        ? Math.min(
+                            gppCompactViewportLimit(modal, 'width'),
+                            Math.max(minW, (drag.rect.left + drag.rect.width - 8) / drag.scale),
+                        )
+                        : Infinity;
+                    const width = Math.min(maxW, Math.max(minW, drag.layoutWidth - dx));
                     setWidth(width);
                     // Keep the visual right edge anchored under the cursor:
                     // the new VISUAL width is width * scale, not width.
                     modal.style.left = (drag.rect.left + drag.rect.width - width * drag.scale) + 'px';
                 }
                 if (sides.includes('n')) {
-                    const height = Math.max(minH, drag.layoutHeight - dy);
+                    const maxH = drag.compact
+                        ? Math.min(
+                            gppCompactViewportLimit(modal, 'height'),
+                            Math.max(minH, (drag.rect.top + drag.rect.height - 8) / drag.scale),
+                        )
+                        : Infinity;
+                    const height = Math.min(maxH, Math.max(minH, drag.layoutHeight - dy));
                     setHeight(height);
                     modal.style.top = (drag.rect.top + drag.rect.height - height * drag.scale) + 'px';
                 }
