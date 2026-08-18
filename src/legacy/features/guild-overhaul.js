@@ -20,6 +20,8 @@
         TWENTY_FOUR_HOURS: 24 * 60 * 60 * 1000
     };
 
+    const GUILD_ACTIVITY_STORAGE_KEY = 'guild_xp_last_activity_v1';
+
     const sessionState = {
         visitedCoords: new Set()
     };
@@ -69,6 +71,15 @@
         }
     })();
 
+    // Existing snapshots already contain enough information to establish a
+    // best-effort starting point. Later observations are stored separately so
+    // normal history pruning does not discard a useful last-seen value.
+    (function _initializeGuildActivityHistory() {
+        const activity = getGuildActivityRecords();
+        if (Object.keys(activity).length > 0) return;
+        rebuildGuildActivityHistory(GM_getValue('guild_xp_history', []));
+    })();
+
     // --- Territory Overlay State ---
     const TERRITORY_STORAGE_KEY = 'guildOverhaul_territorySettings';
     let territoryCanvas = null;
@@ -82,6 +93,14 @@
 
     // --- Player Markers Overlay State ---
     const PLAYER_STORAGE_KEY = 'guildOverhaul_playerSettings';
+    const DEFAULT_PLAYER_SETTINGS = {
+        markerSize: 28,
+        labelFontSize: 11,
+        defaultColor: '#ef4444',
+        territoryColor: '#3b82f6',
+        inactiveColor: '#eab308',
+        inactiveAfterDays: 7
+    };
     let playersContainer = null;
     let playersVisible = false;
     let playerMarkerData = []; // Array of { name, gridX, gridY, element, inTerritory }
@@ -94,14 +113,9 @@
     function loadPlayerSettings() {
         try {
             const stored = GM_getValue(PLAYER_STORAGE_KEY, null);
-            if (stored) return stored;
+            if (stored && typeof stored === 'object') return { ...DEFAULT_PLAYER_SETTINGS, ...stored };
         } catch (e) {}
-        return {
-            markerSize: 28,
-            labelFontSize: 11,
-            defaultColor: '#ef4444',
-            territoryColor: '#3b82f6'
-        };
+        return { ...DEFAULT_PLAYER_SETTINGS };
     }
 
     function savePlayerSettings() {
@@ -860,6 +874,130 @@
         return Date.now() + CONFIG.timeOffset;
     }
 
+    function getGuildActivityRecords() {
+        try {
+            const records = GM_getValue(GUILD_ACTIVITY_STORAGE_KEY, {});
+            return records && typeof records === 'object' && !Array.isArray(records) ? records : {};
+        } catch (error) {
+            console.warn('[Guild XP] Could not read last activity records:', error);
+            return {};
+        }
+    }
+
+    function saveGuildActivityRecords(records) {
+        GM_setValue(GUILD_ACTIVITY_STORAGE_KEY, records);
+    }
+
+    function getMemberActivityRecord(memberId, records = getGuildActivityRecords()) {
+        const stored = records[memberId];
+        if (stored && typeof stored === 'object') {
+            const timestamp = Number(stored.timestamp);
+            const observedXp = Number(stored.observedXp);
+            if (Number.isFinite(timestamp) && timestamp > 0) {
+                return {
+                    timestamp,
+                    observedXp: Number.isFinite(observedXp) ? observedXp : null
+                };
+            }
+        }
+
+        // The first preview stored plain timestamps. Keep them readable and
+        // upgrade them naturally when a later observation has a known XP total.
+        const timestamp = Number(stored);
+        return Number.isFinite(timestamp) && timestamp > 0
+            ? { timestamp, observedXp: null }
+            : null;
+    }
+
+    function getMemberActivityTimestamp(memberId, records = getGuildActivityRecords()) {
+        return getMemberActivityRecord(memberId, records)?.timestamp || null;
+    }
+
+    function recordGuildActivity(previousMembers, currentMembers, observedAt) {
+        if (!previousMembers || !currentMembers) return false;
+        const records = getGuildActivityRecords();
+        let changed = false;
+
+        for (const [memberId, currentValue] of Object.entries(currentMembers)) {
+            if (!Object.prototype.hasOwnProperty.call(previousMembers, memberId)) continue;
+            const currentXp = getXp(currentValue);
+            if (currentXp <= getXp(previousMembers[memberId])) continue;
+
+            const previousRecord = getMemberActivityRecord(memberId, records);
+            if (previousRecord && previousRecord.observedXp !== null && currentXp <= previousRecord.observedXp) continue;
+
+            records[memberId] = { timestamp: observedAt, observedXp: currentXp };
+            changed = true;
+        }
+
+        if (changed) saveGuildActivityRecords(records);
+        return changed;
+    }
+
+    function rebuildGuildActivityHistory(history) {
+        const records = {};
+        if (!Array.isArray(history)) return records;
+
+        for (let index = 1; index < history.length; index++) {
+            const previous = history[index - 1];
+            const current = history[index];
+            if (!previous?.members || !current?.members) continue;
+
+            for (const [memberId, currentValue] of Object.entries(current.members)) {
+                if (!Object.prototype.hasOwnProperty.call(previous.members, memberId)) continue;
+                if (getXp(currentValue) > getXp(previous.members[memberId])) {
+                    const timestamp = Number(current.timestamp);
+                    if (Number.isFinite(timestamp) && timestamp > 0) {
+                        records[memberId] = { timestamp, observedXp: getXp(currentValue) };
+                    }
+                }
+            }
+        }
+
+        saveGuildActivityRecords(records);
+        return records;
+    }
+
+    function clearGuildActivityHistory() {
+        saveGuildActivityRecords({});
+    }
+
+    function recordCurrentGuildActivity(history, currentMembers, observedAt = getVirtualNow()) {
+        const lastEntry = Array.isArray(history) ? history[history.length - 1] : null;
+        const changed = recordGuildActivity(lastEntry && lastEntry.members, currentMembers, observedAt);
+        if (changed && playersVisible) refreshPlayerActivity();
+        return changed;
+    }
+
+    function formatLastSeenAge(timestamp, now = getVirtualNow()) {
+        if (!timestamp) return 'Unknown';
+        const elapsed = Math.max(0, now - timestamp);
+        if (elapsed < 60 * 1000) return 'just now';
+        if (elapsed < 60 * 60 * 1000) return Math.floor(elapsed / (60 * 1000)) + 'm ago';
+        if (elapsed < 24 * 60 * 60 * 1000) return Math.floor(elapsed / (60 * 60 * 1000)) + 'h ago';
+        return Math.floor(elapsed / (24 * 60 * 60 * 1000)) + 'd ago';
+    }
+
+    function formatLastSeenLabel(timestamp) {
+        return 'Last seen: ' + formatLastSeenAge(timestamp);
+    }
+
+    function getLastSeenTitle(timestamp) {
+        return timestamp
+            ? 'Last observed XP activity: ' + new Date(timestamp).toLocaleString()
+            : 'No XP increase has been observed since tracking began.';
+    }
+
+    function isMemberInactive(lastSeenAt) {
+        const timestamp = Number(lastSeenAt);
+        const thresholdDays = Number(playerSettings?.inactiveAfterDays);
+        // Unknown means there is no evidence of recent activity, so it needs
+        // the same operational follow-up as an overdue known observation.
+        if (!Number.isFinite(timestamp) || timestamp <= 0) return true;
+        if (!Number.isFinite(thresholdDays) || thresholdDays <= 0) return false;
+        return getVirtualNow() - timestamp >= thresholdDays * 24 * 60 * 60 * 1000;
+    }
+
     function waitForElement(selector, timeout = 10000) {
         return new Promise((resolve, reject) => {
             const startTime = Date.now();
@@ -953,6 +1091,7 @@
         let history = GM_getValue('guild_xp_history', []);
         const lastEntry = history[history.length - 1];
         const lastBucketStart = lastEntry ? (lastEntry.bucketStartTime || lastEntry.timestamp) : 0;
+        const activityChanged = recordGuildActivity(lastEntry && lastEntry.members, members, now);
 
         const newEntry = { timestamp: now, bucketStartTime: now, members: members };
 
@@ -967,6 +1106,7 @@
 
         if (history.length > CONFIG.maxSnapshots) history = history.slice(history.length - CONFIG.maxSnapshots);
         GM_setValue('guild_xp_history', history);
+        if (activityChanged && playersVisible) refreshPlayerActivity();
         return history;
     }
 
@@ -1365,6 +1505,7 @@
     function deleteAllHistory() {
         if (confirm('Delete ALL snapshots? This cannot be undone.')) {
             GM_setValue('guild_xp_history', []);
+            clearGuildActivityHistory();
             return [];
         }
         return null;
@@ -1574,6 +1715,7 @@
                     }
 
                     GM_setValue('guild_xp_history', importData.snapshots);
+                    rebuildGuildActivityHistory(importData.snapshots);
                     alert(`Successfully imported ${importData.snapshots.length} snapshots.`);
                     
                     // Refresh the UI if open
@@ -2103,6 +2245,11 @@
             return;
         }
 
+        // The comparison view already sees changes after the latest stored
+        // snapshot. Record those observations immediately, without silently
+        // creating or replacing a snapshot just because the user opened it.
+        recordCurrentGuildActivity(history, currentMembers);
+
         // --- Controls ---
         const controls = document.createElement('div');
         controls.style.marginBottom = '15px';
@@ -2352,13 +2499,17 @@
             // Apply filter
             if (filterMode === 'active') {
                 changes = changes.filter(c => {
-                    // Active = Joined OR Positive XP Gain
-                    return c.type === 'join' || c.diff > 0;
+                    // Active requires both a current positive change and a
+                    // known observation. Unknown members belong in Inactive.
+                    const lastSeenAt = getMemberActivityTimestamp(c.id);
+                    return !!lastSeenAt && (c.type === 'join' || c.diff > 0);
                 });
             } else if (filterMode === 'inactive') {
                 changes = changes.filter(c => {
-                    // Inactive = Left OR Zero/Negative XP Gain
-                    return c.type === 'left' || c.diff <= 0;
+                    // Unknown, overdue, left, and non-positive-change members
+                    // all need follow-up from the guild's point of view.
+                    const lastSeenAt = getMemberActivityTimestamp(c.id);
+                    return c.type === 'left' || !lastSeenAt || isMemberInactive(lastSeenAt) || c.diff <= 0;
                 });
             } else if (filterMode === 'in-territory') {
                 changes = changes.filter(c => {
@@ -2383,11 +2534,11 @@
 
             const table = document.createElement('table');
             table.className = 'daily-brief-table';
-            table.innerHTML = `<thead><tr><th>User</th><th>Change</th><th>Details</th></tr></thead>`;
+            table.innerHTML = `<thead><tr><th>User</th><th>Change</th><th>Details</th><th>Last Seen</th></tr></thead>`;
             const tbody = document.createElement('tbody');
 
             if (changes.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="3" style="text-align:center">No changes.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align:center">No changes.</td></tr>`;
             } else {
                 changes.forEach(change => {
                     const tr = document.createElement('tr');
@@ -2557,6 +2708,12 @@
                     const detailsTd = document.createElement('td');
                     detailsTd.textContent = `${change.oldXp?.toLocaleString() || 0} → ${change.newXp?.toLocaleString() || 0}`;
                     tr.appendChild(detailsTd);
+
+                    const lastSeenAt = getMemberActivityTimestamp(change.id);
+                    const lastSeenTd = document.createElement('td');
+                    lastSeenTd.textContent = formatLastSeenAge(lastSeenAt);
+                    lastSeenTd.title = getLastSeenTitle(lastSeenAt);
+                    tr.appendChild(lastSeenTd);
 
                     tbody.appendChild(tr);
                 });
@@ -3260,6 +3417,51 @@
         `;
 
         // Toggle collapse
+        const activitySettings = document.createElement('div');
+        activitySettings.className = 'territory-setting-row';
+
+        const activityLabel = document.createElement('label');
+        activityLabel.textContent = 'Inactive After';
+        activityLabel.title = 'Markers turn yellow when their last observed XP gain is this many days old.';
+
+        const activityControls = document.createElement('div');
+        activityControls.className = 'flex items-center gap-2';
+
+        const inactiveAfterInput = document.createElement('input');
+        inactiveAfterInput.type = 'number';
+        inactiveAfterInput.id = 'playerInactiveAfterDaysInput';
+        inactiveAfterInput.min = '1';
+        inactiveAfterInput.step = '1';
+        inactiveAfterInput.value = String(playerSettings.inactiveAfterDays);
+        inactiveAfterInput.className = 'w-20 px-2 py-1 rounded-md text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100';
+
+        const daysLabel = document.createElement('span');
+        daysLabel.textContent = 'days';
+        daysLabel.className = 'text-xs text-gray-500 dark:text-gray-400';
+        activityControls.append(inactiveAfterInput, daysLabel);
+        activitySettings.append(activityLabel, activityControls);
+
+        const inactiveColorSettings = document.createElement('div');
+        inactiveColorSettings.className = 'territory-setting-row';
+
+        const inactiveColorLabel = document.createElement('label');
+        inactiveColorLabel.textContent = 'Inactive Color';
+
+        const inactiveColorInput = document.createElement('input');
+        inactiveColorInput.type = 'color';
+        inactiveColorInput.id = 'playerInactiveColorInput';
+        inactiveColorInput.value = playerSettings.inactiveColor;
+        inactiveColorInput.className = 'w-10 h-7 rounded-md cursor-pointer p-0.5';
+        inactiveColorSettings.append(inactiveColorLabel, inactiveColorInput);
+
+        const previewDivider = content.querySelector('.territory-section-divider');
+        if (previewDivider) {
+            content.insertBefore(activitySettings, previewDivider);
+            content.insertBefore(inactiveColorSettings, previewDivider);
+        } else {
+            content.append(activitySettings, inactiveColorSettings);
+        }
+
         toggle.addEventListener('click', () => {
             content.classList.toggle('collapsed');
             toggle.querySelector('.toggle-arrow').classList.toggle('collapsed');
@@ -3530,6 +3732,7 @@
     function buildPlayerMarkerData() {
         const members = parseGuildMembers();
         if (!members) return [];
+        const activityRecords = getGuildActivityRecords();
 
         const markers = [];
         for (const [key, data] of Object.entries(members)) {
@@ -3537,7 +3740,13 @@
             if (coords) {
                 // key is now a numeric ID string; use data.name (full display name) when available
                 const name = (data && data.name) || key;
-                markers.push({ name, gridX: coords[0], gridY: coords[1] });
+                markers.push({
+                    id: key,
+                    name,
+                    gridX: coords[0],
+                    gridY: coords[1],
+                    lastSeenAt: getMemberActivityTimestamp(key, activityRecords)
+                });
             }
         }
         return markers;
@@ -3579,7 +3788,9 @@
     /**
      * Get the pin fill color for a marker based on territory status.
      */
-    function getMarkerColor(inTerritory) {
+    function getMarkerColor(inTerritory, lastSeenAt) {
+        // Inactivity takes priority over the existing blue/red territory colors.
+        if (isMemberInactive(lastSeenAt)) return playerSettings.inactiveColor;
         return (playersColorByTerritory && inTerritory) ? playerSettings.territoryColor : playerSettings.defaultColor;
     }
 
@@ -3588,7 +3799,7 @@
         wrapper.className = 'player-marker' + (playersShowNames ? ' show-label' : '');
         wrapper.setAttribute('data-player', marker.name);
 
-        const pinColor = getMarkerColor(marker.inTerritory);
+        const pinColor = getMarkerColor(marker.inTerritory, marker.lastSeenAt);
         const w = playerSettings.markerSize;
         const h = Math.round(w * 40 / 28); // maintain aspect ratio 28:40
 
@@ -3600,6 +3811,15 @@
             </svg>
             <div class="player-marker-tooltip" style="font-size:${playerSettings.labelFontSize}px">${marker.name.replace(/</g, '&lt;')}</div>
         `;
+
+        const tooltip = wrapper.querySelector('.player-marker-tooltip');
+        if (tooltip) {
+            tooltip.title = getLastSeenTitle(marker.lastSeenAt);
+            const lastSeenLine = document.createElement('div');
+            lastSeenLine.className = 'player-marker-last-seen';
+            lastSeenLine.textContent = formatLastSeenLabel(marker.lastSeenAt);
+            tooltip.appendChild(lastSeenLine);
+        }
 
         // Click to teleport — find the member's actual Find button in the DOM
         // and .click() it (runs in page context), with fallback via script injection
@@ -3755,9 +3975,21 @@
         for (const marker of playerMarkerData) {
             const pinBody = marker.element.querySelector('.pin-body');
             if (pinBody) {
-                pinBody.setAttribute('fill', getMarkerColor(marker.inTerritory));
+                pinBody.setAttribute('fill', getMarkerColor(marker.inTerritory, marker.lastSeenAt));
             }
         }
+    }
+
+    function refreshPlayerActivity() {
+        const activityRecords = getGuildActivityRecords();
+        for (const marker of playerMarkerData) {
+            marker.lastSeenAt = getMemberActivityTimestamp(marker.id, activityRecords);
+            const tooltip = marker.element.querySelector('.player-marker-tooltip');
+            const lastSeenLine = marker.element.querySelector('.player-marker-last-seen');
+            if (tooltip) tooltip.title = getLastSeenTitle(marker.lastSeenAt);
+            if (lastSeenLine) lastSeenLine.textContent = formatLastSeenLabel(marker.lastSeenAt);
+        }
+        refreshMarkerColors();
     }
 
     /**
@@ -3872,11 +4104,15 @@
                 const labelSize = parseInt(document.getElementById('playerLabelSizeSelect')?.value);
                 const defaultColor = document.getElementById('playerDefaultColorInput')?.value;
                 const territoryColor = document.getElementById('playerTerritoryColorInput')?.value;
+                const inactiveAfterDays = Math.max(1, parseInt(document.getElementById('playerInactiveAfterDaysInput')?.value, 10) || DEFAULT_PLAYER_SETTINGS.inactiveAfterDays);
+                const inactiveColor = document.getElementById('playerInactiveColorInput')?.value;
 
                 playerSettings.markerSize = size;
                 playerSettings.labelFontSize = labelSize;
                 playerSettings.defaultColor = defaultColor;
                 playerSettings.territoryColor = territoryColor;
+                playerSettings.inactiveAfterDays = inactiveAfterDays;
+                playerSettings.inactiveColor = inactiveColor;
 
                 // Update preview
                 const h = Math.round(size * 40 / 28);
@@ -3898,10 +4134,10 @@
                 refreshMarkerColors();
             };
 
-            ['playerSizeSelect', 'playerLabelSizeSelect'].forEach(id => {
+            ['playerSizeSelect', 'playerLabelSizeSelect', 'playerInactiveAfterDaysInput'].forEach(id => {
                 document.getElementById(id)?.addEventListener('change', update);
             });
-            ['playerDefaultColorInput', 'playerTerritoryColorInput'].forEach(id => {
+            ['playerDefaultColorInput', 'playerTerritoryColorInput', 'playerInactiveColorInput'].forEach(id => {
                 document.getElementById(id)?.addEventListener('input', update);
             });
         };
@@ -4487,6 +4723,7 @@
     GM_registerMenuCommand("Reset Guild XP History", () => {
         if (confirm("Are you sure you want to clear all stored Guild XP history? This cannot be undone.")) {
             GM_setValue('guild_xp_history', []);
+            clearGuildActivityHistory();
             alert("Guild XP history has been reset.");
         }
     });

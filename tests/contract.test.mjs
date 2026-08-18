@@ -26,7 +26,7 @@ test('publishes the library bridge when @require wraps the source', () => {
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Ghost Template Manager/);
-    assert.match(artifact, /const VERSION = '2\.4\.1';/);
+    assert.match(artifact, /const VERSION = '2\.5\.0';/);
     const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const versionPattern = new RegExp(`const LIBRARY_VERSION = '${escapedVersion}'; // x-release-please-version`);
     assert.match(artifact, versionPattern);
@@ -64,4 +64,23 @@ test('includes a confirmation gate for large bulk purchases', () => {
     assert.match(artifact, /function onBulkConfirm\(\)[\s\S]*?openBulkWarning\(toBuyCount/);
     assert.match(artifact, /function openBulkModal\(colors\)[\s\S]*?renderBulkPreview\(nextColors\)/);
     assert.match(artifact, /function continueBulkWarning\(\)[\s\S]*?executeConfirmedBulkPurchase/);
+});
+
+test('tracks snapshot-observed guild activity and marks inactive players yellow', () => {
+    assert.match(artifact, /GUILD_ACTIVITY_STORAGE_KEY = 'guild_xp_last_activity_v1'/);
+    assert.match(artifact, /function recordGuildActivity\(previousMembers, currentMembers, observedAt\)/);
+    assert.match(artifact, /function recordCurrentGuildActivity\(history, currentMembers, observedAt = getVirtualNow\(\)\)/);
+    assert.match(artifact, /recordCurrentGuildActivity\(history, currentMembers\)/);
+    assert.match(artifact, /currentXp <= getXp\(previousMembers\[memberId\]\)/);
+    assert.match(artifact, /observedXp: currentXp/);
+    assert.match(artifact, /function rebuildGuildActivityHistory\(history\)/);
+    assert.match(artifact, /function formatLastSeenLabel\(timestamp\)/);
+    assert.match(artifact, /<th>Last Seen<\/th>/);
+    assert.match(artifact, /inactiveAfterDays: 7/);
+    assert.match(artifact, /inactiveColor: '#eab308'/);
+    assert.match(artifact, /Inactivity takes priority over the existing blue\/red territory colors/);
+    assert.match(artifact, /Unknown means there is no evidence of recent activity/);
+    assert.match(artifact, /Unknown members belong in Inactive/);
+    assert.match(artifact, /c\.type === 'left' \|\| !lastSeenAt \|\| isMemberInactive\(lastSeenAt\) \|\| c\.diff <= 0/);
+    assert.match(artifact, /isMemberInactive\(lastSeenAt\)/);
 });

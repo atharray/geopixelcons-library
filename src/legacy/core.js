@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.4.1';
+    const VERSION = '2.5.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1229,6 +1229,15 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.5.0',
+            date: '2026-08-17',
+            items: [
+                { type: 'added', text: 'Guild Overhaul: XP Tracker and player markers now show each member\'s last observed activity from snapshot XP gains, with configurable inactive-after days and yellow inactive markers that take priority over territory colors' },
+                { type: 'fixed', text: 'Guild Overhaul: opening the XP Tracker now records activity that happened since the latest stored snapshot, so current tracker changes no longer appear as unknown' },
+                { type: 'changed', text: 'Guild Overhaul: members with unknown activity are now treated as inactive and shown with the inactive marker color until activity is observed' },
+            ]
+        },
         {
             version: '2.4.1',
             date: '2026-08-16',
