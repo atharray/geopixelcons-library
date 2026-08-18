@@ -1308,6 +1308,9 @@
                 { type: 'changed', text: 'Mobile Painting (in development): the template preview thumbnail is now a square, its width matching whatever height its own row ends up (was a plain rectangle sized to the image itself)' },
                 { type: 'fixed', text: 'Mobile Painting (in development): Enable, Sort, Filter, and Get hex values in the bottom controls row now close each other when a different one is opened, instead of leaving multiple of them visibly open on top of each other at once' },
                 { type: 'changed', text: 'Mobile Painting (in development): the "Visible rows" dropdown now defaults to 3 instead of 2' },
+                { type: 'added', text: 'Guild Overhaul: XP Tracker and player markers now show each member\'s last observed activity from snapshot XP gains, with configurable inactive-after days and yellow inactive markers that take priority over territory colors' },
+                { type: 'fixed', text: 'Guild Overhaul: opening the XP Tracker now records activity that happened since the latest stored snapshot, so current tracker changes no longer appear as unknown' },
+                { type: 'changed', text: 'Guild Overhaul: members with unknown activity are now treated as inactive and shown with the inactive marker color until activity is observed' },
             ]
         },
         {
