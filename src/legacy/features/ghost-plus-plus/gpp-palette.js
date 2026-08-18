@@ -498,6 +498,22 @@
     // garbage-collected.
     const gppPaletteControllers = new WeakMap();
 
+    function gppGetPaletteViewMode() {
+        const modal = document.getElementById(GPP_IDS.modal);
+        const setting = modal && modal.classList.contains('gpp-minified')
+            ? gppSettings.compactPaletteViewMode
+            : gppSettings.paletteViewMode;
+        return setting === 'list' ? 'list' : 'grid';
+    }
+
+    function gppRefreshPaletteViewMode() {
+        const container = document.getElementById('gpp-palette-section');
+        const controller = container && gppPaletteControllers.get(container);
+        if (controller && typeof controller.refreshViewMode === 'function') {
+            controller.refreshViewMode();
+        }
+    }
+
     function gppRenderPalette(container, template, onChange) {
         if (!container) return;
         gppInjectPaletteStyle();
@@ -624,8 +640,9 @@
             }
         });
 
-        // Compact-mode palette view — the same persisted Grid/List choice as
-        // View Settings, placed directly below Enable all / Disable all.
+        // Compact-mode palette view — an independent persisted Grid/List
+        // choice from the full View Settings palette preference, placed
+        // directly below Enable all / Disable all.
         // These controls intentionally have no ids because the full View
         // Settings section already owns the stable ids for its own pair.
         const paletteViewRow = document.createElement('div');
@@ -650,15 +667,15 @@
         compactListBtn.title = 'List view';
         compactListBtn.setAttribute('aria-label', 'List view');
         function syncCompactPaletteViewButtons() {
-            const mode = gppSettings.paletteViewMode === 'list' ? 'list' : 'grid';
+            const mode = gppSettings.compactPaletteViewMode === 'list' ? 'list' : 'grid';
             compactGridBtn.classList.toggle('gpp-vs-view-btn-active', mode === 'grid');
             compactListBtn.classList.toggle('gpp-vs-view-btn-active', mode === 'list');
             compactGridBtn.setAttribute('aria-pressed', String(mode === 'grid'));
             compactListBtn.setAttribute('aria-pressed', String(mode === 'list'));
         }
         function setCompactPaletteViewMode(mode) {
-            if (gppSettings.paletteViewMode === mode) return;
-            gppSettings.paletteViewMode = mode;
+            if (gppSettings.compactPaletteViewMode === mode) return;
+            gppSettings.compactPaletteViewMode = mode;
             gppState.saveSettings();
             syncCompactPaletteViewButtons();
             performFilterSort();
@@ -1244,9 +1261,9 @@
             // own CSS comment on this class.
             grid.classList.toggle('gpp-palette-gray-disabled', gppSettings.grayDisabledSwatches !== false);
             // Same live-read-every-call pattern as the line above — toggling
-            // View Settings > Global > "Palette view" updates an
-            // already-open palette immediately, no template switch needed.
-            grid.classList.toggle('gpp-palette-list-mode', gppSettings.paletteViewMode === 'list');
+            // either palette preference updates an already-open palette
+            // immediately, with the active preference following modal mode.
+            grid.classList.toggle('gpp-palette-list-mode', gppGetPaletteViewMode() === 'list');
 
             const searchTerms = searchInput.value.trim().split(/[\s,]+/).map(t => t.toUpperCase()).filter(Boolean);
             const checked = new Set(filterInputs.filter(entry => entry.input.checked).map(entry => entry.value));
@@ -1392,7 +1409,7 @@
             // Colour-only swatch — no hex text on the face; the hex/stats are
             // conveyed entirely via the custom mouse-following tooltip
             // (mouseenter/mousemove) rather than a native title attribute.
-            const listMode = gppSettings.paletteViewMode === 'list';
+            const listMode = gppGetPaletteViewMode() === 'list';
 
             const button = document.createElement('button');
             button.type = 'button';
@@ -1470,7 +1487,7 @@
             });
             const stats = { total, completed, remaining: Math.max(0, total - completed), remainingPercent: total > 0 ? (Math.max(0, total - completed) / total) * 100 : 0 };
 
-            const listMode = gppSettings.paletteViewMode === 'list';
+            const listMode = gppGetPaletteViewMode() === 'list';
 
             const button = document.createElement('button');
             button.type = 'button';
@@ -1528,6 +1545,11 @@
             emptyEl.style.display = 'none';
             panel.style.display = '';
             performFilterSort();
+        };
+
+        controller.refreshViewMode = function gppPaletteControllerRefreshViewMode() {
+            syncCompactPaletteViewButtons();
+            if (controller.template) performFilterSort();
         };
 
         return controller;
