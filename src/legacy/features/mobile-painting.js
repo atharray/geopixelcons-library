@@ -10,6 +10,48 @@
             (function _ext_mobilePainting() {
 
     const MP_STYLE_ID = 'gpc-mobile-painting-style';
+    const MP_SCALE_STORAGE_KEY = 'geo++_mobile_painting_ui_scale';
+    const MP_SCALE_MIN = 75;
+    const MP_SCALE_MAX = 125;
+    const MP_SCALE_STEP = 5;
+    const MP_SCALE_DEFAULT = 100;
+
+    function clampMobileUiScale(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return MP_SCALE_DEFAULT;
+        const stepped = Math.round(numeric / MP_SCALE_STEP) * MP_SCALE_STEP;
+        return Math.max(MP_SCALE_MIN, Math.min(MP_SCALE_MAX, stepped));
+    }
+
+    function readMobileUiScale() {
+        try {
+            const stored = localStorage.getItem(MP_SCALE_STORAGE_KEY);
+            if (stored !== null) return clampMobileUiScale(stored);
+        } catch (e) {}
+        return MP_SCALE_DEFAULT;
+    }
+
+    function persistMobileUiScale(percent) {
+        try { localStorage.setItem(MP_SCALE_STORAGE_KEY, String(percent)); } catch (e) {}
+    }
+
+    // Scale the existing inner bottom-controls wrapper instead of
+    // #bottomControls itself. The site remains responsible for the outer
+    // panel's natural width; transform-origin keeps the scaled surface
+    // anchored to the paint bar's bottom edge, and the compensated width
+    // keeps its visual width equal to the host panel at every scale.
+    function applyMobileUiScale(percent) {
+        if (!liveState || !liveState.scaleRoot) return;
+        const appliedPercent = clampMobileUiScale(percent);
+        const scale = appliedPercent / 100;
+        const root = liveState.scaleRoot;
+        root.style.setProperty('--gpc-mobile-ui-scale', String(scale));
+        root.style.transformOrigin = 'bottom center';
+        root.style.transform = `scale(${scale})`;
+        root.style.width = `${100 / scale}%`;
+        root.dataset.gpcMobileUiScale = String(appliedPercent);
+        liveState.uiScalePercent = appliedPercent;
+    }
 
     // Narrower than core.js's shared isDarkMode(): only the GeoPixels++
     // theme that is actually applied to the document, or its saved explicit
@@ -655,7 +697,7 @@
                block above, not reinvented. */
             .gpc-mobile-controls-row {
                 width: 100%; box-sizing: border-box; margin-bottom: 6px;
-                display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+                display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
             }
             .gpc-ctrl-btn {
                 max-width: 130px; box-sizing: border-box; min-width: 0;
@@ -699,6 +741,17 @@
                 margin-left: 18px; padding-left: 2px; font-size: 11px;
             }
             .gpc-ctrl-menu-option[hidden] { display: none; }
+            .gpc-mobile-scale-control {
+                width: 100%; box-sizing: border-box; margin-top: 6px; padding-top: 6px;
+                display: flex; flex-direction: column; gap: 3px;
+                border-top: 1px solid ${tc('#e5e7eb', '#45475a')};
+            }
+            .gpc-mobile-scale-label-row {
+                display: flex; align-items: center; justify-content: space-between; gap: 6px;
+                font-size: 11px; font-weight: 600; color: ${tc('#475569', '#cdd6f4')};
+            }
+            .gpc-mobile-scale-value { font-variant-numeric: tabular-nums; color: ${tc('#64748b', '#a6adc8')}; }
+            .gpc-mobile-scale-input { width: 100%; min-width: 0; margin: 0; accent-color: ${tc('#2563eb', '#89b4fa')}; }
         `;
         if (isNew) document.head.appendChild(style);
     }
@@ -1282,6 +1335,56 @@
     // toggleNativeControlsForPlaceholders' native-switch branch, the one
     // point this column genuinely stops coming back) undoes this, so the
     // real Ghost++ modal never shows the shortened mobile copy.
+    function buildMobileUiScaleControl(container) {
+        const control = document.createElement('div');
+        control.className = 'gpc-mobile-scale-control';
+        control.id = 'gpc-mobile-ui-scale-control';
+
+        const labelRow = document.createElement('div');
+        labelRow.className = 'gpc-mobile-scale-label-row';
+        const label = document.createElement('label');
+        label.htmlFor = 'gpc-mobile-ui-scale';
+        label.textContent = 'UI scale';
+        const value = document.createElement('output');
+        value.className = 'gpc-mobile-scale-value';
+        value.htmlFor = 'gpc-mobile-ui-scale';
+        labelRow.append(label, value);
+
+        const input = document.createElement('input');
+        input.id = 'gpc-mobile-ui-scale';
+        input.className = 'gpc-mobile-scale-input';
+        input.type = 'range';
+        input.min = String(MP_SCALE_MIN);
+        input.max = String(MP_SCALE_MAX);
+        input.step = String(MP_SCALE_STEP);
+        input.value = String(liveState ? liveState.uiScalePercent : readMobileUiScale());
+        input.title = 'Scale the entire Mobile Painting bottom controls';
+        input.setAttribute('aria-label', 'Mobile Painting UI scale');
+
+        const updateReadout = () => { value.textContent = `${input.value}%`; };
+        const commit = () => {
+            const next = clampMobileUiScale(input.value);
+            input.value = String(next);
+            if (liveState && liveState.uiScalePercent === next) {
+                updateReadout();
+                return;
+            }
+            applyMobileUiScale(next);
+            persistMobileUiScale(next);
+            updateReadout();
+        };
+        updateReadout();
+        // input is deliberately display-only: the surface does not resize
+        // while the user is dragging. change handles keyboard/native commits;
+        // pointerup makes the left-click release boundary explicit for touch
+        // and browsers whose range control delays change until blur.
+        input.addEventListener('input', updateReadout);
+        input.addEventListener('change', commit);
+        input.addEventListener('pointerup', commit);
+        control.append(labelRow, input);
+        container.appendChild(control);
+    }
+
     function buildPlaceholder2Content(container) {
         const dropZone = document.getElementById('gpp-drop-zone');
         if (!dropZone) return;
@@ -1304,6 +1407,7 @@
         borrowNode(dropZone, container);
         const manageBtn = document.getElementById('gpp-lib-manage-btn');
         if (manageBtn) borrowNode(manageBtn, container);
+        buildMobileUiScaleControl(container);
     }
 
     // Undoes buildPlaceholder2Content's mobile-only simplification of the
@@ -2527,7 +2631,7 @@
     //      performFilterSort() directly -- neither reaches subscribers.
     //      Polling is the only reliable way to catch either without patching
     //      more of Ghost++'s own code than the one renderState hook above.
-    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
+    let liveState = null; // { bottomControls, scaleRoot, uiScalePercent, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
 
     // Shown in .gpc-mobile-palette-wrap's usual spot whenever no Ghost++
     // template is focused -- most notably the very first time a mobile
@@ -2727,13 +2831,14 @@
         if (nativeTopBar && !nativeTopBar.id) nativeTopBar.id = 'gpc-native-top-bar';
 
         liveState = {
-            bottomControls, savedNativeContainer: nativeContainer,
+            bottomControls, scaleRoot: innerWrapperEl, uiScalePercent: readMobileUiScale(), savedNativeContainer: nativeContainer,
             wrap: null, grid: null, templateId: null, orderKey: null,
             paletteViewMode: null, scanSummaryRef: null, selectedHex: null,
             soloMode: true, enableSelectedMode: false, highlightNearest: false,
             highlightRequestId: 0, pendingHighlightTemplateId: null,
             pendingHighlightPaletteIndex: null, syncEnableSelectedModeUi: null,
         };
+        applyMobileUiScale(liveState.uiScalePercent);
 
         // The native Sort button (sortAndSetColors()) is redundant with our
         // own Sort control below -- hidden in place, same reasoning as
