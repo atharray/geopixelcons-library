@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.5.1';
+    const VERSION = '2.6.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1230,7 +1230,7 @@
     // ============================================================
     const CHANGELOG = [
         {
-            version: '2.5.1',
+            version: '2.6.0',
             date: '2026-08-17',
             items: [
                 { type: 'changed', text: 'Ghost++ compact view now opens at a short height and stays within the visible screen while resizing' },
