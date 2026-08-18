@@ -24,7 +24,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'bulkPurchaseColors', name: 'Bulk Purchase Colors', icon: '🛒', desc: 'Advanced color purchasing with queue management.', features: ['Bulk color purchase with preview modal', 'Queue management in profile panel', 'Duplicate detection & insufficient-pixels handling', 'Purchase progress tracking'] },
         { key: 'ghostPlusPlus', name: 'Ghost++ Template Overlay', icon: '👻', desc: 'A scalable, multi-template ghost/overlay manager that replaces the native ghost image tool.', features: ['Indexed-core rendering that scales to large, high-colour templates', 'Draggable, resizable, fully collapsible manager with a two-column layout', 'Thumbnail template library with hover preview, edit/teleport, and bulk export/delete', 'Sort/filter/search palette with hover-to-copy hex readout', 'Segmented completion progress bar with per-colour breakdown, unaffected by which colours are toggled on/off', 'One-click full-opacity template Preview toggle'] },
         { key: 'guildOverhaul', name: 'Guild Overhaul', icon: '⚔️', desc: 'Comprehensive guild interface improvements.', features: ['Enhanced member management UI', 'Bank/treasury system', 'Color limit tracking', 'Role hierarchy display', 'Guild-specific moderation tools'] },
-        { key: 'hidePaintMenu', name: 'Paint Menu Controls', icon: '🫣', desc: 'Adds a collapse/expand toggle for the bottom controls panel.', features: ['Collapse & expand the bottom paint controls', 'Reposition controls (left/center/right)', 'Smooth CSS animations'] },
+        { key: 'hidePaintMenu', name: 'Paint Menu Controls', icon: '🫣', desc: 'Adds a collapse/expand toggle for the bottom controls panel.', features: ['Collapse & expand the bottom paint controls', 'Reposition controls (left/center/right)', 'Optional toolbar scale changes controls and height without changing paint-panel width', 'Smooth CSS animations'] },
         { key: 'paintBrushSwap', name: 'Paint Brush Swap', icon: '🖌️', desc: 'Rapid paintbrush tool switching with keyboard shortcuts.', features: ['Configurable keyboard shortcuts for brush swap', 'Brush preset profiles for different painting patterns', 'Quick-switch between brush types'] },
         { key: 'regionScreenshot', name: 'Region Screenshot', icon: '📸', desc: 'Capture region-level screenshots with coordinate overlays.', features: ['Region image capture with coordinate overlay', 'Alpha channel support', 'Save as PNG directly'] },
         { key: 'regionsHighscore', name: 'Regions Highscore', icon: '🏆', desc: 'Displays regional pixel/color contribution rankings.', features: ['Sort rankings by player or guild', 'Filter by pixel count, color, or region', 'Historical contribution statistics'] },
@@ -44,7 +44,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', desc: 'Superseded by Ghost++ Template Overlay. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
         { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', desc: 'Superseded by Ghost++ Template Overlay. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
-        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '📱', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width while an optional toolbar scale tab changes controls and height', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
+        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '📱', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
     ];
 
     const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
@@ -1250,16 +1250,16 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             date: '2026-08-17',
             items: [
                 { type: 'changed', text: 'Painting Menu Overhaul: the bottom control-row buttons are now centered within their row' },
-                { type: 'changed', text: 'Painting Menu Overhaul: the scale slider now opens upward from a toolbar tab beside the Paint Menu Controls flip button; scaling applies when the slider is released' },
+                { type: 'changed', text: 'Paint Menu Controls: the scale slider opens upward from a toolbar tab beside its flip button, applies when released, and works without Painting Menu Overhaul enabled' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: control-row dropdowns now stay above the Paint Menu Controls buttons' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: Filter within pixel count now exposes working minimum and maximum inputs' },
                 { type: 'changed', text: 'Painting Menu Overhaul: replaced the extra gap between the control row and compact palette with a small amount of breathing room' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: added a small amount of breathing room below the control row' },
-                { type: 'fixed', text: 'Painting Menu Overhaul: scaling now keeps the paint panel\'s visual width fixed; only its controls and height change' },
-                { type: 'fixed', text: 'Painting Menu Overhaul: Paint Menu Controls and compact Brush Swap buttons now stay attached and scale with the paint surface' },
+                { type: 'fixed', text: 'Paint Menu Controls: scaling keeps the paint panel\'s visual width fixed; only its controls and height change' },
+                { type: 'fixed', text: 'Paint Menu Controls: its toolbar and compact Brush Swap buttons stay attached and scale with the paint surface' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: switching between the template preview and native controls now updates the scaled panel height immediately' },
-                { type: 'fixed', text: 'Painting Menu Overhaul: Paint Menu Controls toolbar now sits flush against the scaled panel edge' },
-                { type: 'fixed', text: 'Painting Menu Overhaul: the scale slider now keeps the exact released value, and its toolbar tab matches the Paint Menu Controls theme' },
+                { type: 'fixed', text: 'Paint Menu Controls: its toolbar sits flush against the scaled panel edge' },
+                { type: 'fixed', text: 'Paint Menu Controls: the scale slider keeps the exact released value, and its toolbar tab matches the selected theme' },
             ]
         },
         {
@@ -1321,7 +1321,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'changed', text: 'Mobile Painting (in development): the drop zone\'s own desktop-oriented text (drag/drop + paste instructions, supported formats, "or load from a URL") is now replaced with a single "Click to upload template files" line while shown here -- mobile painters only ever tap to pick a file. The real text is restored the instant this view closes, so the actual Ghost++ modal is unaffected' },
                 { type: 'fixed', text: 'Mobile Painting (in development): fixed this row\'s buttons and the p1/p2/p3 columns staying in whichever light/dark theme was active the very first time they rendered, even after switching the GeoPixels++ extension\'s own theme setting -- the color values were baked into a stylesheet that was only ever written once per page load and never refreshed' },
                 { type: 'fixed', text: 'Mobile Painting (in development): the control row buttons (Enable/Disable/Sort/Filter/Get hex values) were still stuck in whichever theme was active on first render even after the previous fix, because the stylesheet refresh only ever ran when the color grid itself got rebuilt from scratch (switching templates) -- an idle tick with the same template focused, by far the common case, skipped it entirely. The stylesheet now refreshes on every tick regardless, so switching the GeoPixels++ theme takes effect within about a second without needing to touch a template' },
-                { type: 'changed', text: 'Mobile Painting (in development): the three columns\' ids now describe what they actually hold (#gpc-mobile-scan-panel / #gpc-mobile-upload-panel / #gpc-mobile-placement-panel) instead of their leftover scaffolding-era gpc-mobile-placeholder-1/2/3 names, from back when they held nothing but literal "placeholder 1"/"placeholder 2" text' },
+                { type: 'changed', text: 'Mobile Painting (in development): the three columns\' ids now describe what they actually hold (#gpc-pmo-scan-panel / #gpc-pmo-upload-panel / #gpc-pmo-placement-panel) instead of their leftover scaffolding-era gpc-pmo-placeholder-1/2/3 names, from back when they held nothing but literal "placeholder 1"/"placeholder 2" text' },
                 { type: 'fixed', text: 'Mobile Painting (in development): the three columns no longer size to their own content\'s height independently -- since p1\'s counts line only shows once there\'s something to report and the drop zone/scan bar can wrap differently, they could end up visibly uneven heights. All three now stretch to match whichever one is tallest' },
                 { type: 'added', text: 'Mobile Painting (in development): a real Palette view (Grid/List) toggle from Ghost++ now sits directly left of the template preview thumbnail, with its label stacked above the toggle instead of beside it -- toggling it updates Ghost++\'s own real view-mode setting (so it\'s remembered if the real modal is ever opened), though this row\'s own compact grid always stays a grid regardless' },
                 { type: 'added', text: 'Mobile Painting (in development): pressing Place now temporarily switches into Inspect mode for as long as the click-to-place capture is active, and switches back the instant it ends -- placed, Escape-cancelled, or superseded -- so aiming a tap at the map doesn\'t fight with paint mode' },
@@ -14819,6 +14819,11 @@ window.changeColor=function(color){
 
 
 
+    // Shared with Painting Menu Overhaul later in the assembled private IIFE.
+    // Paint Menu Controls owns the scale lifecycle; PMO only asks it to
+    // re-measure when its own live panels change.
+    let gpcPaintMenuControlsScale = null;
+
     // ============================================================
     //  FEATURE: Paint Menu Controls [hidePaintMenu]
     // ============================================================
@@ -14979,6 +14984,7 @@ window.changeColor=function(color){
         topBar.appendChild(dragBar);
         topBar.appendChild(resetBtn);
         topBar.appendChild(flipBtn);
+        topBar.id = 'gpc-paint-menu-toolbar';
         bottomControls.appendChild(topBar);
 
         // --- G. Compact paint overflow: move close + brushes into topBar ---
@@ -15151,16 +15157,332 @@ window.changeColor=function(color){
         const colorsDiv = innerWrapper
             ? innerWrapper.querySelector(':scope > .control-container-colors')
             : null;
-        // Painting Menu Overhaul may place these two live native nodes inside
-        // its scale-content layer after this feature initialized. Resolve their
-        // current shared parent inside updateState instead of retaining the old
-        // direct-wrapper parent, so a later collapse/dock never calls
-        // insertBefore() with a reference node that has moved.
+        // Painting Menu Overhaul can replace the live native nodes inside this
+        // feature's scale-content layer. Resolve their current shared parent
+        // inside updateState instead of retaining the old direct-wrapper
+        // parent, so a later collapse/dock never calls insertBefore() with a
+        // reference node that has moved.
         const getSwapParent = () => (
             controlsRow && colorsDiv && controlsRow.parentElement === colorsDiv.parentElement
                 ? controlsRow.parentElement
                 : null
         );
+
+        // Paint Menu Controls owns the optional scale surface. It exists
+        // independently of Painting Menu Overhaul, so native painters can use
+        // it with only this feature enabled. The outer #bottomControls width
+        // remains site-owned; only a child surface scales and reports its
+        // scaled height back to the native wrapper.
+        let paintMenuScale = null;
+        function createPaintMenuControlsScale() {
+            const root = innerWrapper;
+            if (!root) return null;
+
+            const MIN = 75;
+            const MAX = 125;
+            const STEP = 5;
+            const DEFAULT = 100;
+            const STORAGE_KEY = 'geo++_paint_menu_controls_ui_scale';
+            const PMO_STORAGE_KEY = 'geo++_painting_menu_overhaul_ui_scale';
+            const LEGACY_STORAGE_KEY = 'geo++_mobile_painting_ui_scale';
+            const state = { content: null, percent: DEFAULT, frame: 0, widthLock: null };
+            let tab = null;
+            let popover = null;
+            let input = null;
+            let value = null;
+            let pendingCommitFrame = 0;
+
+            const clamp = (raw) => {
+                const numeric = Number(raw);
+                if (!Number.isFinite(numeric)) return DEFAULT;
+                const stepped = Math.round(numeric / STEP) * STEP;
+                return Math.max(MIN, Math.min(MAX, stepped));
+            };
+            const read = () => {
+                try {
+                    for (const key of [STORAGE_KEY, PMO_STORAGE_KEY, LEGACY_STORAGE_KEY]) {
+                        const raw = localStorage.getItem(key);
+                        if (raw === null) continue;
+                        const parsed = clamp(raw);
+                        if (key !== STORAGE_KEY) localStorage.setItem(STORAGE_KEY, String(parsed));
+                        return parsed;
+                    }
+                } catch (e) {}
+                return DEFAULT;
+            };
+            const persist = (percent) => {
+                try { localStorage.setItem(STORAGE_KEY, String(percent)); } catch (e) {}
+            };
+            const isDark = () => {
+                try {
+                    const rootStyle = getComputedStyle(document.documentElement);
+                    if (/\bdark\b/i.test(rootStyle.colorScheme || '')) return true;
+                } catch (e) {}
+                try {
+                    const raw = localStorage.getItem('geo++_settings');
+                    const parsed = raw ? JSON.parse(raw) : null;
+                    return !!(parsed && parsed.theme === 'simple_black');
+                } catch (e) { return false; }
+            };
+            const ensureStyle = () => {
+                let style = document.getElementById('gpc-pmc-scale-style');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'gpc-pmc-scale-style';
+                    document.head.appendChild(style);
+                }
+                style.textContent = `
+                    .gpc-pmc-scale-root { position: relative; z-index: 30; overflow: visible; }
+                    .gpc-pmc-scale-content { position: relative; display: flex; flex-direction: column; flex: 0 0 auto; width: 100%; box-sizing: border-box; gap: inherit; min-width: 0; }
+                    #gpc-pmc-scale-tab { pointer-events: auto; margin-left: 2px; }
+                    #gpc-paint-menu-toolbar.gpc-pmc-scale-popover-open { z-index: 1200 !important; }
+                    #gpc-pmc-scale-popover[hidden] { display: none; }
+                `;
+            };
+            const ensureContent = () => {
+                if (state.content && state.content.isConnected) return state.content;
+                let content = root.querySelector(':scope > .gpc-pmc-scale-content');
+                if (!content) {
+                    content = document.createElement('div');
+                    content.className = 'gpc-pmc-scale-content';
+                    const children = Array.from(root.children);
+                    root.appendChild(content);
+                    children.forEach((child) => content.appendChild(child));
+                }
+                if (topBar.parentElement !== content) content.appendChild(topBar);
+                state.content = content;
+                return content;
+            };
+            const restoreContent = () => {
+                const content = ensureContent();
+                Array.from(root.children).forEach((child) => {
+                    if (child !== content) content.appendChild(child);
+                });
+                if (topBar.parentElement !== content) content.appendChild(topBar);
+            };
+            const sync = () => {
+                if (input) input.value = String(state.percent);
+                if (value) value.textContent = `${state.percent}%`;
+            };
+            const applyPopoverTheme = () => {
+                if (!popover) return;
+                const dark = isDark();
+                popover.style.cssText = [
+                    'position:absolute', 'bottom:calc(100% + 6px)', 'left:50%', 'transform:translateX(-50%)',
+                    'width:224px', 'box-sizing:border-box', 'padding:8px', 'border-radius:8px',
+                    `border:1px solid ${dark ? '#45475a' : '#d1d5db'}`,
+                    `background:${dark ? '#1e1e2e' : '#ffffff'}`,
+                    `color:${dark ? '#f5f5f5' : '#111827'}`,
+                    'box-shadow:0 8px 24px rgba(0,0,0,.28)', 'pointer-events:auto',
+                ].join(';');
+                const labelRow = popover.querySelector('.gpc-pmc-scale-label-row');
+                const scaleValue = popover.querySelector('.gpc-pmc-scale-value');
+                if (labelRow) labelRow.style.color = dark ? '#cdd6f4' : '#475569';
+                if (scaleValue) scaleValue.style.color = dark ? '#a6adc8' : '#64748b';
+                if (input) input.style.accentColor = dark ? '#89b4fa' : '#2563eb';
+            };
+            const alignToolbar = () => {
+                const content = state.content;
+                if (!content || topBar.parentElement !== content || !topBar.offsetHeight) return;
+                const scale = state.percent / 100;
+                const toolbarHeight = topBar.offsetHeight;
+                const pixels = (n) => `${Math.round(n * 1000) / 1000}px`;
+                if (topBar.style.top !== 'auto') {
+                    const next = pixels(-toolbarHeight - (content.offsetTop / scale));
+                    if (topBar.style.top !== next) topBar.style.top = next;
+                    return;
+                }
+                const inset = Math.max(0, root.offsetHeight - (content.offsetTop + content.offsetHeight * scale));
+                const next = pixels(-toolbarHeight - (inset / scale));
+                if (topBar.style.bottom !== next) topBar.style.bottom = next;
+            };
+            const measureHeight = (content, scale) => {
+                const previousHeight = root.style.height;
+                const previousTransform = content.style.transform;
+                root.style.height = '';
+                content.style.transform = 'none';
+                const height = content.getBoundingClientRect().height;
+                const rootStyle = getComputedStyle(root);
+                const chrome = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+                    .reduce((total, property) => total + (parseFloat(rootStyle[property]) || 0), 0);
+                content.style.transform = previousTransform;
+                if (!Number.isFinite(height) || height <= 0) {
+                    root.style.height = previousHeight;
+                    return;
+                }
+                root.style.height = `${Math.ceil(chrome + height * scale)}px`;
+            };
+            // `transform` does not affect layout, so the content needs an
+            // inverse width to keep its rendered left/right edges fixed. That
+            // inverse width must not, however, become the auto-sized outer
+            // panel's new intrinsic width. Lock the existing native width for
+            // the duration of a non-100% scale, then restore the exact inline
+            // value when the user returns to 100%. This lets the site keep
+            // owning responsive width between adjustments while guaranteeing
+            // the scale action itself changes only the controls and height.
+            const lockNativeWidth = () => {
+                if (state.widthLock) return;
+                const style = getComputedStyle(root);
+                const rectWidth = root.getBoundingClientRect().width;
+                const horizontalChrome = ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth']
+                    .reduce((total, property) => total + (parseFloat(style[property]) || 0), 0);
+                const contentWidth = style.boxSizing === 'border-box'
+                    ? rectWidth
+                    : Math.max(0, rectWidth - horizontalChrome);
+                state.widthLock = { inlineWidth: root.style.width };
+                root.style.width = `${Math.round(contentWidth * 1000) / 1000}px`;
+            };
+            const releaseNativeWidth = () => {
+                if (!state.widthLock) return;
+                root.style.width = state.widthLock.inlineWidth;
+                state.widthLock = null;
+            };
+            const apply = (raw) => {
+                const percent = clamp(raw);
+                const scale = percent / 100;
+                const content = ensureContent();
+                root.style.setProperty('--gpc-pmc-ui-scale', String(scale));
+                root.dataset.gpcPmcUiScale = String(percent);
+                state.percent = percent;
+                if (percent === DEFAULT) {
+                    releaseNativeWidth();
+                    content.style.width = '';
+                    content.style.marginLeft = '';
+                    content.style.marginRight = '';
+                    content.style.transformOrigin = '';
+                    content.style.transform = '';
+                    root.style.height = '';
+                } else {
+                    lockNativeWidth();
+                    const inverseWidthPercent = 100 / scale;
+                    const sideMarginPercent = (100 - inverseWidthPercent) / 2;
+                    content.style.width = `${inverseWidthPercent}%`;
+                    content.style.marginLeft = `${sideMarginPercent}%`;
+                    content.style.marginRight = `${sideMarginPercent}%`;
+                    content.style.transformOrigin = 'top center';
+                    content.style.transform = `scale(${scale})`;
+                    measureHeight(content, scale);
+                }
+                alignToolbar();
+                sync();
+            };
+            const requestLayout = () => {
+                if (state.frame) return;
+                state.frame = requestAnimationFrame(() => {
+                    state.frame = 0;
+                    const content = ensureContent();
+                    if (state.percent !== DEFAULT) measureHeight(content, state.percent / 100);
+                    alignToolbar();
+                });
+            };
+            const setPopoverOpen = (open) => {
+                if (!tab || !popover) return;
+                applyPopoverTheme();
+                popover.hidden = !open;
+                tab.setAttribute('aria-expanded', String(open));
+                topBar.classList.toggle('gpc-pmc-scale-popover-open', open);
+            };
+            const ensureTab = () => {
+                if (tab) return;
+                tab = document.createElement('button');
+                tab.type = 'button';
+                tab.id = 'gpc-pmc-scale-tab';
+                tab.textContent = '↕';
+                tab.title = 'Open Paint Menu Controls scale';
+                tab.setAttribute('aria-label', 'Open Paint Menu Controls scale');
+                tab.setAttribute('aria-expanded', 'false');
+                tab.setAttribute('aria-controls', 'gpc-pmc-scale-popover');
+                tab.className = flipBtn.className;
+                const flipStyle = flipBtn.getAttribute('style');
+                if (flipStyle !== null) tab.setAttribute('style', flipStyle);
+                tab.style.marginLeft = '2px';
+                flipBtn.insertAdjacentElement('afterend', tab);
+
+                popover = document.createElement('div');
+                popover.id = 'gpc-pmc-scale-popover';
+                popover.hidden = true;
+                popover.setAttribute('role', 'dialog');
+                popover.setAttribute('aria-label', 'Paint Menu Controls scale');
+                const control = document.createElement('div');
+                control.className = 'gpc-pmc-scale-control';
+                control.style.cssText = 'width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:3px';
+                const labelRow = document.createElement('div');
+                labelRow.className = 'gpc-pmc-scale-label-row';
+                labelRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11px;font-weight:600';
+                const label = document.createElement('label');
+                label.htmlFor = 'gpc-pmc-ui-scale';
+                label.textContent = 'Paint Menu scale';
+                value = document.createElement('output');
+                value.id = 'gpc-pmc-ui-scale-value';
+                value.className = 'gpc-pmc-scale-value';
+                value.htmlFor = 'gpc-pmc-ui-scale';
+                value.style.fontVariantNumeric = 'tabular-nums';
+                labelRow.append(label, value);
+                input = document.createElement('input');
+                input.id = 'gpc-pmc-ui-scale';
+                input.className = 'gpc-pmc-scale-input';
+                input.type = 'range';
+                input.min = String(MIN);
+                input.max = String(MAX);
+                input.step = String(STEP);
+                input.value = String(state.percent);
+                input.title = 'Scale Paint Menu Controls';
+                input.setAttribute('aria-label', 'Paint Menu Controls scale');
+                input.style.cssText = 'width:100%;min-width:0;margin:0';
+                const updateReadout = () => { value.textContent = `${input.value}%`; };
+                const commit = () => {
+                    const next = clamp(input.value);
+                    input.value = String(next);
+                    updateReadout();
+                    if (pendingCommitFrame) cancelAnimationFrame(pendingCommitFrame);
+                    pendingCommitFrame = requestAnimationFrame(() => {
+                        pendingCommitFrame = 0;
+                        if (state.percent !== next) {
+                            apply(next);
+                            persist(next);
+                        }
+                    });
+                };
+                input.addEventListener('input', updateReadout);
+                input.addEventListener('change', commit);
+                tab.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    setPopoverOpen(popover.hidden);
+                    requestLayout();
+                });
+                control.append(labelRow, input);
+                popover.appendChild(control);
+                topBar.appendChild(popover);
+                document.addEventListener('pointerdown', (event) => {
+                    if (!popover.hidden && !popover.contains(event.target) && event.target !== tab) setPopoverOpen(false);
+                }, true);
+                document.addEventListener('keydown', (event) => {
+                    if (event.key !== 'Escape' || popover.hidden) return;
+                    setPopoverOpen(false);
+                    tab.focus();
+                });
+                updateReadout();
+                applyPopoverTheme();
+            };
+            const mount = () => {
+                ensureStyle();
+                root.classList.add('gpc-pmc-scale-root');
+                state.percent = read();
+                ensureTab();
+                restoreContent();
+                const content = ensureContent();
+                const rootObserver = new MutationObserver(() => {
+                    restoreContent();
+                    requestLayout();
+                });
+                rootObserver.observe(root, { childList: true });
+                const contentObserver = new MutationObserver(requestLayout);
+                contentObserver.observe(content, { childList: true, subtree: true });
+                topBar.addEventListener('click', requestLayout);
+                apply(state.percent);
+            };
+            return Object.freeze({ get tab() { return tab; }, mount, requestLayout, apply, getRoot: () => root, getContent: () => ensureContent() });
+        }
 
         // --- 4. LOGIC ENGINE ---
 
@@ -15181,7 +15503,7 @@ window.changeColor=function(color){
                 // Button bar goes BELOW the panel when docked top
                 topBar.style.top = 'auto';
                 topBar.style.bottom = '-24px';
-                [toggleBtn, dragBar, resetBtn, flipBtn].forEach(el => {
+                [toggleBtn, dragBar, resetBtn, flipBtn, paintMenuScale && paintMenuScale.tab].filter(Boolean).forEach(el => {
                     el.style.borderRadius = '0 0 8px 8px';
                     el.style.borderBottom = '';
                     el.style.borderTop = 'none';
@@ -15204,7 +15526,7 @@ window.changeColor=function(color){
                 // Button bar goes ABOVE the panel when docked bottom
                 topBar.style.bottom = 'auto';
                 topBar.style.top = '-24px';
-                [toggleBtn, dragBar, resetBtn, flipBtn].forEach(el => {
+                [toggleBtn, dragBar, resetBtn, flipBtn, paintMenuScale && paintMenuScale.tab].filter(Boolean).forEach(el => {
                     el.style.borderRadius = '8px 8px 0 0';
                     el.style.borderBottom = 'none';
                     el.style.borderTop = '';
@@ -15288,8 +15610,13 @@ window.changeColor=function(color){
             updateState();
         });
 
-        // Initialize
+        // Initialize. This runs whether or not Painting Menu Overhaul is
+        // enabled, making the scale tab a Paint Menu Controls capability.
+        paintMenuScale = createPaintMenuControlsScale();
+        gpcPaintMenuControlsScale = paintMenuScale;
+        if (paintMenuScale) paintMenuScale.mount();
         updateState();
+        if (paintMenuScale) paintMenuScale.requestLayout();
         console.log('Bottom controls enhanced: properly centered with left/right positioning.');
     };
 
@@ -31535,180 +31862,15 @@ if (_settings.profileColorsCollapse) {
         try {
             (function _ext_mobilePainting() {
 
-    const MP_STYLE_ID = 'gpc-mobile-painting-style';
-    // The new key names the feature users see in Settings. Keep the previous
-    // preview key as a read-only migration source so an existing user's
-    // preferred scale survives this rename.
-    const PMO_SCALE_STORAGE_KEY = 'geo++_painting_menu_overhaul_ui_scale';
-    const LEGACY_MP_SCALE_STORAGE_KEY = 'geo++_mobile_painting_ui_scale';
-    const MP_SCALE_MIN = 75;
-    const MP_SCALE_MAX = 125;
-    const MP_SCALE_STEP = 5;
-    const MP_SCALE_DEFAULT = 100;
+    const MP_STYLE_ID = 'gpc-pmo-style';
 
-    function clampMobileUiScale(value) {
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric)) return MP_SCALE_DEFAULT;
-        const stepped = Math.round(numeric / MP_SCALE_STEP) * MP_SCALE_STEP;
-        return Math.max(MP_SCALE_MIN, Math.min(MP_SCALE_MAX, stepped));
-    }
-
-    function readMobileUiScale() {
-        try {
-            const stored = localStorage.getItem(PMO_SCALE_STORAGE_KEY);
-            if (stored !== null) return clampMobileUiScale(stored);
-            const legacyStored = localStorage.getItem(LEGACY_MP_SCALE_STORAGE_KEY);
-            if (legacyStored !== null) {
-                const migrated = clampMobileUiScale(legacyStored);
-                localStorage.setItem(PMO_SCALE_STORAGE_KEY, String(migrated));
-                return migrated;
-            }
-        } catch (e) {}
-        return MP_SCALE_DEFAULT;
-    }
-
-    function persistMobileUiScale(percent) {
-        try { localStorage.setItem(PMO_SCALE_STORAGE_KEY, String(percent)); } catch (e) {}
-    }
-
-    // Keep the existing inner bottom-controls wrapper as the unscaled visual
-    // surface. Its width, background, border, and horizontal placement remain
-    // entirely the site's responsibility. A dedicated child is scaled instead:
-    // it is given the inverse layout width before its transform so its rendered
-    // left/right edges continue to meet the fixed-width surface at every scale.
-    // This preserves uniformly-sized controls without making the panel itself
-    // shrink at 75% or grow/clip at 125%.
-    function ensureMobileUiScaleContent() {
-        if (!liveState || !liveState.scaleRoot) return null;
-        if (liveState.scaleContent && liveState.scaleContent.isConnected) return liveState.scaleContent;
-
-        const root = liveState.scaleRoot;
-        let content = root.querySelector(':scope > .gpc-mobile-scale-content');
-        if (!content) {
-            content = document.createElement('div');
-            content.className = 'gpc-mobile-scale-content';
-            const existingChildren = Array.from(root.children);
-            root.appendChild(content);
-            existingChildren.forEach((child) => content.appendChild(child));
+    // Scale is intentionally owned by Paint Menu Controls so native painters
+    // get the same control even when this Ghost++-dependent view is disabled.
+    // PMO only requests an immediate re-measure when its live content changes.
+    function requestPaintMenuControlsScaleLayout() {
+        if (gpcPaintMenuControlsScale && typeof gpcPaintMenuControlsScale.requestLayout === 'function') {
+            gpcPaintMenuControlsScale.requestLayout();
         }
-        liveState.scaleContent = content;
-        return content;
-    }
-
-    // Paint Menu Controls captures the native children before this extension
-    // loads, then may briefly move them back to the surface during a collapse
-    // or dock action. Keep those live, already-wired nodes in the scale layer
-    // without changing any of their listeners or identities.
-    function restoreMobileUiScaleContent() {
-        if (!liveState || !liveState.scaleRoot || !liveState.scaleContent) return;
-        const { scaleRoot: root, scaleContent: content } = liveState;
-        Array.from(root.children).forEach((child) => {
-            if (child !== content) content.appendChild(child);
-        });
-    }
-
-    function measureMobileUiScaleHeight(root, content, scale) {
-        const previousHeight = root.style.height;
-        const previousTransform = content.style.transform;
-        root.style.height = '';
-        content.style.transform = 'none';
-        const contentHeight = content.getBoundingClientRect().height;
-        const style = getComputedStyle(root);
-        const verticalChrome = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
-            .reduce((total, property) => total + (parseFloat(style[property]) || 0), 0);
-        content.style.transform = previousTransform;
-        if (!Number.isFinite(contentHeight) || contentHeight <= 0) {
-            root.style.height = previousHeight;
-            return;
-        }
-        root.style.height = `${Math.ceil(verticalChrome + contentHeight * scale)}px`;
-    }
-
-    // The Paint Menu Controls toolbar is absolutely positioned inside the
-    // scale content so it can scale with its buttons. That content begins
-    // after the site's own panel padding, however, while the toolbar belongs
-    // flush against the OUTER panel edge. Compensate for the content inset in
-    // unscaled coordinates. This works for both the usual bottom dock (bar
-    // above the panel) and Paint Menu Controls' top dock (bar below it).
-    function alignPaintMenuToolbarToScaleSurface() {
-        if (!liveState || !liveState.scaleRoot || !liveState.scaleContent) return;
-        const root = liveState.scaleRoot;
-        const content = liveState.scaleContent;
-        const toolbar = document.getElementById('gpc-paint-menu-toolbar');
-        if (!toolbar || toolbar.parentElement !== content || !toolbar.offsetHeight) return;
-
-        const scale = clampMobileUiScale(liveState.uiScalePercent) / 100;
-        const toolbarHeight = toolbar.offsetHeight;
-        const formatPixels = (value) => `${Math.round(value * 1000) / 1000}px`;
-        if (toolbar.style.top !== 'auto') {
-            const desiredTop = -toolbarHeight - (content.offsetTop / scale);
-            const value = formatPixels(desiredTop);
-            if (toolbar.style.top !== value) toolbar.style.top = value;
-            return;
-        }
-
-        const surfaceEndInset = Math.max(0, root.offsetHeight - (content.offsetTop + content.offsetHeight * scale));
-        const desiredBottom = -toolbarHeight - (surfaceEndInset / scale);
-        const value = formatPixels(desiredBottom);
-        if (toolbar.style.bottom !== value) toolbar.style.bottom = value;
-    }
-
-    function scheduleMobileUiScaleLayout() {
-        if (!liveState || !liveState.scaleContent) return;
-        if (liveState.scaleLayoutFrame) return;
-        liveState.scaleLayoutFrame = requestAnimationFrame(() => {
-            if (!liveState) return;
-            liveState.scaleLayoutFrame = 0;
-            const root = liveState.scaleRoot;
-            const content = liveState.scaleContent;
-            if (!root || !content) return;
-            if (liveState.uiScalePercent !== MP_SCALE_DEFAULT) {
-                measureMobileUiScaleHeight(root, content, liveState.uiScalePercent / 100);
-            }
-            alignPaintMenuToolbarToScaleSurface();
-        });
-    }
-
-    function applyMobileUiScale(percent) {
-        if (!liveState || !liveState.scaleRoot) return;
-        const appliedPercent = clampMobileUiScale(percent);
-        const scale = appliedPercent / 100;
-        const root = liveState.scaleRoot;
-        const content = ensureMobileUiScaleContent();
-        if (!content) return;
-        root.style.setProperty('--gpc-mobile-ui-scale', String(scale));
-        root.dataset.gpcMobileUiScale = String(appliedPercent);
-        // At 100%, leave the surface at its native, responsive dimensions.
-        // The content wrapper remains only as a transparent ownership layer for
-        // the Paint Menu Controls toolbar and does not otherwise affect layout.
-        if (appliedPercent === MP_SCALE_DEFAULT) {
-            content.style.width = '';
-            content.style.marginLeft = '';
-            content.style.marginRight = '';
-            content.style.transformOrigin = '';
-            content.style.transform = '';
-            root.style.height = '';
-            liveState.uiScalePercent = appliedPercent;
-            alignPaintMenuToolbarToScaleSurface();
-            syncMobileUiScaleToolbarControl();
-            return;
-        }
-
-        // `width / scale` plus symmetric inverse margins keeps the transformed
-        // content exactly within the unscaled surface horizontally. The scale
-        // therefore changes real button/font dimensions and vertical footprint,
-        // never the rendered width of #bottomControls' visual parent.
-        const inverseWidthPercent = 100 / scale;
-        const sideMarginPercent = (100 - inverseWidthPercent) / 2;
-        content.style.width = `${inverseWidthPercent}%`;
-        content.style.marginLeft = `${sideMarginPercent}%`;
-        content.style.marginRight = `${sideMarginPercent}%`;
-        content.style.transformOrigin = 'top center';
-        content.style.transform = `scale(${scale})`;
-        liveState.uiScalePercent = appliedPercent;
-        measureMobileUiScaleHeight(root, content, scale);
-        alignPaintMenuToolbarToScaleSurface();
-        syncMobileUiScaleToolbarControl();
     }
 
     // Narrower than core.js's shared isDarkMode(): only the GeoPixels++
@@ -31768,22 +31930,22 @@ if (_settings.profileColorsCollapse) {
         style.textContent = `
             /* Row layout: the swatch grid takes the available width, and a
                small live preview of the focused template's ghost image
-               (see .gpc-mobile-preview-frame below) sits to its right,
+               (see .gpc-pmo-preview-frame below) sits to its right,
                sized to the grid's own height. */
-            .gpc-mobile-palette-wrap { width: 100%; box-sizing: border-box; display: flex; flex-direction: row; align-items: stretch; gap: 6px; }
-            /* Shown in .gpc-mobile-palette-wrap's place whenever no Ghost++
+            .gpc-pmo-palette-wrap { width: 100%; box-sizing: border-box; display: flex; flex-direction: row; align-items: stretch; gap: 6px; }
+            /* Shown in .gpc-pmo-palette-wrap's place whenever no Ghost++
                template is focused -- see ensureNoTemplatePrompt's own
                comment for why this exists at all (without it, a user who
                hasn't focused a template yet has no way to reach placeholder
                mode -- its own trigger normally lives inside
-               .gpc-mobile-palette-wrap, which doesn't exist without one). */
-            .gpc-mobile-no-template-prompt {
+               .gpc-pmo-palette-wrap, which doesn't exist without one). */
+            .gpc-pmo-no-template-prompt {
                 width: 100%; box-sizing: border-box; margin-bottom: 6px; padding: 10px;
                 display: flex; align-items: center; justify-content: center;
                 border: 1px dashed ${tc('#d1d5db', '#45475a')}; border-radius: 6px;
                 color: ${tc('#64748b', '#a6adc8')}; font-size: 12px; cursor: pointer;
             }
-            .gpc-mobile-no-template-prompt:hover {
+            .gpc-pmo-no-template-prompt:hover {
                 background: ${tc('#f3f4f6', '#313244')};
             }
             .gpp-palette-grid {
@@ -31804,7 +31966,7 @@ if (_settings.profileColorsCollapse) {
                itself is downsampled/compressed).
                No explicit height here -- per explicit product decision, the
                frame should fill and center within whatever height the row
-               actually ends up (now variable, since #gpc-mobile-palette-grid's
+               actually ends up (now variable, since #gpc-pmo-palette-grid's
                own height depends on the "Visible rows" setting), via the
                row's own align-items:stretch. That can't be done with the
                canvas sized directly by the frame's flow the way it used to
@@ -31857,14 +32019,14 @@ if (_settings.profileColorsCollapse) {
                observation fallback (that callback fires asynchronously,
                not synchronously on observe()), not the frame's normal
                resting width. */
-            .gpc-mobile-preview-frame {
+            .gpc-pmo-preview-frame {
                 position: relative;
                 flex: 0 0 auto; min-width: 40px;
                 overflow: hidden; box-sizing: border-box; cursor: pointer;
                 border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
                 border-radius: 4px; background: ${t2('rgba(0,0,0,.03)', 'rgba(255,255,255,.05)')};
             }
-            .gpc-mobile-preview-frame canvas {
+            .gpc-pmo-preview-frame canvas {
                 position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
                 max-width: 100%; max-height: 100%; width: auto; height: auto;
                 display: block; image-rendering: pixelated;
@@ -31880,14 +32042,14 @@ if (_settings.profileColorsCollapse) {
                (getTemplatePreviewCanvas), so a tap here must not ALSO
                trigger that. z-index:1 keeps it above the frame's own
                absolutely-positioned canvas. */
-            .gpc-mobile-preview-info-btn {
+            .gpc-pmo-preview-info-btn {
                 position: absolute; top: 2px; right: 2px; z-index: 1;
                 width: 16px; height: 16px; padding: 0; border: none; border-radius: 50%;
                 background: rgba(0,0,0,.55); color: #fff;
                 display: flex; align-items: center; justify-content: center;
                 font-size: 10px; line-height: 1; cursor: pointer;
             }
-            .gpc-mobile-preview-info-btn:hover { background: rgba(0,0,0,.75); }
+            .gpc-pmo-preview-info-btn:hover { background: rgba(0,0,0,.75); }
             /* Larger-preview modal (openTemplatePreviewModal) -- a genuine
                standalone overlay appended to document.body, NOT nested
                inside #bottomControls, so t2() (not tc()) is the CORRECT
@@ -31983,7 +32145,7 @@ if (_settings.profileColorsCollapse) {
                child order (label, then the toggle div) already puts the
                label first, so no DOM reordering is needed, just a re-flow.
                Same pitfall as every other borrowed-into-mobile-view element
-               (see the #gpc-mobile-placeholder-group CSS comment further
+               (see the #gpc-pmo-placeholder-group CSS comment further
                below): Ghost++'s own .gpp-vs-label/.gpp-vs-view-btn/-active
                are styled via t2()/isDarkMode(), correct for their normal
                home inside the real, independently-themed Ghost++ modal but
@@ -31995,15 +32157,15 @@ if (_settings.profileColorsCollapse) {
                block's own precedent (two separate <style> tags whose
                relative order in <head> isn't guaranteed, so specificity
                alone can't be trusted to win the tie). flex:0 0 auto matches
-               .gpc-mobile-preview-frame's own sizing choice -- a fixed-
+               .gpc-pmo-preview-frame's own sizing choice -- a fixed-
                content-width column, not growing/shrinking with the grid. */
             /* Stable container for the toggle row above AND our own
                "Visible rows" row below it (see ensureViewControlsColumn) --
-               THIS is what actually sits in .gpc-mobile-palette-wrap, not
+               THIS is what actually sits in .gpc-pmo-palette-wrap, not
                the toggle row directly. Matters for more than just stacking
                the two: borrowNode always APPENDS at the end of whatever
                parent it's given, so re-borrowing the toggle row straight
-               into .gpc-mobile-palette-wrap on a live-sync tick (which by
+               into .gpc-pmo-palette-wrap on a live-sync tick (which by
                then already holds the grid AND the preview frame) landed it
                AFTER the preview frame instead of back between the grid and
                the frame where it started -- a real, reported drift bug.
@@ -32011,11 +32173,11 @@ if (_settings.profileColorsCollapse) {
                (only the real row inside it gets returned+reborrowed), so
                its own position in the wrap -- set once, correctly, when the
                wrap itself is built -- never drifts. */
-            .gpc-mobile-view-controls-col {
+            .gpc-pmo-view-controls-col {
                 flex: 0 0 auto; display: flex; flex-direction: column;
                 align-items: center; justify-content: center; gap: 5px;
             }
-            .gpc-mobile-view-toggle-row {
+            .gpc-pmo-view-toggle-row {
                 flex: 0 0 auto !important;
                 display: flex !important; flex-direction: column !important;
                 align-items: center !important; justify-content: center !important;
@@ -32023,33 +32185,33 @@ if (_settings.profileColorsCollapse) {
             }
             /* Our own control, never Ghost++'s -- no borrow/restore
                discipline needed, unlike everything else in this column. */
-            .gpc-mobile-visible-rows-row {
+            .gpc-pmo-visible-rows-row {
                 display: flex; flex-direction: column; align-items: center; gap: 2px;
             }
-            .gpc-mobile-visible-rows-row label {
+            .gpc-pmo-visible-rows-row label {
                 font-size: 9px; white-space: nowrap; color: ${tc('#64748b', '#a6adc8')};
             }
-            .gpc-mobile-visible-rows-row select {
+            .gpc-pmo-visible-rows-row select {
                 font: inherit; font-size: 11px; padding: 1px 3px; border-radius: 4px;
                 border: 1px solid ${tc('#d1d5db', '#45475a')};
                 background: ${tc('#ffffff', '#313244')}; color: ${tc('#111827', '#f5f5f5')};
                 cursor: pointer;
             }
-            .gpc-mobile-view-toggle-row .gpp-vs-label {
+            .gpc-pmo-view-toggle-row .gpp-vs-label {
                 min-width: 0 !important; font-size: 9px !important; white-space: nowrap !important;
                 color: ${tc('#64748b', '#a6adc8')} !important;
             }
-            .gpc-mobile-view-toggle-row .gpp-vs-view-toggle {
+            .gpc-pmo-view-toggle-row .gpp-vs-view-toggle {
                 border-color: ${tc('#d1d5db', '#45475a')} !important;
             }
-            .gpc-mobile-view-toggle-row .gpp-vs-view-btn {
+            .gpc-pmo-view-toggle-row .gpp-vs-view-btn {
                 background: ${tc('#ffffff', '#313244')} !important;
                 color: ${tc('#64748b', '#a6adc8')} !important;
             }
-            .gpc-mobile-view-toggle-row .gpp-vs-view-btn:hover {
+            .gpc-pmo-view-toggle-row .gpp-vs-view-btn:hover {
                 background: ${tc('#f3f4f6', '#45475a')} !important;
             }
-            .gpc-mobile-view-toggle-row .gpp-vs-view-btn-active {
+            .gpc-pmo-view-toggle-row .gpp-vs-view-btn-active {
                 background: ${tc('#2563eb', '#89b4fa')} !important;
                 color: ${tc('#ffffff', '#1e1e2e')} !important;
             }
@@ -32067,10 +32229,10 @@ if (_settings.profileColorsCollapse) {
                screen regardless of what else is open -- bumped above every
                modal this codebase uses, not just this file's own. */
             #alertBox { z-index: 100050 !important; }
-            /* Shown in place of #gpc-native-top-bar and .gpc-mobile-controls-
+            /* Shown in place of #gpc-native-top-bar and .gpc-pmo-controls-
                row once the preview-thumbnail canvas is tapped -- see
                toggleNativeControlsForPlaceholders. Three equal-width columns
-               (#gpc-mobile-scan-panel / -upload-panel / -placement-panel),
+               (#gpc-pmo-scan-panel / -upload-panel / -placement-panel),
                each holding real Ghost++ panels BORROWED (moved, not cloned
                -- see borrowNode) from their real locations in the (hidden)
                Ghost++ modal for as long as this view is showing, and
@@ -32086,14 +32248,14 @@ if (_settings.profileColorsCollapse) {
                their own real content heights can differ (e.g. p1's counts
                line only shows once there's something to report). Each
                column is itself display:flex/flex-direction:column (see
-               .gpc-mobile-placeholder below), so the extra height a shorter
+               .gpc-pmo-placeholder below), so the extra height a shorter
                column gets just becomes trailing empty space inside it
                rather than stretching any individual child. */
-            .gpc-mobile-placeholder-group {
+            .gpc-pmo-placeholder-group {
                 width: 100%; box-sizing: border-box;
                 display: flex; flex-direction: row; align-items: stretch; gap: 6px;
             }
-            .gpc-mobile-placeholder {
+            .gpc-pmo-placeholder {
                 flex: 1 1 0; min-width: 0; box-sizing: border-box; padding: 8px;
                 display: flex; flex-direction: column; gap: 6px;
                 border: 1px solid ${tc('#d1d5db', '#45475a')}; border-radius: 6px;
@@ -32106,17 +32268,17 @@ if (_settings.profileColorsCollapse) {
                panel's own flex-wrap (gpp-scan.js's headRow, gpp-placement.js's
                .gpp-pt-row3), which reflows into 2x2 only incidentally at
                certain widths, not reliably at this column's actual width. */
-            .gpc-mobile-p-btn-grid {
+            .gpc-pmo-p-btn-grid {
                 display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
             }
-            .gpc-mobile-p-btn-grid .gpp-pt-btn,
-            .gpc-mobile-p-btn-grid button {
+            .gpc-pmo-p-btn-grid .gpp-pt-btn,
+            .gpc-pmo-p-btn-grid button {
                 width: 100%; box-sizing: border-box;
             }
-            .gpc-mobile-p3-checkboxes {
+            .gpc-pmo-p3-checkboxes {
                 display: flex; flex-direction: column; gap: 4px;
             }
-            /* Lock Position/Group noise (.gpc-mobile-p3-checkboxes) on the
+            /* Lock Position/Group noise (.gpc-pmo-p3-checkboxes) on the
                left, the real nudge-arrow cluster (#gpp-pt-nudge-row,
                borrowed wholesale -- its own inline flex-wrap:wrap;gap:6px
                already arranges the 4 arrows the way Ghost++ itself designed
@@ -32124,21 +32286,21 @@ if (_settings.profileColorsCollapse) {
                this column gets too narrow for both side by side, the
                (single, since it's borrowed as one unit) nudge cluster drops
                to its own line below the checkboxes rather than overflowing. */
-            .gpc-mobile-p3-checkbox-nudge-row {
+            .gpc-pmo-p3-checkbox-nudge-row {
                 display: flex; flex-direction: row; align-items: center;
                 flex-wrap: wrap; gap: 10px; margin-bottom: 6px;
             }
             /* #gpp-pt-nudge-row carries its own inline margin-bottom:6px,
                sized for Ghost++'s normal vertical stacking -- redundant
                (and, since it's a row-direction flex item now, a source of
-               slight vertical misalignment against .gpc-mobile-p3-
+               slight vertical misalignment against .gpc-pmo-p3-
                checkboxes next to it) in this side-by-side layout, so it's
                zeroed out here. !important since it's overriding an inline
                style. */
-            #gpc-mobile-placeholder-group #gpp-pt-nudge-row {
+            #gpc-pmo-placeholder-group #gpp-pt-nudge-row {
                 margin-bottom: 0 !important;
             }
-            /* Same pitfall as .gpc-mobile-controls-row's own buttons (see
+            /* Same pitfall as .gpc-pmo-controls-row's own buttons (see
                that comment above), now on the elements borrowed into p1/p2/
                p3: they're styled by their OWN real Ghost++ code (gpp-scan.js,
                gpp-placement.js, gpp-library.js, gpp-ui-shell.js) via
@@ -32150,7 +32312,7 @@ if (_settings.profileColorsCollapse) {
                for this row's own buttons: #bottomControls' own wrapper never
                itself goes dark, so an OS/body-driven dark render bakes in
                dark colors against a background staying light regardless.
-               Re-themed with tc() instead, ID-scoped to #gpc-mobile-
+               Re-themed with tc() instead, ID-scoped to #gpc-pmo-
                placeholder-group (so the real Ghost++ modal's own normal
                appearance is untouched) and !important (so it wins over
                Ghost++'s own class rules and inline styles regardless of
@@ -32160,31 +32322,31 @@ if (_settings.profileColorsCollapse) {
                colors are baked into inline style.cssText per-button at
                render time, including a primary/accent variant this static
                CSS can't distinguish from the plain one. */
-            #gpc-mobile-placeholder-group button,
-            #gpc-mobile-placeholder-group .gpp-pt-btn {
+            #gpc-pmo-placeholder-group button,
+            #gpc-pmo-placeholder-group .gpp-pt-btn {
                 border: 1px solid ${tc('#d1d5db', '#45475a')} !important;
                 background: ${tc('#ffffff', '#313244')} !important;
                 color: ${tc('#111827', '#f5f5f5')} !important;
             }
-            #gpc-mobile-placeholder-group button:hover:not(:disabled),
-            #gpc-mobile-placeholder-group .gpp-pt-btn:hover:not(:disabled) {
+            #gpc-pmo-placeholder-group button:hover:not(:disabled),
+            #gpc-pmo-placeholder-group .gpp-pt-btn:hover:not(:disabled) {
                 background: ${tc('#f3f4f6', '#45475a')} !important;
             }
-            #gpc-mobile-placeholder-group .gpp-pt-btn-active {
+            #gpc-pmo-placeholder-group .gpp-pt-btn-active {
                 border-color: ${tc('#2563eb', '#89b4fa')} !important;
                 color: ${tc('#2563eb', '#89b4fa')} !important;
             }
-            #gpc-mobile-placeholder-group label,
-            #gpc-mobile-placeholder-group .gpp-pt-lock,
-            #gpc-mobile-placeholder-group #gpp-drop-zone {
+            #gpc-pmo-placeholder-group label,
+            #gpc-pmo-placeholder-group .gpp-pt-lock,
+            #gpc-pmo-placeholder-group #gpp-drop-zone {
                 color: ${tc('#111827', '#f5f5f5')} !important;
             }
-            #gpc-mobile-placeholder-group #gpp-drop-zone {
+            #gpc-pmo-placeholder-group #gpp-drop-zone {
                 border-color: ${tc('#d1d5db', '#45475a')} !important;
             }
-            #gpc-mobile-placeholder-group .gpp-muted,
-            #gpc-mobile-placeholder-group #gpp-url-upload-btn,
-            #gpc-mobile-placeholder-group .gpp-pt-opacity-value {
+            #gpc-pmo-placeholder-group .gpp-muted,
+            #gpc-pmo-placeholder-group #gpp-url-upload-btn,
+            #gpc-pmo-placeholder-group .gpp-pt-opacity-value {
                 color: ${tc('#64748b', '#a6adc8')} !important;
             }
             /* #gpp-pt-opacity-row's real CSS packs label+slider+value+reset
@@ -32196,19 +32358,19 @@ if (_settings.profileColorsCollapse) {
                together on line one, the slider gets the full second line
                (flex-basis 100% forces the wrap). order values are just
                sequence numbers, not meaningful outside this rule. */
-            #gpc-mobile-placeholder-group #gpp-pt-opacity-row {
+            #gpc-pmo-placeholder-group #gpp-pt-opacity-row {
                 flex-wrap: wrap;
             }
-            #gpc-mobile-placeholder-group #gpp-pt-opacity-row label {
+            #gpc-pmo-placeholder-group #gpp-pt-opacity-row label {
                 order: 1; min-width: 0 !important; flex: 1 1 auto !important;
             }
-            #gpc-mobile-placeholder-group #gpp-pt-opacity-row .gpp-pt-opacity-value {
+            #gpc-pmo-placeholder-group #gpp-pt-opacity-row .gpp-pt-opacity-value {
                 order: 2;
             }
-            #gpc-mobile-placeholder-group #gpp-pt-opacity-row .gpp-pt-reset-btn {
+            #gpc-pmo-placeholder-group #gpp-pt-opacity-row .gpp-pt-reset-btn {
                 order: 3;
             }
-            #gpc-mobile-placeholder-group #gpp-pt-opacity-row #gpp-pt-opacity {
+            #gpc-pmo-placeholder-group #gpp-pt-opacity-row #gpp-pt-opacity {
                 order: 4; flex: 1 1 100% !important;
             }
             /* .gpp-pt-reset-btn is a <button>, so it'd otherwise also match
@@ -32218,11 +32380,11 @@ if (_settings.profileColorsCollapse) {
                (tag+class beats the plain button rule's tag-only selector)
                so this wins regardless of declaration order, restoring the
                borderless look and only actually re-theming its color. */
-            #gpc-mobile-placeholder-group button.gpp-pt-reset-btn {
+            #gpc-pmo-placeholder-group button.gpp-pt-reset-btn {
                 border: none !important; background: transparent !important;
                 color: ${tc('#64748b', '#a6adc8')} !important;
             }
-            #gpc-mobile-placeholder-group #gpp-scan-bar-outer {
+            #gpc-pmo-placeholder-group #gpp-scan-bar-outer {
                 background: ${tc('#e5e7eb', '#313244')} !important;
             }
             .gpp-swatch {
@@ -32244,7 +32406,7 @@ if (_settings.profileColorsCollapse) {
                Ghost++ overlay, exactly as soloColor() always did; only the
                visual off-state styling is suppressed here. Ghost++'s own
                grid keeps its usual grayscale + slash treatment, untouched.
-               #gpc-mobile-palette-grid-scoped override below, not just an
+               #gpc-pmo-palette-grid-scoped override below, not just an
                absence of a rule here -- Ghost++'s own #gpp-palette-style
                tag (gpp-palette.js's gppInjectPaletteStyle(), which our own
                ensurePaletteControllerReady() calls can trigger) defines an
@@ -32255,7 +32417,7 @@ if (_settings.profileColorsCollapse) {
                them. The higher-specificity ID-scoped override is what
                actually guarantees it never shows here, independent of
                style-tag injection order. */
-            #gpc-mobile-palette-grid .gpp-swatch.gpp-swatch-off::after {
+            #gpc-pmo-palette-grid .gpp-swatch.gpp-swatch-off::after {
                 content: none;
             }
             /* List mode (buildTemplatePaletteGrid mirrors gpp-palette.js's
@@ -32268,26 +32430,26 @@ if (_settings.profileColorsCollapse) {
                #bottomControls' own wrapper never itself goes dark, so an
                OS/body-driven dark render would paint these rows dark
                against a background staying light regardless. Re-themed
-               with tc(), ID-scoped to #gpc-mobile-palette-grid so Ghost++'s
+               with tc(), ID-scoped to #gpc-pmo-palette-grid so Ghost++'s
                own real grid (list mode there too) is untouched, and
                !important so it wins over Ghost++'s own rules regardless of
                which was written last. */
-            #gpc-mobile-palette-grid .gpp-swatch.gpp-swatch-list {
+            #gpc-pmo-palette-grid .gpp-swatch.gpp-swatch-list {
                 background: ${tc('#ffffff', '#181825')} !important;
             }
-            #gpc-mobile-palette-grid .gpp-swatch.gpp-swatch-list:hover {
+            #gpc-pmo-palette-grid .gpp-swatch.gpp-swatch-list:hover {
                 background: ${tc('#f3f4f6', '#232336')} !important;
             }
-            #gpc-mobile-palette-grid .gpp-palette-list-chip {
+            #gpc-pmo-palette-grid .gpp-palette-list-chip {
                 border-color: ${tc('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')} !important;
             }
-            #gpc-mobile-palette-grid .gpp-palette-list-hex {
+            #gpc-pmo-palette-grid .gpp-palette-list-hex {
                 color: ${tc('#111827', '#f5f5f5')} !important;
             }
-            #gpc-mobile-palette-grid .gpp-palette-list-progress-text {
+            #gpc-pmo-palette-grid .gpp-palette-list-progress-text {
                 color: ${tc('#64748b', '#a6adc8')} !important;
             }
-            #gpc-mobile-palette-grid .gpp-palette-list-bar-outer {
+            #gpc-pmo-palette-grid .gpp-palette-list-bar-outer {
                 background: ${tc('#e5e7eb', '#313244')} !important;
             }
             /* "Currently selected" indicator: a plain black square border
@@ -32353,7 +32515,7 @@ if (_settings.profileColorsCollapse) {
                that stays unconditionally white regardless. Colors below are
                reused verbatim from this file's own #gpp-palette-tooltip
                block above, not reinvented. */
-             .gpc-mobile-controls-row {
+             .gpc-pmo-controls-row {
                  width: 100%; box-sizing: border-box; margin-bottom: 0;
                  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
              }
@@ -32362,8 +32524,8 @@ if (_settings.profileColorsCollapse) {
                 gap dynamically, leaving only a tiny 4px breathing room below
                 the row without changing spacing between the host's other
                 controls. */
-             .gpc-mobile-controls-row + .control-container-colors,
-             .gpc-mobile-controls-row + .gpc-mobile-palette-wrap {
+             .gpc-pmo-controls-row + .control-container-colors,
+             .gpc-pmo-controls-row + .gpc-pmo-palette-wrap {
                  margin-top: 0;
              }
             .gpc-ctrl-btn {
@@ -32378,15 +32540,6 @@ if (_settings.profileColorsCollapse) {
             .gpc-ctrl-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
             .gpc-ctrl-btn-arrow { font-size: 9px; opacity: .7; flex-shrink: 0; }
              .gpc-ctrl-dropdown { position: relative; display: inline-flex; min-width: 0; }
-             /* The site-owned wrapper remains the fixed-width visual surface.
-                Only this child scales; its JS-supplied inverse width makes the
-                rendered content meet the surface's left/right edges at every
-                scale while the surface itself never widens or narrows. */
-             .gpc-mobile-scale-root { position: relative; z-index: 30; overflow: visible; }
-             .gpc-mobile-scale-content {
-                 position: relative; display: flex; flex-direction: column;
-                 flex: 0 0 auto; width: 100%; box-sizing: border-box; gap: inherit; min-width: 0;
-             }
             /* Menus open UPWARD (bottom, not top) -- this row sits at the very
                bottom of the screen, so a downward menu would run off-page.
                z-index is well above the Paint Menu Controls feature's adopted
@@ -32425,27 +32578,6 @@ if (_settings.profileColorsCollapse) {
                 margin-left: 18px; padding-left: 2px; font-size: 11px;
             }
             .gpc-ctrl-menu-option[hidden] { display: none; }
-            #gpc-mobile-scale-tab {
-                pointer-events: auto; margin-left: 2px;
-            }
-            #gpc-paint-menu-toolbar.gpc-mobile-scale-popover-open { z-index: 1200 !important; }
-            #gpc-mobile-scale-popover {
-                position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-                width: 224px; box-sizing: border-box; padding: 8px; border-radius: 8px;
-                border: 1px solid ${tc('#d1d5db', '#45475a')};
-                background: ${tc('#ffffff', '#1e1e2e')}; color: ${tc('#111827', '#f5f5f5')};
-                box-shadow: 0 8px 24px rgba(0,0,0,.28); pointer-events: auto;
-            }
-            #gpc-mobile-scale-popover[hidden] { display: none; }
-            .gpc-mobile-scale-control {
-                width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 3px;
-            }
-            .gpc-mobile-scale-label-row {
-                display: flex; align-items: center; justify-content: space-between; gap: 6px;
-                font-size: 11px; font-weight: 600; color: ${tc('#475569', '#cdd6f4')};
-            }
-            .gpc-mobile-scale-value { font-variant-numeric: tabular-nums; color: ${tc('#64748b', '#a6adc8')}; }
-            .gpc-mobile-scale-input { width: 100%; min-width: 0; margin: 0; accent-color: ${tc('#2563eb', '#89b4fa')}; }
         `;
         if (isNew) document.head.appendChild(style);
     }
@@ -32525,7 +32657,7 @@ if (_settings.profileColorsCollapse) {
         return order;
     }
 
-    // Keeps .gpc-mobile-preview-frame a SQUARE -- see that CSS rule's own
+    // Keeps .gpc-pmo-preview-frame a SQUARE -- see that CSS rule's own
     // comment for why this has to be a ResizeObserver rather than CSS
     // aspect-ratio. ONE persistent observer, re-pointed at whichever frame
     // is current rather than a new observer per rebuild -- disconnecting
@@ -32621,8 +32753,8 @@ if (_settings.profileColorsCollapse) {
     }
 
     // Palette view toggle (Grid/List, gpp-view-settings.js), borrowed into
-    // buildTemplatePaletteGrid's own .gpc-mobile-palette-wrap, directly left
-    // of .gpc-mobile-preview-frame. Kept live-synced by the SAME shared
+    // buildTemplatePaletteGrid's own .gpc-pmo-palette-wrap, directly left
+    // of .gpc-pmo-preview-frame. Kept live-synced by the SAME shared
     // observer as p1/p2/p3 (startGhostModalLiveSync, below) -- an EARLIER
     // version of this used a second, independent MutationObserver instead,
     // which caused a real, shipped freeze-the-page bug: two separate
@@ -32643,7 +32775,7 @@ if (_settings.profileColorsCollapse) {
     let viewToggleBorrowedNodes = []; // separate from borrowedNodes -- its lifecycle (borrowed for as long as the compact grid exists at all, not scoped to placeholder mode) is independent of p1/p2/p3's, so a plain "return everything" call for one must never also catch the other.
 
     // "Visible rows" -- purely a THIS-file preference (how tall
-    // #gpc-mobile-palette-grid's own scroll area is), nothing Ghost++ has
+    // #gpc-pmo-palette-grid's own scroll area is), nothing Ghost++ has
     // any concept of, so it's not gppSettings -- a dedicated localStorage
     // key instead, same direct-localStorage approach isControlsRowDark()
     // already uses for a similar reason.
@@ -32675,15 +32807,15 @@ if (_settings.profileColorsCollapse) {
     // everything else in this file there's no borrow/restore discipline
     // needed for it at all.
     function ensureVisibleRowsControl(col) {
-        if (col.querySelector('#gpc-mobile-visible-rows-row')) return;
+        if (col.querySelector('#gpc-pmo-visible-rows-row')) return;
         const row = document.createElement('div');
-        row.id = 'gpc-mobile-visible-rows-row';
-        row.className = 'gpc-mobile-visible-rows-row';
+        row.id = 'gpc-pmo-visible-rows-row';
+        row.className = 'gpc-pmo-visible-rows-row';
         const label = document.createElement('label');
-        label.htmlFor = 'gpc-mobile-visible-rows';
+        label.htmlFor = 'gpc-pmo-visible-rows';
         label.textContent = 'Visible rows';
         const select = document.createElement('select');
-        select.id = 'gpc-mobile-visible-rows';
+        select.id = 'gpc-pmo-visible-rows';
         for (let n = 1; n <= 10; n++) {
             const option = document.createElement('option');
             option.value = String(n);
@@ -32694,7 +32826,7 @@ if (_settings.profileColorsCollapse) {
         select.addEventListener('change', () => {
             const n = parseInt(select.value, 10) || 2;
             setVisibleRowsSetting(n);
-            const liveGrid = document.getElementById('gpc-mobile-palette-grid');
+            const liveGrid = document.getElementById('gpc-pmo-palette-grid');
             if (liveGrid) liveGrid.style.maxHeight = computeGridMaxHeight(n) + 'px';
         });
         row.append(label, select);
@@ -32703,21 +32835,21 @@ if (_settings.profileColorsCollapse) {
 
     // Shared, stable container for the borrowed toggle row AND
     // ensureVisibleRowsControl's own row, stacked together -- see this
-    // container's own CSS comment (.gpc-mobile-view-controls-col) for why
+    // container's own CSS comment (.gpc-pmo-view-controls-col) for why
     // it has to exist as a separate, persistent element rather than
-    // borrowing the toggle row directly into .gpc-mobile-palette-wrap.
+    // borrowing the toggle row directly into .gpc-pmo-palette-wrap.
     // Scoped to hostEl (NOT a bare document.getElementById) on purpose: at
     // the moment buildTemplatePaletteGrid calls this, the OLD wrap (with
-    // its own #gpc-mobile-view-controls, about to be discarded via
+    // its own #gpc-pmo-view-controls, about to be discarded via
     // showCompactGrid's replaceWith) can still be in the document
     // alongside the brand new one being built -- an unscoped lookup could
     // find and reuse the wrong one.
     function ensureViewControlsColumn(hostEl) {
-        let col = hostEl.querySelector('#gpc-mobile-view-controls');
+        let col = hostEl.querySelector('#gpc-pmo-view-controls');
         if (!col) {
             col = document.createElement('div');
-            col.id = 'gpc-mobile-view-controls';
-            col.className = 'gpc-mobile-view-controls-col';
+            col.id = 'gpc-pmo-view-controls';
+            col.className = 'gpc-pmo-view-controls-col';
             hostEl.appendChild(col);
         }
         return col;
@@ -32727,7 +32859,7 @@ if (_settings.profileColorsCollapse) {
         const col = ensureViewControlsColumn(hostEl);
         const row = document.getElementById('gpp-vs-palette-view-row');
         if (row) {
-            row.classList.add('gpc-mobile-view-toggle-row');
+            row.classList.add('gpc-pmo-view-toggle-row');
             // Recorded manually rather than via the shared borrowNode
             // helper -- pinned to always be col's FIRST child (insertBefore
             // col.firstChild, safe even when row already IS the first
@@ -32760,18 +32892,18 @@ if (_settings.profileColorsCollapse) {
     // checks (e.g. is placeholder mode even showing).
     function rebuildPlaceholderColumns() {
         returnBorrowedNodes();
-        const scanPanel = document.getElementById('gpc-mobile-scan-panel');
-        const uploadPanel = document.getElementById('gpc-mobile-upload-panel');
-        const placementPanel = document.getElementById('gpc-mobile-placement-panel');
+        const scanPanel = document.getElementById('gpc-pmo-scan-panel');
+        const uploadPanel = document.getElementById('gpc-pmo-upload-panel');
+        const placementPanel = document.getElementById('gpc-pmo-placement-panel');
         if (scanPanel) { scanPanel.innerHTML = ''; buildPlaceholder1Content(scanPanel); }
         if (uploadPanel) { uploadPanel.innerHTML = ''; buildPlaceholder2Content(uploadPanel); }
         if (placementPanel) { placementPanel.innerHTML = ''; buildPlaceholder3Content(placementPanel); }
-        scheduleMobileUiScaleLayout();
+        requestPaintMenuControlsScaleLayout();
     }
 
     // Keeps everything borrowed from the real Ghost++ modal live-synced
     // with its own re-renders: the palette-view toggle above (borrowed for
-    // as long as the compact grid exists at all -- .gpc-mobile-palette-wrap
+    // as long as the compact grid exists at all -- .gpc-pmo-palette-wrap
     // is always visible, not just during placeholder mode) AND p1/p2/p3
     // (borrowed only while placeholder mode is showing). Without this, any
     // borrowed control's own interaction leaves every OTHER borrowed node
@@ -32839,12 +32971,12 @@ if (_settings.profileColorsCollapse) {
                 if (!ghostModalLiveSyncObserver) return;
                 ghostModalLiveSyncObserver.disconnect();
                 try {
-                    const wrap = document.querySelector('.gpc-mobile-palette-wrap');
+                    const wrap = document.querySelector('.gpc-pmo-palette-wrap');
                     if (wrap) {
                         returnBorrowedNodes(viewToggleBorrowedNodes);
                         borrowPaletteViewToggle(wrap);
                     }
-                    const group = document.getElementById('gpc-mobile-placeholder-group');
+                    const group = document.getElementById('gpc-pmo-placeholder-group');
                     if (group && !group.classList.contains('gpc-hidden')) {
                         rebuildPlaceholderColumns();
                     }
@@ -32874,7 +33006,7 @@ if (_settings.profileColorsCollapse) {
         if (!event.clipboardData) return;
         const dropZone = document.getElementById('gpp-drop-zone');
         if (!dropZone) return;
-        const group = document.getElementById('gpc-mobile-placeholder-group');
+        const group = document.getElementById('gpc-pmo-placeholder-group');
         if (!group || group.classList.contains('gpc-hidden') || !group.contains(dropZone)) return;
         const files = Array.from(event.clipboardData.items || [])
             .filter((item) => item.kind === 'file')
@@ -32934,7 +33066,7 @@ if (_settings.profileColorsCollapse) {
 
     // Mirrors gpp-scan.js's own gppScanStyleButton exactly -- same shape,
     // same literal color values -- but keyed on tc() instead of t2() (see
-    // the #gpc-mobile-placeholder-group CSS comment above for why). Not
+    // the #gpc-pmo-placeholder-group CSS comment above for why). Not
     // reusable as-is since t2()/tc() aren't swappable at the call site;
     // this specific color-assignment logic is presentation, not business
     // logic Ghost++ itself decides (that stays entirely in gpp-scan.js --
@@ -32957,7 +33089,7 @@ if (_settings.profileColorsCollapse) {
     // a live GeoPixels++ theme switch cannot leave placeholder Scan controls
     // with their old colors until something else rebuilds the whole panel.
     function retintBorrowedScanButtons() {
-        const group = document.getElementById('gpc-mobile-placeholder-group');
+        const group = document.getElementById('gpc-pmo-placeholder-group');
         if (!group || group.classList.contains('gpc-hidden')) return;
         const template = getFocusedTemplateWithPalette();
         const scanBtn = group.querySelector('#gpp-scan-btn-scan');
@@ -33003,7 +33135,7 @@ if (_settings.profileColorsCollapse) {
         if (countsLine) borrowNode(countsLine, container);
 
         const buttonsGrid = document.createElement('div');
-        buttonsGrid.className = 'gpc-mobile-p-btn-grid';
+        buttonsGrid.className = 'gpc-pmo-p-btn-grid';
         [scanBtn, showErrBtn, showMissBtn, nearestBtn].forEach((btn) => { if (btn) borrowNode(btn, buttonsGrid); });
         container.appendChild(buttonsGrid);
     }
@@ -33030,148 +33162,6 @@ if (_settings.profileColorsCollapse) {
     // toggleNativeControlsForPlaceholders' native-switch branch, the one
     // point this column genuinely stops coming back) undoes this, so the
     // real Ghost++ modal never shows the shortened mobile copy.
-    function syncMobileUiScaleToolbarControl() {
-        if (!liveState) return;
-        const input = document.getElementById('gpc-mobile-ui-scale');
-        const value = document.getElementById('gpc-mobile-ui-scale-value');
-        if (input) input.value = String(liveState.uiScalePercent);
-        if (value) value.textContent = `${liveState.uiScalePercent}%`;
-    }
-
-    function setMobileUiScalePopoverOpen(open) {
-        const toolbar = document.getElementById('gpc-paint-menu-toolbar');
-        const tab = document.getElementById('gpc-mobile-scale-tab');
-        const popover = document.getElementById('gpc-mobile-scale-popover');
-        if (!toolbar || !tab || !popover) return;
-        popover.hidden = !open;
-        tab.setAttribute('aria-expanded', String(open));
-        toolbar.classList.toggle('gpc-mobile-scale-popover-open', open);
-    }
-
-    // The scale lives beside Paint Menu Controls instead of in a temporary
-    // placeholder column. That keeps it available in either preview/native
-    // view and gives it the same scaled, anchored lifecycle as the rest of
-    // the paint-toolbar controls.
-    function ensureMobileUiScaleToolbarControl() {
-        const toolbar = document.getElementById('gpc-paint-menu-toolbar');
-        if (!toolbar) return false;
-
-        const flipButton = document.getElementById('gpc-paint-flip-pos');
-        let tab = document.getElementById('gpc-mobile-scale-tab');
-        let popover = document.getElementById('gpc-mobile-scale-popover');
-        if (!tab) {
-            tab = document.createElement('button');
-            tab.type = 'button';
-            tab.id = 'gpc-mobile-scale-tab';
-            tab.textContent = '↕';
-            tab.title = 'Open Painting Menu scale';
-            tab.setAttribute('aria-label', 'Open Painting Menu scale');
-            tab.setAttribute('aria-expanded', 'false');
-            tab.setAttribute('aria-controls', 'gpc-mobile-scale-popover');
-            tab.addEventListener('click', (event) => {
-                event.stopPropagation();
-                const current = document.getElementById('gpc-mobile-scale-popover');
-                setMobileUiScalePopoverOpen(!current || current.hidden);
-                scheduleMobileUiScaleLayout();
-            });
-        }
-
-        // Paint Menu Controls owns the toolbar's visual theme (including
-        // Simple Black). Copy the neighboring flip button rather than adding
-        // a competing background/color rule that can fall out of sync.
-        if (flipButton) {
-            tab.className = flipButton.className;
-            const flipStyle = flipButton.getAttribute('style');
-            if (flipStyle === null) tab.removeAttribute('style');
-            else tab.setAttribute('style', flipStyle);
-            tab.style.marginLeft = '2px';
-        }
-        if (flipButton && tab.previousElementSibling !== flipButton) {
-            flipButton.insertAdjacentElement('afterend', tab);
-        } else if (tab.parentElement !== toolbar) {
-            toolbar.appendChild(tab);
-        }
-
-        if (!popover) {
-            popover = document.createElement('div');
-            popover.id = 'gpc-mobile-scale-popover';
-            popover.hidden = true;
-            popover.setAttribute('role', 'dialog');
-            popover.setAttribute('aria-label', 'Painting Menu scale');
-
-            const control = document.createElement('div');
-            control.className = 'gpc-mobile-scale-control';
-            control.id = 'gpc-mobile-ui-scale-control';
-
-            const labelRow = document.createElement('div');
-            labelRow.className = 'gpc-mobile-scale-label-row';
-            const label = document.createElement('label');
-            label.htmlFor = 'gpc-mobile-ui-scale';
-            label.textContent = 'Painting Menu scale';
-            const value = document.createElement('output');
-            value.id = 'gpc-mobile-ui-scale-value';
-            value.className = 'gpc-mobile-scale-value';
-            value.htmlFor = 'gpc-mobile-ui-scale';
-            labelRow.append(label, value);
-
-            const input = document.createElement('input');
-            input.id = 'gpc-mobile-ui-scale';
-            input.className = 'gpc-mobile-scale-input';
-            input.type = 'range';
-            input.min = String(MP_SCALE_MIN);
-            input.max = String(MP_SCALE_MAX);
-            input.step = String(MP_SCALE_STEP);
-            input.value = String(liveState ? liveState.uiScalePercent : readMobileUiScale());
-            input.title = 'Scale the entire Painting Menu Overhaul';
-            input.setAttribute('aria-label', 'Painting Menu Overhaul scale');
-
-            const updateReadout = () => { value.textContent = `${input.value}%`; };
-            let pendingCommitFrame = 0;
-            const commit = () => {
-                const next = clampMobileUiScale(input.value);
-                input.value = String(next);
-                updateReadout();
-                // A native range control finalizes its exact thumb position
-                // as part of the release/change sequence. Apply the captured
-                // committed value on the next frame, after that native work
-                // finishes, so scaling cannot move the active slider under
-                // the pointer and select a different value.
-                if (pendingCommitFrame) cancelAnimationFrame(pendingCommitFrame);
-                pendingCommitFrame = requestAnimationFrame(() => {
-                    pendingCommitFrame = 0;
-                    if (!liveState || liveState.uiScalePercent !== next) {
-                        applyMobileUiScale(next);
-                        persistMobileUiScale(next);
-                    }
-                });
-            };
-            updateReadout();
-            // The control is display-only while dragged. Native range
-            // `change` is the one committed-value signal for mouse, touch,
-            // and keyboard input; deliberately do not resize in pointerup.
-            input.addEventListener('input', updateReadout);
-            input.addEventListener('change', commit);
-            control.append(labelRow, input);
-            popover.appendChild(control);
-            toolbar.appendChild(popover);
-
-            document.addEventListener('pointerdown', (event) => {
-                if (!popover.hidden && !popover.contains(event.target) && event.target !== tab) {
-                    setMobileUiScalePopoverOpen(false);
-                }
-            }, true);
-            document.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape' && !popover.hidden) {
-                    setMobileUiScalePopoverOpen(false);
-                    tab.focus();
-                }
-            });
-        }
-
-        syncMobileUiScaleToolbarControl();
-        return true;
-    }
-
     function buildPlaceholder2Content(container) {
         const dropZone = document.getElementById('gpp-drop-zone');
         if (!dropZone) return;
@@ -33183,10 +33173,10 @@ if (_settings.profileColorsCollapse) {
         if (hint) hint.classList.add('gpc-hidden');
         if (urlBtn) urlBtn.classList.add('gpc-hidden');
 
-        let mobileHint = document.getElementById('gpc-mobile-drop-zone-hint');
+        let mobileHint = document.getElementById('gpc-pmo-drop-zone-hint');
         if (!mobileHint) {
             mobileHint = document.createElement('div');
-            mobileHint.id = 'gpc-mobile-drop-zone-hint';
+            mobileHint.id = 'gpc-pmo-drop-zone-hint';
             mobileHint.innerHTML = '<strong>Click to upload template files</strong>';
         }
         dropZone.insertBefore(mobileHint, dropZone.firstChild);
@@ -33205,7 +33195,7 @@ if (_settings.profileColorsCollapse) {
         const heading = document.getElementById('gpp-drop-zone-heading');
         const hint = document.getElementById('gpp-drop-zone-hint');
         const urlBtn = document.getElementById('gpp-url-upload-btn');
-        const mobileHint = document.getElementById('gpc-mobile-drop-zone-hint');
+        const mobileHint = document.getElementById('gpc-pmo-drop-zone-hint');
         if (heading) heading.classList.remove('gpc-hidden');
         if (hint) hint.classList.remove('gpc-hidden');
         if (urlBtn) urlBtn.classList.remove('gpc-hidden');
@@ -33233,7 +33223,7 @@ if (_settings.profileColorsCollapse) {
         const opacityRow = ptContainer ? ptContainer.querySelector('#gpp-pt-opacity-row') : null;
 
         const buttonsGrid = document.createElement('div');
-        buttonsGrid.className = 'gpc-mobile-p-btn-grid';
+        buttonsGrid.className = 'gpc-pmo-p-btn-grid';
         [placeBtn, unsetBtn, gotoBtn, previewBtn].forEach((btn) => { if (btn) borrowNode(btn, buttonsGrid); });
         container.appendChild(buttonsGrid);
 
@@ -33242,9 +33232,9 @@ if (_settings.profileColorsCollapse) {
         // inline flex-wrap:wrap;gap:6px already arranges the 4 of them
         // exactly the way Ghost++ itself designed, nothing to reconstruct.
         const checkboxAndNudgeRow = document.createElement('div');
-        checkboxAndNudgeRow.className = 'gpc-mobile-p3-checkbox-nudge-row';
+        checkboxAndNudgeRow.className = 'gpc-pmo-p3-checkbox-nudge-row';
         const checkboxWrap = document.createElement('div');
-        checkboxWrap.className = 'gpc-mobile-p3-checkboxes';
+        checkboxWrap.className = 'gpc-pmo-p3-checkboxes';
         if (lockLabel) borrowNode(lockLabel, checkboxWrap);
         if (groupNoiseLabel) borrowNode(groupNoiseLabel, checkboxWrap);
         checkboxAndNudgeRow.appendChild(checkboxWrap);
@@ -33260,8 +33250,8 @@ if (_settings.profileColorsCollapse) {
     // convention for the two containers that just toggle visibility (never
     // removed from the DOM), plus the borrow/return mechanism above for the
     // real Ghost++ content that has to actually move:
-    //   - Native: #gpc-native-top-bar and .gpc-mobile-controls-row visible,
-    //     #gpc-mobile-placeholder-group hidden (the default/starting state).
+    //   - Native: #gpc-native-top-bar and .gpc-pmo-controls-row visible,
+    //     #gpc-pmo-placeholder-group hidden (the default/starting state).
     //   - Placeholders: the reverse, with p1/p2/p3 freshly (re)populated by
     //     borrowing from Ghost++'s real panels each time -- switching case
     //     it back to native returns everything and empties p1/p2/p3 again,
@@ -33273,33 +33263,33 @@ if (_settings.profileColorsCollapse) {
     // is read directly off the group's own class rather than tracked in a
     // separate flag, so this stays correct even if triggered some other way
     // later.
-    // .gpc-mobile-palette-wrap (the color grid + preview thumbnail itself)
+    // .gpc-pmo-palette-wrap (the color grid + preview thumbnail itself)
     // is deliberately never touched by either direction -- it stays visible
     // throughout, exactly as it already does; nothing here references it.
     function toggleNativeControlsForPlaceholders() {
         const nativeTopBar = document.getElementById('gpc-native-top-bar');
-        const controlsRow = document.querySelector('.gpc-mobile-controls-row');
-        let group = document.getElementById('gpc-mobile-placeholder-group');
+        const controlsRow = document.querySelector('.gpc-pmo-controls-row');
+        let group = document.getElementById('gpc-pmo-placeholder-group');
 
         if (!group) {
             group = document.createElement('div');
-            group.id = 'gpc-mobile-placeholder-group';
-            group.className = 'gpc-mobile-placeholder-group gpc-hidden';
+            group.id = 'gpc-pmo-placeholder-group';
+            group.className = 'gpc-pmo-placeholder-group gpc-hidden';
 
             // Ids name what each column actually holds (see buildPlaceholder-
             // {1,2,3}Content) instead of their old scaffolding-era
-            // gpc-mobile-placeholder-{1,2,3} names, left over from when
+            // gpc-pmo-placeholder-{1,2,3} names, left over from when
             // these genuinely held nothing but "placeholder 1"/"placeholder
             // 2" text.
             const scanPanel = document.createElement('div');
-            scanPanel.id = 'gpc-mobile-scan-panel';
-            scanPanel.className = 'gpc-mobile-placeholder';
+            scanPanel.id = 'gpc-pmo-scan-panel';
+            scanPanel.className = 'gpc-pmo-placeholder';
             const uploadPanel = document.createElement('div');
-            uploadPanel.id = 'gpc-mobile-upload-panel';
-            uploadPanel.className = 'gpc-mobile-placeholder';
+            uploadPanel.id = 'gpc-pmo-upload-panel';
+            uploadPanel.className = 'gpc-pmo-placeholder';
             const placementPanel = document.createElement('div');
-            placementPanel.id = 'gpc-mobile-placement-panel';
-            placementPanel.className = 'gpc-mobile-placeholder';
+            placementPanel.id = 'gpc-pmo-placement-panel';
+            placementPanel.className = 'gpc-pmo-placeholder';
             group.append(scanPanel, uploadPanel, placementPanel);
 
             // Inserted where the native elements visually sit, so the rest
@@ -33327,7 +33317,7 @@ if (_settings.profileColorsCollapse) {
             // p1/p2/p3 half.
             restoreDropZoneForDesktop();
             returnBorrowedNodes();
-            ['gpc-mobile-scan-panel', 'gpc-mobile-upload-panel', 'gpc-mobile-placement-panel'].forEach((id) => {
+            ['gpc-pmo-scan-panel', 'gpc-pmo-upload-panel', 'gpc-pmo-placement-panel'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (el) el.innerHTML = ''; // clears our own now-empty wrapper divs (button grids, checkbox stacks) left behind
             });
@@ -33339,11 +33329,11 @@ if (_settings.profileColorsCollapse) {
         // This click changes which block contributes to the scale content's
         // height. Re-measure on the next rendered frame, not on the next
         // mouse movement or one-second live-sync poll.
-        scheduleMobileUiScaleLayout();
+        requestPaintMenuControlsScaleLayout();
         dbgPush('Painting Menu Overhaul: preview thumbnail tapped -- switched to ' + (switchingToPlaceholders ? 'placeholder panels' : 'native controls') + '.', { uiComponent: 'Painting Menu Overhaul' });
     }
 
-    // ── Larger-preview modal (eye icon on .gpc-mobile-preview-frame) ───────
+    // ── Larger-preview modal (eye icon on .gpc-pmo-preview-frame) ───────
     // A genuine standalone modal, built fresh on every open and torn down on
     // close -- unlike everything else this file borrows from the real
     // Ghost++ modal, nothing here is borrowed DOM. Two reasons: (1) this can
@@ -33360,7 +33350,7 @@ if (_settings.profileColorsCollapse) {
     // Ghost++ business logic being duplicated, just display of it.
 
     function closeTemplatePreviewModal() {
-        const existing = document.getElementById('gpc-mobile-preview-modal');
+        const existing = document.getElementById('gpc-pmo-preview-modal');
         if (existing) existing.remove();
     }
 
@@ -33531,7 +33521,7 @@ if (_settings.profileColorsCollapse) {
         const core = gppCreateCore();
 
         const overlay = document.createElement('div');
-        overlay.id = 'gpc-mobile-preview-modal';
+        overlay.id = 'gpc-pmo-preview-modal';
         overlay.className = 'gpc-preview-modal-overlay';
         overlay.addEventListener('click', (event) => {
             if (event.target === overlay) closeTemplatePreviewModal();
@@ -33592,7 +33582,7 @@ if (_settings.profileColorsCollapse) {
         const listMode = gppSettings.paletteViewMode === 'list';
 
         const wrap = document.createElement('div');
-        wrap.className = 'gpc-mobile-palette-wrap';
+        wrap.className = 'gpc-pmo-palette-wrap';
 
         // Distinct id from Ghost++'s own (class-only, no id) .gpp-palette-grid
         // so the two are unambiguous to refer to separately. The list-mode
@@ -33603,7 +33593,7 @@ if (_settings.profileColorsCollapse) {
         // id, so reusing the class here is enough to pick it up, no new
         // CSS needed for the container itself.
         const grid = document.createElement('div');
-        grid.id = 'gpc-mobile-palette-grid';
+        grid.id = 'gpc-pmo-palette-grid';
         grid.className = 'gpp-palette-grid';
         grid.classList.toggle('gpp-palette-list-mode', listMode);
         // Overrides the class rule's own hardcoded max-height:60px (inline
@@ -33788,14 +33778,14 @@ if (_settings.profileColorsCollapse) {
         startGhostModalLiveSync();
 
         // Small live preview of the focused template's own ghost image, to
-        // the grid's right -- see the .gpc-mobile-preview-frame CSS comment
+        // the grid's right -- see the .gpc-pmo-preview-frame CSS comment
         // above for the sizing/fidelity reasoning. The click listener lives
         // on the canvas itself (getTemplatePreviewCanvas), not this wrapper
         // -- see that function's own comment for why.
         const previewCanvas = getTemplatePreviewCanvas(template);
         if (previewCanvas) {
             const previewFrame = document.createElement('div');
-            previewFrame.className = 'gpc-mobile-preview-frame';
+            previewFrame.className = 'gpc-pmo-preview-frame';
             previewFrame.title = template.name || 'Template preview';
             previewFrame.appendChild(previewCanvas);
 
@@ -33807,7 +33797,7 @@ if (_settings.profileColorsCollapse) {
             // this button would also fire that toggle underneath it.
             const infoBtn = document.createElement('button');
             infoBtn.type = 'button';
-            infoBtn.className = 'gpc-mobile-preview-info-btn';
+            infoBtn.className = 'gpc-pmo-preview-info-btn';
             infoBtn.title = 'Larger preview';
             infoBtn.textContent = 'ℹ️';
             infoBtn.addEventListener('click', (event) => {
@@ -34159,7 +34149,7 @@ if (_settings.profileColorsCollapse) {
 
     // Class names below are OUR OWN (.gpc-ctrl-*), defined in injectStyle()
     // with t2()/isDarkMode() branching -- see the comment on
-    // .gpc-mobile-controls-row there for why this uses this codebase's own
+    // .gpc-pmo-controls-row there for why this uses this codebase's own
     // theme signal rather than native Tailwind dark: classes.
 
     // Shared across all 4 of this row's dropdowns (Enable/Sort/Filter/Get
@@ -34386,7 +34376,7 @@ if (_settings.profileColorsCollapse) {
 
     function buildControlsRow() {
         const row = document.createElement('div');
-        row.className = 'gpc-mobile-controls-row';
+        row.className = 'gpc-pmo-controls-row';
 
         function withTemplate(fn) {
             return () => {
@@ -34481,61 +34471,19 @@ if (_settings.profileColorsCollapse) {
     //      performFilterSort() directly -- neither reaches subscribers.
     //      Polling is the only reliable way to catch either without patching
     //      more of Ghost++'s own code than the one renderState hook above.
-    let liveState = null; // { bottomControls, scaleRoot, scaleContent, uiScalePercent, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
+    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
 
-    // Paint Menu Controls creates its toolbar as an absolute direct child of
-    // #bottomControls. Move that already-wired toolbar into the *content*
-    // layer, never the fixed-width visual surface: its absolute offsets then
-    // stay attached to the surface while its controls follow the same scale as
-    // the rest of the menu. The compact Brush Swap button lives here too.
-    function adoptPaintMenuToolbarIntoScaleContent() {
-        if (!liveState || !liveState.bottomControls || !liveState.scaleRoot) return false;
-        const content = ensureMobileUiScaleContent();
-        if (!content) return false;
-        const toggle = document.getElementById('gpc-hide-paint-toggle');
-        const toolbar = toggle ? toggle.parentElement : null;
-        if (!toolbar || !liveState.bottomControls.contains(toolbar)) return false;
-        if (toolbar.parentElement !== content) {
-            if (!toolbar.id) toolbar.id = 'gpc-paint-menu-toolbar';
-            content.appendChild(toolbar);
-        }
-        ensureMobileUiScaleToolbarControl();
-        // Paint Menu Controls changes the toolbar's top/bottom edge when its
-        // own dock control is pressed. Queue alignment after that click has
-        // completed, rather than competing with its live handler.
-        if (!toolbar.dataset.gpcMobileScaleAlignment) {
-            toolbar.dataset.gpcMobileScaleAlignment = 'true';
-            toolbar.addEventListener('click', () => scheduleMobileUiScaleLayout());
-        }
-        scheduleMobileUiScaleLayout();
-        return true;
-    }
-
-    // Paint Menu Controls normally mounts earlier in the legacy source order,
-    // but it can wait briefly for late native DOM. Watch only direct children:
-    // its toolbar is appended directly to #bottomControls, so this catches the
-    // delayed case without observing compact-grid redraws below the wrapper.
-    function ensurePaintMenuToolbarSharesScaleRoot() {
-        if (!_settings.hidePaintMenu || !liveState || !liveState.bottomControls) return;
-        if (adoptPaintMenuToolbarIntoScaleContent()) return;
-        const toolbarObserver = new MutationObserver(() => {
-            if (adoptPaintMenuToolbarIntoScaleContent()) toolbarObserver.disconnect();
-        });
-        toolbarObserver.observe(liveState.bottomControls, { childList: true });
-        setTimeout(() => toolbarObserver.disconnect(), 15000);
-    }
-
-    // Shown in .gpc-mobile-palette-wrap's usual spot whenever no Ghost++
+    // Shown in .gpc-pmo-palette-wrap's usual spot whenever no Ghost++
     // template is focused -- most notably the very first time a mobile
     // painter ever opens this feature, before they've selected or imported
     // anything. Without this, they'd have NO way to reach placeholder mode
     // at all: its own trigger (the click listener in
     // getTemplatePreviewCanvas) lives on the preview thumbnail, which is
-    // itself inside .gpc-mobile-palette-wrap -- and that wrap only exists
+    // itself inside .gpc-pmo-palette-wrap -- and that wrap only exists
     // once resync() has something to build it FOR. toggleNativeControls
     // ForPlaceholders itself was already fully independent of template
     // state (its own insertion point is #gpc-native-top-bar/
-    // .gpc-mobile-controls-row, neither of which are template-scoped), and
+    // .gpc-pmo-controls-row, neither of which are template-scoped), and
     // Ghost++'s own real p1/p2/p3 content already renders its own "Select
     // or import a template"-style messaging with nothing focused, same as
     // the real desktop modal would -- this prompt is the only genuinely
@@ -34547,23 +34495,23 @@ if (_settings.profileColorsCollapse) {
     // resync() can call this on every no-template tick, not just the
     // transition into that state.
     function ensureNoTemplatePrompt() {
-        if (document.getElementById('gpc-mobile-no-template-prompt')) return;
+        if (document.getElementById('gpc-pmo-no-template-prompt')) return;
         const prompt = document.createElement('div');
-        prompt.id = 'gpc-mobile-no-template-prompt';
-        prompt.className = 'gpc-mobile-no-template-prompt';
+        prompt.id = 'gpc-pmo-no-template-prompt';
+        prompt.className = 'gpc-pmo-no-template-prompt';
         prompt.textContent = 'Click for template options';
         prompt.addEventListener('click', toggleNativeControlsForPlaceholders);
         liveState.savedNativeContainer.insertAdjacentElement('afterend', prompt);
     }
     function removeNoTemplatePrompt() {
-        const prompt = document.getElementById('gpc-mobile-no-template-prompt');
+        const prompt = document.getElementById('gpc-pmo-no-template-prompt');
         if (prompt) prompt.remove();
     }
 
     function resync() {
         if (!liveState) return;
         // Keeps the shared stylesheet (control row buttons/menus, and the
-        // #gpc-mobile-placeholder-group overrides for whatever's currently
+        // #gpc-pmo-placeholder-group overrides for whatever's currently
         // borrowed into p1/p2/p3) live-refreshed on the SAME cadence as
         // everything else resync() already reacts to -- previously
         // injectStyle() only ever ran from inside buildTemplatePaletteGrid,
@@ -34582,7 +34530,7 @@ if (_settings.profileColorsCollapse) {
         // Grid/placeholder rebuilds can add or remove rows. Re-measure on the
         // next frame so the unscaled surface tracks the scaled content height
         // without ever taking over its width.
-        scheduleMobileUiScaleLayout();
+        requestPaintMenuControlsScaleLayout();
         const template = getFocusedTemplateWithPalette();
 
         if (!template) {
@@ -34706,8 +34654,9 @@ if (_settings.profileColorsCollapse) {
         // future code (including this file's own) a direct, stable
         // reference instead of a class-based lookup.
         //
-        // MUST be scoped through ':scope > div' (innerWrapper) first, same
-        // as hide-paint-menu.js's own lookup -- an earlier version used the
+        // Scope through the inner wrapper first, then allow Paint Menu
+        // Controls' own scale-content layer when that feature is enabled.
+        // An earlier version used the
         // unscoped bottomControls.querySelector('.w-full.flex') here, which
         // doesn't just search topBar's own class combination
         // (w-full flex items-center justify-between gap-3); it also matches
@@ -34723,36 +34672,20 @@ if (_settings.profileColorsCollapse) {
         // panel's background -- exactly the "blue showing through" bug
         // reported, confirmed via the reporter's own DevTools inspection.
         const innerWrapperEl = bottomControls.querySelector(':scope > div');
-        const nativeTopBar = innerWrapperEl ? innerWrapperEl.querySelector(':scope > .w-full.flex') : null;
+        const nativeTopBar = innerWrapperEl
+            ? innerWrapperEl.querySelector(':scope > .gpc-pmc-scale-content > .w-full.flex, :scope > .w-full.flex')
+            : null;
         if (nativeTopBar && !nativeTopBar.id) nativeTopBar.id = 'gpc-native-top-bar';
 
         liveState = {
-            bottomControls, scaleRoot: innerWrapperEl, scaleContent: null, scaleLayoutFrame: 0,
-            uiScalePercent: readMobileUiScale(), savedNativeContainer: nativeContainer,
+            bottomControls, savedNativeContainer: nativeContainer,
             wrap: null, grid: null, templateId: null, orderKey: null,
             paletteViewMode: null, scanSummaryRef: null, selectedHex: null,
             soloMode: true, enableSelectedMode: false, highlightNearest: false,
             highlightRequestId: 0, pendingHighlightTemplateId: null,
             pendingHighlightPaletteIndex: null, syncEnableSelectedModeUi: null,
         };
-        if (innerWrapperEl) {
-            innerWrapperEl.classList.add('gpc-mobile-scale-root');
-            ensureMobileUiScaleContent();
-            let scaleContentRestoreQueued = false;
-            const scaleContentObserver = new MutationObserver(() => {
-                if (scaleContentRestoreQueued) return;
-                scaleContentRestoreQueued = true;
-                Promise.resolve().then(() => {
-                    scaleContentRestoreQueued = false;
-                    restoreMobileUiScaleContent();
-                    scheduleMobileUiScaleLayout();
-                });
-            });
-            scaleContentObserver.observe(innerWrapperEl, { childList: true });
-            liveState.scaleContentObserver = scaleContentObserver;
-        }
-        ensurePaintMenuToolbarSharesScaleRoot();
-        applyMobileUiScale(liveState.uiScalePercent);
+        requestPaintMenuControlsScaleLayout();
 
         // The native Sort button (sortAndSetColors()) is redundant with our
         // own Sort control below -- hidden in place, same reasoning as

@@ -4,6 +4,8 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const artifact = readFileSync(new URL('../dist/geopixelcons-library.js', import.meta.url), 'utf8');
+const paintMenuControlsSource = readFileSync(new URL('../src/legacy/features/hide-paint-menu.js', import.meta.url), 'utf8');
+const paintingMenuOverhaulSource = readFileSync(new URL('../src/legacy/features/mobile-painting.js', import.meta.url), 'utf8');
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 test('loads as a side-effect-free factory before the main userscript', () => {
@@ -65,33 +67,42 @@ test('keeps Painting Menu Overhaul responsive and exposes selected-colour scan f
     assert.match(artifact, /requestStillCurrent/);
     assert.match(artifact, /retintBorrowedScanButtons/);
     assert.match(artifact, /justify-content: center/);
-    assert.match(artifact, /gpc-mobile-ui-scale/);
     assert.match(artifact, /Painting Menu Overhaul/);
-    assert.match(artifact, /geo\+\+_painting_menu_overhaul_ui_scale/);
-    assert.match(artifact, /geo\+\+_mobile_painting_ui_scale/);
-    assert.match(artifact, /addEventListener\('input', updateReadout\)/);
-    assert.match(artifact, /addEventListener\('change', commit\)/);
-    assert.doesNotMatch(artifact, /addEventListener\('pointerup', commit\)/);
-    assert.match(artifact, /pendingCommitFrame/);
-    assert.match(artifact, /applyMobileUiScale\(liveState\.uiScalePercent\)/);
-    assert.doesNotMatch(artifact, /root\.style\.width\s*=/);
+    assert.doesNotMatch(paintingMenuOverhaulSource, /root\.style\.width\s*=/);
     assert.doesNotMatch(artifact, /root\.style\.transform\s*=/);
-    assert.match(artifact, /fixed-width visual surface/);
-    assert.match(artifact, /gpc-mobile-scale-content/);
-    assert.match(artifact, /gpc-mobile-scale-tab/);
-    assert.match(artifact, /gpc-mobile-scale-popover/);
-    assert.match(artifact, /gpc-paint-flip-pos/);
     assert.doesNotMatch(artifact, /function buildMobileUiScaleControl\(/);
-    assert.match(artifact, /inverseWidthPercent/);
-    assert.match(artifact, /root\.style\.height/);
     assert.match(artifact, /gpc-ctrl-menu-count/);
     assert.match(artifact, /Minimum pixel count/);
     assert.match(artifact, /countMinInput\.dispatchEvent\(new Event\('input'/);
-    assert.match(artifact, /gpc-mobile-scale-root/);
-    assert.match(artifact, /adoptPaintMenuToolbarIntoScaleContent/);
     assert.match(artifact, /gpc-hide-paint-toggle/);
     assert.match(artifact, /controlsRowEl\.style\.marginBottom/);
     assert.match(artifact, /-rowGap \+ 4/);
+    assert.match(paintingMenuOverhaulSource, /gpc-pmo-palette-grid/);
+    assert.doesNotMatch(paintingMenuOverhaulSource, /gpc-mobile-/);
+});
+
+test('makes scale a Paint Menu Controls capability independent of Painting Menu Overhaul', () => {
+    assert.match(artifact, /gpc-pmc-scale-tab/);
+    assert.match(artifact, /geo\+\+_paint_menu_controls_ui_scale/);
+    assert.match(paintMenuControlsSource, /let gpcPaintMenuControlsScale = null/);
+    assert.match(paintMenuControlsSource, /createPaintMenuControlsScale/);
+    assert.match(paintMenuControlsSource, /gpc-pmc-scale-content/);
+    assert.match(paintMenuControlsSource, /gpc-pmc-scale-tab/);
+    assert.match(paintMenuControlsSource, /gpc-pmc-scale-popover/);
+    assert.match(paintMenuControlsSource, /geo\+\+_paint_menu_controls_ui_scale/);
+    assert.match(paintMenuControlsSource, /geo\+\+_painting_menu_overhaul_ui_scale/);
+    assert.match(paintMenuControlsSource, /geo\+\+_mobile_painting_ui_scale/);
+    assert.match(paintMenuControlsSource, /addEventListener\('input', updateReadout\)/);
+    assert.match(paintMenuControlsSource, /addEventListener\('change', commit\)/);
+    assert.doesNotMatch(paintMenuControlsSource, /addEventListener\('pointerup', commit\)/);
+    assert.match(paintMenuControlsSource, /pendingCommitFrame/);
+    assert.match(paintMenuControlsSource, /inverseWidthPercent/);
+    assert.match(paintMenuControlsSource, /lockNativeWidth/);
+    assert.match(paintMenuControlsSource, /releaseNativeWidth/);
+    assert.match(paintMenuControlsSource, /root\.style\.height/);
+    assert.match(paintMenuControlsSource, /gpc-paint-flip-pos/);
+    assert.match(paintMenuControlsSource, /making the scale tab a Paint Menu Controls capability/);
+    assert.doesNotMatch(paintingMenuOverhaulSource, /gpc-pmc-scale-tab/);
 });
 test('keeps compact Ghost++ palette state and size separate from the full menu', () => {
     assert.match(artifact, /compactPaletteViewMode: 'grid'/);

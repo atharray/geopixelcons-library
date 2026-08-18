@@ -1,4 +1,9 @@
 
+    // Shared with Painting Menu Overhaul later in the assembled private IIFE.
+    // Paint Menu Controls owns the scale lifecycle; PMO only asks it to
+    // re-measure when its own live panels change.
+    let gpcPaintMenuControlsScale = null;
+
     // ============================================================
     //  FEATURE: Paint Menu Controls [hidePaintMenu]
     // ============================================================
@@ -159,6 +164,7 @@
         topBar.appendChild(dragBar);
         topBar.appendChild(resetBtn);
         topBar.appendChild(flipBtn);
+        topBar.id = 'gpc-paint-menu-toolbar';
         bottomControls.appendChild(topBar);
 
         // --- G. Compact paint overflow: move close + brushes into topBar ---
@@ -331,16 +337,332 @@
         const colorsDiv = innerWrapper
             ? innerWrapper.querySelector(':scope > .control-container-colors')
             : null;
-        // Painting Menu Overhaul may place these two live native nodes inside
-        // its scale-content layer after this feature initialized. Resolve their
-        // current shared parent inside updateState instead of retaining the old
-        // direct-wrapper parent, so a later collapse/dock never calls
-        // insertBefore() with a reference node that has moved.
+        // Painting Menu Overhaul can replace the live native nodes inside this
+        // feature's scale-content layer. Resolve their current shared parent
+        // inside updateState instead of retaining the old direct-wrapper
+        // parent, so a later collapse/dock never calls insertBefore() with a
+        // reference node that has moved.
         const getSwapParent = () => (
             controlsRow && colorsDiv && controlsRow.parentElement === colorsDiv.parentElement
                 ? controlsRow.parentElement
                 : null
         );
+
+        // Paint Menu Controls owns the optional scale surface. It exists
+        // independently of Painting Menu Overhaul, so native painters can use
+        // it with only this feature enabled. The outer #bottomControls width
+        // remains site-owned; only a child surface scales and reports its
+        // scaled height back to the native wrapper.
+        let paintMenuScale = null;
+        function createPaintMenuControlsScale() {
+            const root = innerWrapper;
+            if (!root) return null;
+
+            const MIN = 75;
+            const MAX = 125;
+            const STEP = 5;
+            const DEFAULT = 100;
+            const STORAGE_KEY = 'geo++_paint_menu_controls_ui_scale';
+            const PMO_STORAGE_KEY = 'geo++_painting_menu_overhaul_ui_scale';
+            const LEGACY_STORAGE_KEY = 'geo++_mobile_painting_ui_scale';
+            const state = { content: null, percent: DEFAULT, frame: 0, widthLock: null };
+            let tab = null;
+            let popover = null;
+            let input = null;
+            let value = null;
+            let pendingCommitFrame = 0;
+
+            const clamp = (raw) => {
+                const numeric = Number(raw);
+                if (!Number.isFinite(numeric)) return DEFAULT;
+                const stepped = Math.round(numeric / STEP) * STEP;
+                return Math.max(MIN, Math.min(MAX, stepped));
+            };
+            const read = () => {
+                try {
+                    for (const key of [STORAGE_KEY, PMO_STORAGE_KEY, LEGACY_STORAGE_KEY]) {
+                        const raw = localStorage.getItem(key);
+                        if (raw === null) continue;
+                        const parsed = clamp(raw);
+                        if (key !== STORAGE_KEY) localStorage.setItem(STORAGE_KEY, String(parsed));
+                        return parsed;
+                    }
+                } catch (e) {}
+                return DEFAULT;
+            };
+            const persist = (percent) => {
+                try { localStorage.setItem(STORAGE_KEY, String(percent)); } catch (e) {}
+            };
+            const isDark = () => {
+                try {
+                    const rootStyle = getComputedStyle(document.documentElement);
+                    if (/\bdark\b/i.test(rootStyle.colorScheme || '')) return true;
+                } catch (e) {}
+                try {
+                    const raw = localStorage.getItem('geo++_settings');
+                    const parsed = raw ? JSON.parse(raw) : null;
+                    return !!(parsed && parsed.theme === 'simple_black');
+                } catch (e) { return false; }
+            };
+            const ensureStyle = () => {
+                let style = document.getElementById('gpc-pmc-scale-style');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'gpc-pmc-scale-style';
+                    document.head.appendChild(style);
+                }
+                style.textContent = `
+                    .gpc-pmc-scale-root { position: relative; z-index: 30; overflow: visible; }
+                    .gpc-pmc-scale-content { position: relative; display: flex; flex-direction: column; flex: 0 0 auto; width: 100%; box-sizing: border-box; gap: inherit; min-width: 0; }
+                    #gpc-pmc-scale-tab { pointer-events: auto; margin-left: 2px; }
+                    #gpc-paint-menu-toolbar.gpc-pmc-scale-popover-open { z-index: 1200 !important; }
+                    #gpc-pmc-scale-popover[hidden] { display: none; }
+                `;
+            };
+            const ensureContent = () => {
+                if (state.content && state.content.isConnected) return state.content;
+                let content = root.querySelector(':scope > .gpc-pmc-scale-content');
+                if (!content) {
+                    content = document.createElement('div');
+                    content.className = 'gpc-pmc-scale-content';
+                    const children = Array.from(root.children);
+                    root.appendChild(content);
+                    children.forEach((child) => content.appendChild(child));
+                }
+                if (topBar.parentElement !== content) content.appendChild(topBar);
+                state.content = content;
+                return content;
+            };
+            const restoreContent = () => {
+                const content = ensureContent();
+                Array.from(root.children).forEach((child) => {
+                    if (child !== content) content.appendChild(child);
+                });
+                if (topBar.parentElement !== content) content.appendChild(topBar);
+            };
+            const sync = () => {
+                if (input) input.value = String(state.percent);
+                if (value) value.textContent = `${state.percent}%`;
+            };
+            const applyPopoverTheme = () => {
+                if (!popover) return;
+                const dark = isDark();
+                popover.style.cssText = [
+                    'position:absolute', 'bottom:calc(100% + 6px)', 'left:50%', 'transform:translateX(-50%)',
+                    'width:224px', 'box-sizing:border-box', 'padding:8px', 'border-radius:8px',
+                    `border:1px solid ${dark ? '#45475a' : '#d1d5db'}`,
+                    `background:${dark ? '#1e1e2e' : '#ffffff'}`,
+                    `color:${dark ? '#f5f5f5' : '#111827'}`,
+                    'box-shadow:0 8px 24px rgba(0,0,0,.28)', 'pointer-events:auto',
+                ].join(';');
+                const labelRow = popover.querySelector('.gpc-pmc-scale-label-row');
+                const scaleValue = popover.querySelector('.gpc-pmc-scale-value');
+                if (labelRow) labelRow.style.color = dark ? '#cdd6f4' : '#475569';
+                if (scaleValue) scaleValue.style.color = dark ? '#a6adc8' : '#64748b';
+                if (input) input.style.accentColor = dark ? '#89b4fa' : '#2563eb';
+            };
+            const alignToolbar = () => {
+                const content = state.content;
+                if (!content || topBar.parentElement !== content || !topBar.offsetHeight) return;
+                const scale = state.percent / 100;
+                const toolbarHeight = topBar.offsetHeight;
+                const pixels = (n) => `${Math.round(n * 1000) / 1000}px`;
+                if (topBar.style.top !== 'auto') {
+                    const next = pixels(-toolbarHeight - (content.offsetTop / scale));
+                    if (topBar.style.top !== next) topBar.style.top = next;
+                    return;
+                }
+                const inset = Math.max(0, root.offsetHeight - (content.offsetTop + content.offsetHeight * scale));
+                const next = pixels(-toolbarHeight - (inset / scale));
+                if (topBar.style.bottom !== next) topBar.style.bottom = next;
+            };
+            const measureHeight = (content, scale) => {
+                const previousHeight = root.style.height;
+                const previousTransform = content.style.transform;
+                root.style.height = '';
+                content.style.transform = 'none';
+                const height = content.getBoundingClientRect().height;
+                const rootStyle = getComputedStyle(root);
+                const chrome = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+                    .reduce((total, property) => total + (parseFloat(rootStyle[property]) || 0), 0);
+                content.style.transform = previousTransform;
+                if (!Number.isFinite(height) || height <= 0) {
+                    root.style.height = previousHeight;
+                    return;
+                }
+                root.style.height = `${Math.ceil(chrome + height * scale)}px`;
+            };
+            // `transform` does not affect layout, so the content needs an
+            // inverse width to keep its rendered left/right edges fixed. That
+            // inverse width must not, however, become the auto-sized outer
+            // panel's new intrinsic width. Lock the existing native width for
+            // the duration of a non-100% scale, then restore the exact inline
+            // value when the user returns to 100%. This lets the site keep
+            // owning responsive width between adjustments while guaranteeing
+            // the scale action itself changes only the controls and height.
+            const lockNativeWidth = () => {
+                if (state.widthLock) return;
+                const style = getComputedStyle(root);
+                const rectWidth = root.getBoundingClientRect().width;
+                const horizontalChrome = ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth']
+                    .reduce((total, property) => total + (parseFloat(style[property]) || 0), 0);
+                const contentWidth = style.boxSizing === 'border-box'
+                    ? rectWidth
+                    : Math.max(0, rectWidth - horizontalChrome);
+                state.widthLock = { inlineWidth: root.style.width };
+                root.style.width = `${Math.round(contentWidth * 1000) / 1000}px`;
+            };
+            const releaseNativeWidth = () => {
+                if (!state.widthLock) return;
+                root.style.width = state.widthLock.inlineWidth;
+                state.widthLock = null;
+            };
+            const apply = (raw) => {
+                const percent = clamp(raw);
+                const scale = percent / 100;
+                const content = ensureContent();
+                root.style.setProperty('--gpc-pmc-ui-scale', String(scale));
+                root.dataset.gpcPmcUiScale = String(percent);
+                state.percent = percent;
+                if (percent === DEFAULT) {
+                    releaseNativeWidth();
+                    content.style.width = '';
+                    content.style.marginLeft = '';
+                    content.style.marginRight = '';
+                    content.style.transformOrigin = '';
+                    content.style.transform = '';
+                    root.style.height = '';
+                } else {
+                    lockNativeWidth();
+                    const inverseWidthPercent = 100 / scale;
+                    const sideMarginPercent = (100 - inverseWidthPercent) / 2;
+                    content.style.width = `${inverseWidthPercent}%`;
+                    content.style.marginLeft = `${sideMarginPercent}%`;
+                    content.style.marginRight = `${sideMarginPercent}%`;
+                    content.style.transformOrigin = 'top center';
+                    content.style.transform = `scale(${scale})`;
+                    measureHeight(content, scale);
+                }
+                alignToolbar();
+                sync();
+            };
+            const requestLayout = () => {
+                if (state.frame) return;
+                state.frame = requestAnimationFrame(() => {
+                    state.frame = 0;
+                    const content = ensureContent();
+                    if (state.percent !== DEFAULT) measureHeight(content, state.percent / 100);
+                    alignToolbar();
+                });
+            };
+            const setPopoverOpen = (open) => {
+                if (!tab || !popover) return;
+                applyPopoverTheme();
+                popover.hidden = !open;
+                tab.setAttribute('aria-expanded', String(open));
+                topBar.classList.toggle('gpc-pmc-scale-popover-open', open);
+            };
+            const ensureTab = () => {
+                if (tab) return;
+                tab = document.createElement('button');
+                tab.type = 'button';
+                tab.id = 'gpc-pmc-scale-tab';
+                tab.textContent = '↕';
+                tab.title = 'Open Paint Menu Controls scale';
+                tab.setAttribute('aria-label', 'Open Paint Menu Controls scale');
+                tab.setAttribute('aria-expanded', 'false');
+                tab.setAttribute('aria-controls', 'gpc-pmc-scale-popover');
+                tab.className = flipBtn.className;
+                const flipStyle = flipBtn.getAttribute('style');
+                if (flipStyle !== null) tab.setAttribute('style', flipStyle);
+                tab.style.marginLeft = '2px';
+                flipBtn.insertAdjacentElement('afterend', tab);
+
+                popover = document.createElement('div');
+                popover.id = 'gpc-pmc-scale-popover';
+                popover.hidden = true;
+                popover.setAttribute('role', 'dialog');
+                popover.setAttribute('aria-label', 'Paint Menu Controls scale');
+                const control = document.createElement('div');
+                control.className = 'gpc-pmc-scale-control';
+                control.style.cssText = 'width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:3px';
+                const labelRow = document.createElement('div');
+                labelRow.className = 'gpc-pmc-scale-label-row';
+                labelRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11px;font-weight:600';
+                const label = document.createElement('label');
+                label.htmlFor = 'gpc-pmc-ui-scale';
+                label.textContent = 'Paint Menu scale';
+                value = document.createElement('output');
+                value.id = 'gpc-pmc-ui-scale-value';
+                value.className = 'gpc-pmc-scale-value';
+                value.htmlFor = 'gpc-pmc-ui-scale';
+                value.style.fontVariantNumeric = 'tabular-nums';
+                labelRow.append(label, value);
+                input = document.createElement('input');
+                input.id = 'gpc-pmc-ui-scale';
+                input.className = 'gpc-pmc-scale-input';
+                input.type = 'range';
+                input.min = String(MIN);
+                input.max = String(MAX);
+                input.step = String(STEP);
+                input.value = String(state.percent);
+                input.title = 'Scale Paint Menu Controls';
+                input.setAttribute('aria-label', 'Paint Menu Controls scale');
+                input.style.cssText = 'width:100%;min-width:0;margin:0';
+                const updateReadout = () => { value.textContent = `${input.value}%`; };
+                const commit = () => {
+                    const next = clamp(input.value);
+                    input.value = String(next);
+                    updateReadout();
+                    if (pendingCommitFrame) cancelAnimationFrame(pendingCommitFrame);
+                    pendingCommitFrame = requestAnimationFrame(() => {
+                        pendingCommitFrame = 0;
+                        if (state.percent !== next) {
+                            apply(next);
+                            persist(next);
+                        }
+                    });
+                };
+                input.addEventListener('input', updateReadout);
+                input.addEventListener('change', commit);
+                tab.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    setPopoverOpen(popover.hidden);
+                    requestLayout();
+                });
+                control.append(labelRow, input);
+                popover.appendChild(control);
+                topBar.appendChild(popover);
+                document.addEventListener('pointerdown', (event) => {
+                    if (!popover.hidden && !popover.contains(event.target) && event.target !== tab) setPopoverOpen(false);
+                }, true);
+                document.addEventListener('keydown', (event) => {
+                    if (event.key !== 'Escape' || popover.hidden) return;
+                    setPopoverOpen(false);
+                    tab.focus();
+                });
+                updateReadout();
+                applyPopoverTheme();
+            };
+            const mount = () => {
+                ensureStyle();
+                root.classList.add('gpc-pmc-scale-root');
+                state.percent = read();
+                ensureTab();
+                restoreContent();
+                const content = ensureContent();
+                const rootObserver = new MutationObserver(() => {
+                    restoreContent();
+                    requestLayout();
+                });
+                rootObserver.observe(root, { childList: true });
+                const contentObserver = new MutationObserver(requestLayout);
+                contentObserver.observe(content, { childList: true, subtree: true });
+                topBar.addEventListener('click', requestLayout);
+                apply(state.percent);
+            };
+            return Object.freeze({ get tab() { return tab; }, mount, requestLayout, apply, getRoot: () => root, getContent: () => ensureContent() });
+        }
 
         // --- 4. LOGIC ENGINE ---
 
@@ -361,7 +683,7 @@
                 // Button bar goes BELOW the panel when docked top
                 topBar.style.top = 'auto';
                 topBar.style.bottom = '-24px';
-                [toggleBtn, dragBar, resetBtn, flipBtn].forEach(el => {
+                [toggleBtn, dragBar, resetBtn, flipBtn, paintMenuScale && paintMenuScale.tab].filter(Boolean).forEach(el => {
                     el.style.borderRadius = '0 0 8px 8px';
                     el.style.borderBottom = '';
                     el.style.borderTop = 'none';
@@ -384,7 +706,7 @@
                 // Button bar goes ABOVE the panel when docked bottom
                 topBar.style.bottom = 'auto';
                 topBar.style.top = '-24px';
-                [toggleBtn, dragBar, resetBtn, flipBtn].forEach(el => {
+                [toggleBtn, dragBar, resetBtn, flipBtn, paintMenuScale && paintMenuScale.tab].filter(Boolean).forEach(el => {
                     el.style.borderRadius = '8px 8px 0 0';
                     el.style.borderBottom = 'none';
                     el.style.borderTop = '';
@@ -468,8 +790,13 @@
             updateState();
         });
 
-        // Initialize
+        // Initialize. This runs whether or not Painting Menu Overhaul is
+        // enabled, making the scale tab a Paint Menu Controls capability.
+        paintMenuScale = createPaintMenuControlsScale();
+        gpcPaintMenuControlsScale = paintMenuScale;
+        if (paintMenuScale) paintMenuScale.mount();
         updateState();
+        if (paintMenuScale) paintMenuScale.requestLayout();
         console.log('Bottom controls enhanced: properly centered with left/right positioning.');
     };
 

@@ -1,13 +1,15 @@
 // tests/ghost-plus-plus-fixture.mjs
 //
 // Real, runnable verification of the ASSEMBLED Ghost++ feature (the 12 files
-// under src/features/ghost-plus-plus/) as it is actually shipped inside
+// under src/features/ghost-plus-plus/) plus the Paint Menu Controls and
+// Painting Menu Overhaul features as they are actually shipped inside
 // GeoPixelcons++ — not a per-file syntax check, not a mocked/paraphrased
 // re-implementation. This launches a real locally-installed headless
 // Chrome/Edge against a synthetic fixture page (served over a throwaway
 // local HTTP server with a permissive CSP) that provides GeoPixels' page
 // globals (map/turf/grid/palette/native-ghost bindings) as plain top-level
-// `let` bindings, then inlines the 13 Ghost++ source files (read live from
+// `let` bindings, then inlines the 13 Ghost++ source files and the two
+// paint-menu feature files (read live from
 // disk — never hand-copied) so the real, shipped code executes against
 // them, exercising real cross-file calls.
 //
@@ -62,6 +64,7 @@ import { fileURLToPath } from 'node:url';
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const GPP_DIR = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'ghost-plus-plus');
+const HIDE_PAINT_MENU_FILE = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'hide-paint-menu.js');
 const MOBILE_PAINTING_FILE = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'mobile-painting.js');
 
 // Exactly the 13-file slice of build.js's SRC_ORDER for Ghost++, in the same
@@ -90,6 +93,18 @@ function readMobilePaintingSource() {
     return readFileSync(MOBILE_PAINTING_FILE, 'utf8');
 }
 
+function readPaintMenuControlsSource() {
+    return readFileSync(HIDE_PAINT_MENU_FILE, 'utf8');
+}
+
+function readFixtureFeatureSource() {
+    return [
+        readGhostPlusPlusSource(),
+        readPaintMenuControlsSource(),
+        readMobilePaintingSource(),
+    ].join('\n');
+}
+
 // Runs the exact same real Ghost++ source this fixture already exercises
 // through terser (build.js's own minification pass — see that file) before
 // injecting it into the page, so the "Minified build" pass below proves
@@ -101,7 +116,7 @@ function readMobilePaintingSource() {
 // do with minification.
 async function readGhostPlusPlusSourceMinified() {
     const terser = await import('terser');
-    const result = await terser.minify(readGhostPlusPlusSource() + '\n' + readMobilePaintingSource(), {
+    const result = await terser.minify(readFixtureFeatureSource(), {
         compress: true,
         mangle: true,
         format: { comments: false, ascii_only: false },
@@ -158,9 +173,11 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('<input id="ghostImageInput" type="file" accept="image/*" style="display:none">');
     lines.push('<button id="initiatePlaceGhostBtn" type="button" style="display:none">Native place</button>');
     lines.push('<button id="clearGhostImageBtn" type="button" style="display:none">Native clear</button>');
-    // Deliberately plain site-like paint bar: Painting Menu Overhaul must preserve
-    // these natural dimensions rather than forcing a full-viewport width.
-    lines.push('<div id="bottomControls"><div style="padding:12px;box-sizing:border-box"><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button></div><div class="control-container-colors"><button type="button">Native color</button></div></div><div style="position:absolute;top:-24px;left:0;right:0;height:24px" id="gpc-paint-menu-toolbar"><button id="gpc-hide-paint-toggle" type="button">Toggle paint menu</button><button id="gpc-paint-flip-pos" class="gpc-toolbar-test-button" style="background:rgb(7, 11, 19);color:rgb(191, 200, 219);border:1px solid rgb(69, 71, 90);border-bottom:none;border-radius:8px 8px 0 0" type="button">Flip paint menu</button><button id="gpc-compact-brush" type="button">Brushes</button></div></div>');
+    // Deliberately plain site-like paint bar: Paint Menu Controls must preserve
+    // its natural width while Painting Menu Overhaul can replace live content.
+    // The toolbar is intentionally not pre-created: the fixture executes the
+    // real Paint Menu Controls feature, which owns its creation and scaling.
+    lines.push('<div id="bottomControls"><div style="padding:12px;box-sizing:border-box"><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button><span id="currentEnergyDisplay">1/10</span></div><div class="control-container-colors"><button type="button">Native color</button></div></div></div>');
     lines.push('<div id="map-shell"><div id="pixel-canvas"></div><canvas id="ghost-canvas"></canvas></div>');
     lines.push('<pre id="test-result" data-status="pending">pending</pre>');
     lines.push('<script>');
@@ -308,7 +325,7 @@ function buildFixtureHead(forceCanvas2D) {
     // of only a later settings refresh.
     lines.push('document.documentElement.style.colorScheme = "dark";');
     lines.push('localStorage.setItem("geo++_mobile_painting_ui_scale", "90");');
-    lines.push('let _settings = { ghostPlusPlus: true, mobilePaintingExtension: true, hidePaintMenu: true };');
+    lines.push('let _settings = { ghostPlusPlus: true, mobilePaintingExtension: true, hidePaintMenu: true, compactPaintOverflow: true };');
     lines.push('function gpcMobileOverhaulAvailable() { return false; }');
     lines.push('let _featureStatus = {};');
     lines.push('function dbgPush(message, opts) { console.warn("[dbgPush]", message, opts); }');
@@ -2838,7 +2855,7 @@ function buildDriverScript() {
     L.push('');
     // ---- item uiShell.narrow-width-toggle-right-swaps-panels ----
     // Feature guard for explicit user request: emulate the legacy Ghost
-    // Template Manager's own gpc-mobile-compat/gpc-mobile-preview-open
+    // Template Manager's own gpc-pmo-compat/gpc-pmo-preview-open
     // pattern -- at a narrow modal width, the SAME toggle-right button
     // should swap between showing the left panel fully or the right panel
     // fully, instead of the plain 34px-stub partial collapse used at wide
@@ -3027,15 +3044,15 @@ function buildDriverScript() {
     L.push('    template.mask = core.makeFullMask(template.palette.length, template.counts);');
     L.push('    template.scanSummary = { scannedAt: new Date().toISOString(), total: seededTotal, correct: seededTotal, wrong: 0, missing: 0, unknown: 0, perColour: seededPerColour, states: new Uint8Array(template.width * template.height) };');
     L.push('    gppRequestUiRefresh();');
-    L.push('    var gridReady = await waitFor(function() { return !!document.getElementById("gpc-mobile-palette-grid"); }, 5000);');
+    L.push('    var gridReady = await waitFor(function() { return !!document.getElementById("gpc-pmo-palette-grid"); }, 5000);');
     L.push('    if (!gridReady) throw new Error("Painting Menu Overhaul never mounted its compact palette grid");');
     L.push('    var bottom = document.getElementById("bottomControls");');
-    L.push('    if (!bottom || bottom.style.width || bottom.style.maxWidth || bottom.style.left || bottom.style.right || bottom.style.transform) throw new Error("REGRESSION: Painting Menu Overhaul imposed inline full-width/position styles on #bottomControls");');
-    L.push('    var row = document.querySelector(".gpc-mobile-controls-row");');
+    L.push('    if (!bottom || bottom.style.width || bottom.style.maxWidth) throw new Error("REGRESSION: Painting Menu Overhaul or Paint Menu Controls imposed an inline width override on #bottomControls");');
+    L.push('    var row = document.querySelector(".gpc-pmo-controls-row");');
     L.push('    var enableButton = row && Array.from(row.querySelectorAll("button")).find(function(button) { return button.textContent.trim().indexOf("Enable") === 0; });');
     L.push('    if (!enableButton) throw new Error("Painting Menu Overhaul Enable control was not mounted");');
-    L.push('    if (getComputedStyle(row).justifyContent !== "center") throw new Error("REGRESSION: Painting Menu Overhaul control-row buttons are not centered within .gpc-mobile-controls-row");');
-    L.push('    var paletteWrap = document.querySelector(".gpc-mobile-palette-wrap");');
+    L.push('    if (getComputedStyle(row).justifyContent !== "center") throw new Error("REGRESSION: Painting Menu Overhaul control-row buttons are not centered within .gpc-pmo-controls-row");');
+    L.push('    var paletteWrap = document.querySelector(".gpc-pmo-palette-wrap");');
     L.push('    if (paletteWrap) { var rowPaletteGap = paletteWrap.getBoundingClientRect().top - row.getBoundingClientRect().bottom; if (rowPaletteGap < 2 || rowPaletteGap > 6) throw new Error("REGRESSION: expected a tiny 4px gap between the Painting Menu Overhaul controls row and compact palette, got " + rowPaletteGap + "px"); }');
     L.push('    var originalTryAutoScan = gppTryAutoScan; gppTryAutoScan = function() {};');
     L.push('    var filterButton = Array.from(row.querySelectorAll("button")).find(function(button) { return button.textContent.trim().indexOf("Filter") === 0; });');
@@ -3073,7 +3090,7 @@ function buildDriverScript() {
     L.push('      if (!highlightInput.checked) throw new Error("Highlight nearest checkbox did not enable");');
     L.push('      gppScanFindNearestError = function(_template, options) { return new Promise(function(resolve) { deferred.push({ resolve: resolve, paletteIndex: options.paletteIndex }); }); };');
     L.push('      gppScanStartSelectedColorGlow = function(templateId, gridX, gridY) { glowCalls.push({ templateId: templateId, gridX: gridX, gridY: gridY }); };');
-    L.push('      var swatches = Array.from(document.querySelectorAll("#gpc-mobile-palette-grid .gpp-swatch"));');
+    L.push('      var swatches = Array.from(document.querySelectorAll("#gpc-pmo-palette-grid .gpp-swatch"));');
     L.push('      if (swatches.length < 2) throw new Error("test setup: Painting Menu Overhaul needs two swatches for stale-selection coverage");');
     L.push('      swatches[0].click();');
     L.push('      swatches[1].click();');
@@ -3104,51 +3121,51 @@ function buildDriverScript() {
     L.push('      gppScanClearSelectedColorGlow();');
     L.push('      CanvasRenderingContext2D.prototype.stroke = originalCanvasStroke;');
     L.push('    }');
-    L.push('    var compactBeforeCompletedScan = document.getElementById("gpc-mobile-palette-grid");');
+    L.push('    var compactBeforeCompletedScan = document.getElementById("gpc-pmo-palette-grid");');
     L.push('    var refreshedPerColour = seededPerColour.map(function(entry) { return { index: entry.index, enabled: entry.enabled, correct: 0, wrong: entry.total, missing: 0, unknown: 0, total: entry.total }; });');
     L.push('    template.scanSummary = { scannedAt: new Date().toISOString(), total: seededTotal, correct: 0, wrong: seededTotal, missing: 0, unknown: 0, perColour: refreshedPerColour, states: new Uint8Array(template.width * template.height).fill(core.constants.ERROR_STATE.WRONG) };');
     L.push('    gppRequestUiRefresh();');
-    L.push('    var compactUpdated = await waitFor(function() { var grid = document.getElementById("gpc-mobile-palette-grid"); return grid && grid !== compactBeforeCompletedScan; }, 5000);');
+    L.push('    var compactUpdated = await waitFor(function() { var grid = document.getElementById("gpc-pmo-palette-grid"); return grid && grid !== compactBeforeCompletedScan; }, 5000);');
     L.push('    if (!compactUpdated) throw new Error("REGRESSION: completed Scan progress refresh did not rebuild Painting Menu Overhaul per-colour status/badges");');
-    L.push('    var firstUpdatedBadge = document.querySelector("#gpc-mobile-palette-grid .gpp-swatch-progress");');
+    L.push('    var firstUpdatedBadge = document.querySelector("#gpc-pmo-palette-grid .gpp-swatch-progress");');
     L.push('    if (!firstUpdatedBadge || !firstUpdatedBadge.classList.contains("gpp-swatch-progress-unstarted")) throw new Error("REGRESSION: compact palette did not consume the completed Scan progress status for its per-colour badge");');
-    L.push('    var previewCanvas = document.querySelector(".gpc-mobile-preview-frame canvas");');
+    L.push('    var previewCanvas = document.querySelector(".gpc-pmo-preview-frame canvas");');
     L.push('    if (!previewCanvas) throw new Error("test setup: Painting Menu Overhaul preview canvas was not mounted");');
     L.push('    var scaleRoot = bottom.querySelector(":scope > div");');
-    L.push('    var scaleContent = scaleRoot && scaleRoot.querySelector(":scope > .gpc-mobile-scale-content");');
-    L.push('    var scaleBefore = scaleRoot && scaleRoot.dataset.gpcMobileUiScale;');
+    L.push('    var scaleContent = scaleRoot && scaleRoot.querySelector(":scope > .gpc-pmc-scale-content");');
+    L.push('    var scaleBefore = scaleRoot && scaleRoot.dataset.gpcPmcUiScale;');
     L.push('    var bottomWidthBeforeScale = bottom.getBoundingClientRect().width;');
     L.push('    var surfaceWidthBeforeScale = scaleRoot.getBoundingClientRect().width;');
     L.push('    var surfaceStyle = getComputedStyle(scaleRoot);');
     L.push('    var surfaceContentWidth = surfaceWidthBeforeScale - parseFloat(surfaceStyle.paddingLeft || "0") - parseFloat(surfaceStyle.paddingRight || "0") - parseFloat(surfaceStyle.borderLeftWidth || "0") - parseFloat(surfaceStyle.borderRightWidth || "0");');
     L.push('    var bottomStyleWidthBeforeScale = bottom.style.width;');
     L.push('    var paintMenuToolbar = document.getElementById("gpc-paint-menu-toolbar");');
-    L.push('    if (!scaleContent || !paintMenuToolbar || paintMenuToolbar.parentElement !== scaleContent || !paintMenuToolbar.querySelector("#gpc-compact-brush")) throw new Error("REGRESSION: Paint Menu Controls toolbar (including compact Brush Swap) was not adopted into the Painting Menu Overhaul scale content");');
-    L.push('    var scaleTab = document.getElementById("gpc-mobile-scale-tab");');
-    L.push('    var scalePopover = document.getElementById("gpc-mobile-scale-popover");');
+    L.push('    if (!scaleContent || !paintMenuToolbar || paintMenuToolbar.parentElement !== scaleContent || !paintMenuToolbar.querySelector("#gpc-compact-brush")) throw new Error("REGRESSION: Paint Menu Controls toolbar (including compact Brush Swap) was not mounted inside its own scale content");');
+    L.push('    var scaleTab = document.getElementById("gpc-pmc-scale-tab");');
+    L.push('    var scalePopover = document.getElementById("gpc-pmc-scale-popover");');
     L.push('    var flipPaintMenu = document.getElementById("gpc-paint-flip-pos");');
-    L.push('    if (!scaleTab || !scalePopover || scaleTab.previousElementSibling !== flipPaintMenu || !scalePopover.hidden) throw new Error("REGRESSION: Painting Menu scale tab was not mounted immediately to the right of Paint Menu Controls flip button");');
+    L.push('    if (!scaleTab || !scalePopover || scaleTab.previousElementSibling !== flipPaintMenu || !scalePopover.hidden) throw new Error("REGRESSION: Paint Menu Controls scale tab was not mounted immediately to the right of its flip button");');
     L.push('    var flipPaintStyle = getComputedStyle(flipPaintMenu); var scaleTabStyle = getComputedStyle(scaleTab);');
-    L.push('    if (scaleTab.className !== flipPaintMenu.className || scaleTabStyle.backgroundColor !== flipPaintStyle.backgroundColor || scaleTabStyle.color !== flipPaintStyle.color || scaleTabStyle.borderTopColor !== flipPaintStyle.borderTopColor) throw new Error("REGRESSION: Painting Menu scale tab did not inherit Paint Menu Controls button styling");');
+    L.push('    if (scaleTab.className !== flipPaintMenu.className || scaleTabStyle.backgroundColor !== flipPaintStyle.backgroundColor || scaleTabStyle.color !== flipPaintStyle.color || scaleTabStyle.borderTopColor !== flipPaintStyle.borderTopColor) throw new Error("REGRESSION: Paint Menu Controls scale tab did not inherit its toolbar button styling");');
     L.push('    previewCanvas.click();');
-    L.push('    var placeholderReady = await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && !group.classList.contains("gpc-hidden"); }, 5000);');
+    L.push('    var placeholderReady = await waitFor(function() { var group = document.getElementById("gpc-pmo-placeholder-group"); return group && !group.classList.contains("gpc-hidden"); }, 5000);');
     L.push('    if (!placeholderReady) throw new Error("Painting Menu Overhaul placeholder mode did not open");');
-    L.push('    var uploadPanel = document.getElementById("gpc-mobile-upload-panel");');
+    L.push('    var uploadPanel = document.getElementById("gpc-pmo-upload-panel");');
     L.push('    scaleTab.click();');
-    L.push('    var scaleInput = document.getElementById("gpc-mobile-ui-scale");');
-    L.push('    if (!uploadPanel || !scaleInput || !scalePopover.contains(scaleInput) || scalePopover.hidden || uploadPanel.contains(scaleInput)) throw new Error("REGRESSION: Painting Menu scale slider did not open from its toolbar tab");');
-    L.push('    if (scalePopover.getBoundingClientRect().bottom > scaleTab.getBoundingClientRect().top + 1) throw new Error("REGRESSION: Painting Menu scale popover did not open upward from its toolbar tab");');
-    L.push('    var scaleLabel = scalePopover.querySelector("label[for=\\\"gpc-mobile-ui-scale\\\"]");');
-    L.push('    if (!scaleLabel || scaleLabel.textContent.trim() !== "Painting Menu scale") throw new Error("REGRESSION: scale slider did not use the Painting Menu Overhaul brand");');
-    L.push('    if (scaleInput.value !== "90" || localStorage.getItem("geo++_painting_menu_overhaul_ui_scale") !== "90") throw new Error("REGRESSION: scale setting did not migrate the previous preview value into the Painting Menu Overhaul key");');
+    L.push('    var scaleInput = document.getElementById("gpc-pmc-ui-scale");');
+    L.push('    if (!uploadPanel || !scaleInput || !scalePopover.contains(scaleInput) || scalePopover.hidden || uploadPanel.contains(scaleInput)) throw new Error("REGRESSION: Paint Menu Controls scale slider did not open from its toolbar tab");');
+    L.push('    if (scalePopover.getBoundingClientRect().bottom > scaleTab.getBoundingClientRect().top + 1) throw new Error("REGRESSION: Paint Menu Controls scale popover did not open upward from its toolbar tab");');
+    L.push('    var scaleLabel = scalePopover.querySelector("label[for=\\\"gpc-pmc-ui-scale\\\"]");');
+    L.push('    if (!scaleLabel || scaleLabel.textContent.trim() !== "Paint Menu scale") throw new Error("REGRESSION: scale slider did not use the Paint Menu Controls brand");');
+    L.push('    if (scaleInput.value !== "90" || localStorage.getItem("geo++_paint_menu_controls_ui_scale") !== "90") throw new Error("REGRESSION: scale setting did not migrate the previous preview value into the Paint Menu Controls key");');
     L.push('    scaleInput.value = "80";');
     L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
-    L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== scaleBefore || getComputedStyle(scaleContent).transform === "none") throw new Error("REGRESSION: Painting Menu scale changed while the slider was still being dragged");');
+    L.push('    if (scaleRoot.dataset.gpcPmcUiScale !== scaleBefore || getComputedStyle(scaleContent).transform === "none") throw new Error("REGRESSION: Paint Menu Controls scale changed while the slider was still being dragged");');
     L.push('    scaleInput.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));');
-    L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== scaleBefore) throw new Error("REGRESSION: Painting Menu scale committed before the native range release completed");');
+    L.push('    if (scaleRoot.dataset.gpcPmcUiScale !== scaleBefore) throw new Error("REGRESSION: Paint Menu Controls scale committed before the native range release completed");');
     L.push('    scaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
     L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
-    L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== "80" || getComputedStyle(scaleRoot).transform !== "none" || getComputedStyle(scaleContent).transform === "none" || localStorage.getItem("geo++_painting_menu_overhaul_ui_scale") !== "80") throw new Error("REGRESSION: Painting Menu scale did not apply to content and persist on slider release");');
+    L.push('    if (scaleRoot.dataset.gpcPmcUiScale !== "80" || getComputedStyle(scaleRoot).transform !== "none" || getComputedStyle(scaleContent).transform === "none" || localStorage.getItem("geo++_paint_menu_controls_ui_scale") !== "80") throw new Error("REGRESSION: Paint Menu Controls scale did not apply to content and persist on slider release");');
     L.push('    var toolbarHeightAt80 = paintMenuToolbar.getBoundingClientRect().height;');
     L.push('    if (Math.abs(toolbarHeightAt80 - 19.2) > 1.5) throw new Error("REGRESSION: Paint Menu Controls toolbar did not scale with the surface at 80% (height=" + toolbarHeightAt80 + ")");');
     L.push('    if (Math.abs(paintMenuToolbar.getBoundingClientRect().bottom - scaleRoot.getBoundingClientRect().top) > 1.5) throw new Error("REGRESSION: scaled Paint Menu Controls toolbar is detached from the scaled paint surface at 80%");');
@@ -3156,21 +3173,21 @@ function buildDriverScript() {
     L.push('    var surfaceWidthAt80 = scaleRoot.getBoundingClientRect().width;');
     L.push('    var surfaceHeightAt80 = scaleRoot.getBoundingClientRect().height;');
     L.push('    if (Math.abs(bottomWidthAfterSmallScale - bottomWidthBeforeScale) > 1) throw new Error("REGRESSION: scaling changed #bottomControls outer width at 80% (before=" + bottomWidthBeforeScale + ", after=" + bottomWidthAfterSmallScale + ")");');
-    L.push('    if (Math.abs(surfaceWidthAt80 - surfaceWidthBeforeScale) > 1 || Math.abs(scaleContent.getBoundingClientRect().width - surfaceContentWidth) > 1) throw new Error("REGRESSION: Painting Menu scale changed the visual surface width at 80% instead of only its height");');
+    L.push('    if (Math.abs(surfaceWidthAt80 - surfaceWidthBeforeScale) > 1 || Math.abs(scaleContent.getBoundingClientRect().width - surfaceContentWidth) > 1) throw new Error("REGRESSION: Paint Menu Controls scale changed the visual surface width at 80% instead of only its height");');
     L.push('    if (bottom.style.width !== bottomStyleWidthBeforeScale) throw new Error("REGRESSION: scaling rewrote #bottomControls inline width");');
     L.push('    var placeholderSurfaceHeightAt80 = scaleRoot.getBoundingClientRect().height;');
     L.push('    previewCanvas.click();');
-    L.push('    await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && group.classList.contains("gpc-hidden"); }, 5000);');
+    L.push('    await waitFor(function() { var group = document.getElementById("gpc-pmo-placeholder-group"); return group && group.classList.contains("gpc-hidden"); }, 5000);');
     L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
     L.push('    var nativeSurfaceHeightAt80 = scaleRoot.getBoundingClientRect().height;');
     L.push('    if (Math.abs(nativeSurfaceHeightAt80 - placeholderSurfaceHeightAt80) < 1) throw new Error("REGRESSION: preview-frame switch left the scaled surface height stale until another interaction");');
     L.push('    previewCanvas.click();');
-    L.push('    await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && !group.classList.contains("gpc-hidden") && !!document.getElementById("gpc-mobile-ui-scale"); }, 5000);');
+    L.push('    await waitFor(function() { var group = document.getElementById("gpc-pmo-placeholder-group"); return group && !group.classList.contains("gpc-hidden") && !!document.getElementById("gpc-pmc-ui-scale"); }, 5000);');
     L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
     L.push('    var restoredPlaceholderHeightAt80 = scaleRoot.getBoundingClientRect().height;');
     L.push('    if (Math.abs(restoredPlaceholderHeightAt80 - placeholderSurfaceHeightAt80) > 2) throw new Error("REGRESSION: preview-frame return did not restore the scaled placeholder height immediately");');
-    L.push('    scaleInput = document.getElementById("gpc-mobile-ui-scale");');
-    L.push('    if (!scaleInput || scaleInput.value !== "80") throw new Error("REGRESSION: preview-frame switch did not retain the committed Painting Menu scale");');
+    L.push('    scaleInput = document.getElementById("gpc-pmc-ui-scale");');
+    L.push('    if (!scaleInput || scaleInput.value !== "80") throw new Error("REGRESSION: preview-frame switch did not retain the committed Paint Menu Controls scale");');
     L.push('    scaleInput.value = "120";');
     L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
     L.push('    scaleInput.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));');
@@ -3180,8 +3197,8 @@ function buildDriverScript() {
     L.push('    var surfaceWidthAt120 = scaleRoot.getBoundingClientRect().width;');
     L.push('    var surfaceHeightAt120 = scaleRoot.getBoundingClientRect().height;');
     L.push('    if (Math.abs(bottomWidthAfterLargeScale - bottomWidthBeforeScale) > 1) throw new Error("REGRESSION: scaling changed #bottomControls outer width at 120% (before=" + bottomWidthBeforeScale + ", after=" + bottomWidthAfterLargeScale + ")");');
-    L.push('    if (Math.abs(surfaceWidthAt120 - surfaceWidthBeforeScale) > 1 || Math.abs(scaleContent.getBoundingClientRect().width - surfaceContentWidth) > 1) throw new Error("REGRESSION: Painting Menu scale changed the visual surface width at 120% instead of only its height");');
-    L.push('    if (surfaceHeightAt120 <= surfaceHeightAt80 + 1) throw new Error("REGRESSION: Painting Menu scale did not change the fixed-width surface height (80%=" + surfaceHeightAt80 + ", 120%=" + surfaceHeightAt120 + ")");');
+    L.push('    if (Math.abs(surfaceWidthAt120 - surfaceWidthBeforeScale) > 1 || Math.abs(scaleContent.getBoundingClientRect().width - surfaceContentWidth) > 1) throw new Error("REGRESSION: Paint Menu Controls scale changed the visual surface width at 120% instead of only its height");');
+    L.push('    if (surfaceHeightAt120 <= surfaceHeightAt80 + 1) throw new Error("REGRESSION: Paint Menu Controls scale did not change the fixed-width surface height (80%=" + surfaceHeightAt80 + ", 120%=" + surfaceHeightAt120 + ")");');
     L.push('    if (bottom.style.width !== bottomStyleWidthBeforeScale) throw new Error("REGRESSION: large-scale commit rewrote #bottomControls inline width");');
     L.push('    var toolbarHeightAt120 = paintMenuToolbar.getBoundingClientRect().height;');
     L.push('    if (Math.abs(toolbarHeightAt120 - 28.8) > 1.5) throw new Error("REGRESSION: Paint Menu Controls toolbar did not scale with the surface at 120% (height=" + toolbarHeightAt120 + ")");');
@@ -3190,16 +3207,16 @@ function buildDriverScript() {
     L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
     L.push('    scaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
     L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
-    L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== "100") throw new Error("REGRESSION: Painting Menu scale did not reset after a committed change");');
-    L.push('    if (scaleRoot.style.height) throw new Error("REGRESSION: 100% Painting Menu scale left a fixed inline surface height behind");');
+    L.push('    if (scaleRoot.dataset.gpcPmcUiScale !== "100") throw new Error("REGRESSION: Paint Menu Controls scale did not reset after a committed change");');
+    L.push('    if (scaleRoot.style.height) throw new Error("REGRESSION: 100% Paint Menu Controls scale left a fixed inline surface height behind");');
     L.push('    var paintMenuToggle = paintMenuToolbar.querySelector("#gpc-hide-paint-toggle");');
     L.push('    if (!paintMenuToggle) throw new Error("test setup: Paint Menu Controls toggle was not retained in the scale content");');
     L.push('    paintMenuToggle.click(); paintMenuToggle.click();');
     L.push('    await new Promise(function(resolve) { setTimeout(resolve, 0); });');
-    L.push('    if (document.getElementById("gpc-native-top-bar").parentElement !== scaleContent || document.querySelector(".control-container-colors").parentElement !== scaleContent) throw new Error("REGRESSION: Paint Menu Controls collapse/dock logic no longer works with Painting Menu Overhaul scale content");');
+    L.push('    if (document.getElementById("gpc-native-top-bar").parentElement !== scaleContent || document.querySelector(".control-container-colors").parentElement !== scaleContent) throw new Error("REGRESSION: Paint Menu Controls collapse/dock logic no longer works with its scale content");');
     L.push('    previewCanvas.click();');
-    L.push('    await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && group.classList.contains("gpc-hidden"); }, 5000);');
-    L.push('    return "Painting Menu Overhaul centers its control row, preserves native bar width, sees Simple Black at first mount, exposes a default-off Selected-only highlight, cancels stale A -> B lookups, rebuilds compact status, opens the release-applied scale slider upward from its toolbar tab, and keeps the visual surface width fixed";');
+    L.push('    await waitFor(function() { var group = document.getElementById("gpc-pmo-placeholder-group"); return group && group.classList.contains("gpc-hidden"); }, 5000);');
+    L.push('    return "Painting Menu Overhaul centers its control row, preserves native bar width, sees Simple Black at first mount, exposes a default-off Selected-only highlight, cancels stale A -> B lookups, rebuilds compact status, and asks Paint Menu Controls to remeasure its independently-owned fixed-width scale surface";');
     L.push('  });');
     L.push('');
     L.push('  var resultEl = document.getElementById("test-result");');
@@ -3229,7 +3246,7 @@ async function buildFixtureHtml(forceCanvas2D, minify) {
     const head = buildFixtureHead(forceCanvas2D);
     const source = minify
         ? await readGhostPlusPlusSourceMinified()
-        : readGhostPlusPlusSource() + '\n' + readMobilePaintingSource();
+        : readFixtureFeatureSource();
     const ghostScript = '<script>\n\'use strict\';\n' + source + '\n</script>';
     const driver = buildDriverScript();
     return head + '\n' + ghostScript + '\n' + driver + '\n</body></html>';
