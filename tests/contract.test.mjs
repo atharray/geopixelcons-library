@@ -77,6 +77,10 @@ test('keeps Painting Menu Overhaul responsive and exposes selected-colour scan f
     assert.doesNotMatch(artifact, /root\.style\.transform\s*=/);
     assert.match(artifact, /fixed-width visual surface/);
     assert.match(artifact, /gpc-mobile-scale-content/);
+    assert.match(artifact, /gpc-mobile-scale-tab/);
+    assert.match(artifact, /gpc-mobile-scale-popover/);
+    assert.match(artifact, /gpc-paint-flip-pos/);
+    assert.doesNotMatch(artifact, /function buildMobileUiScaleControl\(/);
     assert.match(artifact, /inverseWidthPercent/);
     assert.match(artifact, /root\.style\.height/);
     assert.match(artifact, /gpc-ctrl-menu-count/);

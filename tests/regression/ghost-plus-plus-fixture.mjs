@@ -160,7 +160,7 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('<button id="clearGhostImageBtn" type="button" style="display:none">Native clear</button>');
     // Deliberately plain site-like paint bar: Painting Menu Overhaul must preserve
     // these natural dimensions rather than forcing a full-viewport width.
-    lines.push('<div id="bottomControls"><div style="padding:12px;box-sizing:border-box"><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button></div><div class="control-container-colors"><button type="button">Native color</button></div></div><div style="position:absolute;top:-24px;left:0;right:0;height:24px" id="gpc-paint-menu-toolbar"><button id="gpc-hide-paint-toggle" type="button">Toggle paint menu</button><button id="gpc-compact-brush" type="button">Brushes</button></div></div>');
+    lines.push('<div id="bottomControls"><div style="padding:12px;box-sizing:border-box"><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button></div><div class="control-container-colors"><button type="button">Native color</button></div></div><div style="position:absolute;top:-24px;left:0;right:0;height:24px" id="gpc-paint-menu-toolbar"><button id="gpc-hide-paint-toggle" type="button">Toggle paint menu</button><button id="gpc-paint-flip-pos" type="button">Flip paint menu</button><button id="gpc-compact-brush" type="button">Brushes</button></div></div>');
     lines.push('<div id="map-shell"><div id="pixel-canvas"></div><canvas id="ghost-canvas"></canvas></div>');
     lines.push('<pre id="test-result" data-status="pending">pending</pre>');
     lines.push('<script>');
@@ -3124,13 +3124,19 @@ function buildDriverScript() {
     L.push('    var bottomStyleWidthBeforeScale = bottom.style.width;');
     L.push('    var paintMenuToolbar = document.getElementById("gpc-paint-menu-toolbar");');
     L.push('    if (!scaleContent || !paintMenuToolbar || paintMenuToolbar.parentElement !== scaleContent || !paintMenuToolbar.querySelector("#gpc-compact-brush")) throw new Error("REGRESSION: Paint Menu Controls toolbar (including compact Brush Swap) was not adopted into the Painting Menu Overhaul scale content");');
+    L.push('    var scaleTab = document.getElementById("gpc-mobile-scale-tab");');
+    L.push('    var scalePopover = document.getElementById("gpc-mobile-scale-popover");');
+    L.push('    var flipPaintMenu = document.getElementById("gpc-paint-flip-pos");');
+    L.push('    if (!scaleTab || !scalePopover || scaleTab.previousElementSibling !== flipPaintMenu || !scalePopover.hidden) throw new Error("REGRESSION: Painting Menu scale tab was not mounted immediately to the right of Paint Menu Controls flip button");');
     L.push('    previewCanvas.click();');
-    L.push('    var placeholderReady = await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && !group.classList.contains("gpc-hidden") && !!document.getElementById("gpc-mobile-ui-scale"); }, 5000);');
-    L.push('    if (!placeholderReady) throw new Error("Painting Menu Overhaul placeholder mode did not expose its scale slider under #gpc-mobile-upload-panel");');
+    L.push('    var placeholderReady = await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && !group.classList.contains("gpc-hidden"); }, 5000);');
+    L.push('    if (!placeholderReady) throw new Error("Painting Menu Overhaul placeholder mode did not open");');
     L.push('    var uploadPanel = document.getElementById("gpc-mobile-upload-panel");');
+    L.push('    scaleTab.click();');
     L.push('    var scaleInput = document.getElementById("gpc-mobile-ui-scale");');
-    L.push('    if (!uploadPanel || !uploadPanel.contains(scaleInput)) throw new Error("REGRESSION: Painting Menu scale slider is not inside #gpc-mobile-upload-panel");');
-    L.push('    var scaleLabel = uploadPanel.querySelector("label[for=\\\"gpc-mobile-ui-scale\\\"]");');
+    L.push('    if (!uploadPanel || !scaleInput || !scalePopover.contains(scaleInput) || scalePopover.hidden || uploadPanel.contains(scaleInput)) throw new Error("REGRESSION: Painting Menu scale slider did not open from its toolbar tab");');
+    L.push('    if (scalePopover.getBoundingClientRect().bottom > scaleTab.getBoundingClientRect().top + 1) throw new Error("REGRESSION: Painting Menu scale popover did not open upward from its toolbar tab");');
+    L.push('    var scaleLabel = scalePopover.querySelector("label[for=\\\"gpc-mobile-ui-scale\\\"]");');
     L.push('    if (!scaleLabel || scaleLabel.textContent.trim() !== "Painting Menu scale") throw new Error("REGRESSION: scale slider did not use the Painting Menu Overhaul brand");');
     L.push('    if (scaleInput.value !== "90" || localStorage.getItem("geo++_painting_menu_overhaul_ui_scale") !== "90") throw new Error("REGRESSION: scale setting did not migrate the previous preview value into the Painting Menu Overhaul key");');
     L.push('    scaleInput.value = "80";');
@@ -3185,7 +3191,7 @@ function buildDriverScript() {
     L.push('    if (document.getElementById("gpc-native-top-bar").parentElement !== scaleContent || document.querySelector(".control-container-colors").parentElement !== scaleContent) throw new Error("REGRESSION: Paint Menu Controls collapse/dock logic no longer works with Painting Menu Overhaul scale content");');
     L.push('    previewCanvas.click();');
     L.push('    await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && group.classList.contains("gpc-hidden"); }, 5000);');
-    L.push('    return "Painting Menu Overhaul centers its control row, preserves native bar width, sees Simple Black at first mount, exposes a default-off Selected-only highlight, cancels stale A -> B lookups, rebuilds compact status, migrates the previous preview scale setting, and applies its Painting Menu scale only on release";');
+    L.push('    return "Painting Menu Overhaul centers its control row, preserves native bar width, sees Simple Black at first mount, exposes a default-off Selected-only highlight, cancels stale A -> B lookups, rebuilds compact status, opens the release-applied scale slider upward from its toolbar tab, and keeps the visual surface width fixed";');
     L.push('  });');
     L.push('');
     L.push('  var resultEl = document.getElementById("test-result");');

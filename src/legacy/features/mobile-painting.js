@@ -164,6 +164,7 @@
             root.style.height = '';
             liveState.uiScalePercent = appliedPercent;
             alignPaintMenuToolbarToScaleSurface();
+            syncMobileUiScaleToolbarControl();
             return;
         }
 
@@ -181,6 +182,7 @@
         liveState.uiScalePercent = appliedPercent;
         measureMobileUiScaleHeight(root, content, scale);
         alignPaintMenuToolbarToScaleSurface();
+        syncMobileUiScaleToolbarControl();
     }
 
     // Narrower than core.js's shared isDarkMode(): only the GeoPixels++
@@ -897,10 +899,27 @@
                 margin-left: 18px; padding-left: 2px; font-size: 11px;
             }
             .gpc-ctrl-menu-option[hidden] { display: none; }
+            #gpc-mobile-scale-tab {
+                pointer-events: auto; width: 28px; height: 24px; margin-left: 2px;
+                border: 1px solid ${tc('#e5e7eb', '#45475a')}; border-bottom: none;
+                border-radius: 8px 8px 0 0; cursor: pointer; font-size: 14px;
+                display: flex; align-items: center; justify-content: center;
+                background: ${tc('#ffffff', '#313244')}; color: ${tc('#64748b', '#cdd6f4')};
+            }
+            #gpc-mobile-scale-tab:hover, #gpc-mobile-scale-tab[aria-expanded="true"] {
+                background: ${tc('#f3f4f6', '#45475a')}; color: ${tc('#111827', '#f5f5f5')};
+            }
+            #gpc-paint-menu-toolbar.gpc-mobile-scale-popover-open { z-index: 1200 !important; }
+            #gpc-mobile-scale-popover {
+                position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+                width: 224px; box-sizing: border-box; padding: 8px; border-radius: 8px;
+                border: 1px solid ${tc('#d1d5db', '#45475a')};
+                background: ${tc('#ffffff', '#1e1e2e')}; color: ${tc('#111827', '#f5f5f5')};
+                box-shadow: 0 8px 24px rgba(0,0,0,.28); pointer-events: auto;
+            }
+            #gpc-mobile-scale-popover[hidden] { display: none; }
             .gpc-mobile-scale-control {
-                width: 100%; box-sizing: border-box; margin-top: 6px; padding-top: 6px;
-                display: flex; flex-direction: column; gap: 3px;
-                border-top: 1px solid ${tc('#e5e7eb', '#45475a')};
+                width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 3px;
             }
             .gpc-mobile-scale-label-row {
                 display: flex; align-items: center; justify-content: space-between; gap: 6px;
@@ -1492,54 +1511,127 @@
     // toggleNativeControlsForPlaceholders' native-switch branch, the one
     // point this column genuinely stops coming back) undoes this, so the
     // real Ghost++ modal never shows the shortened mobile copy.
-    function buildMobileUiScaleControl(container) {
-        const control = document.createElement('div');
-        control.className = 'gpc-mobile-scale-control';
-        control.id = 'gpc-mobile-ui-scale-control';
+    function syncMobileUiScaleToolbarControl() {
+        if (!liveState) return;
+        const input = document.getElementById('gpc-mobile-ui-scale');
+        const value = document.getElementById('gpc-mobile-ui-scale-value');
+        if (input) input.value = String(liveState.uiScalePercent);
+        if (value) value.textContent = `${liveState.uiScalePercent}%`;
+    }
 
-        const labelRow = document.createElement('div');
-        labelRow.className = 'gpc-mobile-scale-label-row';
-        const label = document.createElement('label');
-        label.htmlFor = 'gpc-mobile-ui-scale';
-        label.textContent = 'Painting Menu scale';
-        const value = document.createElement('output');
-        value.className = 'gpc-mobile-scale-value';
-        value.htmlFor = 'gpc-mobile-ui-scale';
-        labelRow.append(label, value);
+    function setMobileUiScalePopoverOpen(open) {
+        const toolbar = document.getElementById('gpc-paint-menu-toolbar');
+        const tab = document.getElementById('gpc-mobile-scale-tab');
+        const popover = document.getElementById('gpc-mobile-scale-popover');
+        if (!toolbar || !tab || !popover) return;
+        popover.hidden = !open;
+        tab.setAttribute('aria-expanded', String(open));
+        toolbar.classList.toggle('gpc-mobile-scale-popover-open', open);
+    }
 
-        const input = document.createElement('input');
-        input.id = 'gpc-mobile-ui-scale';
-        input.className = 'gpc-mobile-scale-input';
-        input.type = 'range';
-        input.min = String(MP_SCALE_MIN);
-        input.max = String(MP_SCALE_MAX);
-        input.step = String(MP_SCALE_STEP);
-        input.value = String(liveState ? liveState.uiScalePercent : readMobileUiScale());
-        input.title = 'Scale the entire Painting Menu Overhaul';
-        input.setAttribute('aria-label', 'Painting Menu Overhaul scale');
+    // The scale lives beside Paint Menu Controls instead of in a temporary
+    // placeholder column. That keeps it available in either preview/native
+    // view and gives it the same scaled, anchored lifecycle as the rest of
+    // the paint-toolbar controls.
+    function ensureMobileUiScaleToolbarControl() {
+        const toolbar = document.getElementById('gpc-paint-menu-toolbar');
+        if (!toolbar) return false;
 
-        const updateReadout = () => { value.textContent = `${input.value}%`; };
-        const commit = () => {
-            const next = clampMobileUiScale(input.value);
-            input.value = String(next);
-            if (liveState && liveState.uiScalePercent === next) {
+        let tab = document.getElementById('gpc-mobile-scale-tab');
+        let popover = document.getElementById('gpc-mobile-scale-popover');
+        if (!tab) {
+            tab = document.createElement('button');
+            tab.type = 'button';
+            tab.id = 'gpc-mobile-scale-tab';
+            tab.textContent = '↕';
+            tab.title = 'Open Painting Menu scale';
+            tab.setAttribute('aria-label', 'Open Painting Menu scale');
+            tab.setAttribute('aria-expanded', 'false');
+            tab.setAttribute('aria-controls', 'gpc-mobile-scale-popover');
+            tab.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const current = document.getElementById('gpc-mobile-scale-popover');
+                setMobileUiScalePopoverOpen(!current || current.hidden);
+                scheduleMobileUiScaleLayout();
+            });
+        }
+
+        const flipButton = document.getElementById('gpc-paint-flip-pos');
+        if (flipButton && tab.previousElementSibling !== flipButton) {
+            flipButton.insertAdjacentElement('afterend', tab);
+        } else if (tab.parentElement !== toolbar) {
+            toolbar.appendChild(tab);
+        }
+
+        if (!popover) {
+            popover = document.createElement('div');
+            popover.id = 'gpc-mobile-scale-popover';
+            popover.hidden = true;
+            popover.setAttribute('role', 'dialog');
+            popover.setAttribute('aria-label', 'Painting Menu scale');
+
+            const control = document.createElement('div');
+            control.className = 'gpc-mobile-scale-control';
+            control.id = 'gpc-mobile-ui-scale-control';
+
+            const labelRow = document.createElement('div');
+            labelRow.className = 'gpc-mobile-scale-label-row';
+            const label = document.createElement('label');
+            label.htmlFor = 'gpc-mobile-ui-scale';
+            label.textContent = 'Painting Menu scale';
+            const value = document.createElement('output');
+            value.id = 'gpc-mobile-ui-scale-value';
+            value.className = 'gpc-mobile-scale-value';
+            value.htmlFor = 'gpc-mobile-ui-scale';
+            labelRow.append(label, value);
+
+            const input = document.createElement('input');
+            input.id = 'gpc-mobile-ui-scale';
+            input.className = 'gpc-mobile-scale-input';
+            input.type = 'range';
+            input.min = String(MP_SCALE_MIN);
+            input.max = String(MP_SCALE_MAX);
+            input.step = String(MP_SCALE_STEP);
+            input.value = String(liveState ? liveState.uiScalePercent : readMobileUiScale());
+            input.title = 'Scale the entire Painting Menu Overhaul';
+            input.setAttribute('aria-label', 'Painting Menu Overhaul scale');
+
+            const updateReadout = () => { value.textContent = `${input.value}%`; };
+            const commit = () => {
+                const next = clampMobileUiScale(input.value);
+                input.value = String(next);
+                if (!liveState || liveState.uiScalePercent !== next) {
+                    applyMobileUiScale(next);
+                    persistMobileUiScale(next);
+                }
                 updateReadout();
-                return;
-            }
-            applyMobileUiScale(next);
-            persistMobileUiScale(next);
+            };
             updateReadout();
-        };
-        updateReadout();
-        // input is deliberately display-only: the surface does not resize
-        // while the user is dragging. change handles keyboard/native commits;
-        // pointerup makes the left-click release boundary explicit for touch
-        // and browsers whose range control delays change until blur.
-        input.addEventListener('input', updateReadout);
-        input.addEventListener('change', commit);
-        input.addEventListener('pointerup', commit);
-        control.append(labelRow, input);
-        container.appendChild(control);
+            // The control is display-only while dragged. `change` covers
+            // keyboard/native commits and `pointerup` preserves the explicit
+            // release-to-apply behavior for mouse and touch input.
+            input.addEventListener('input', updateReadout);
+            input.addEventListener('change', commit);
+            input.addEventListener('pointerup', commit);
+            control.append(labelRow, input);
+            popover.appendChild(control);
+            toolbar.appendChild(popover);
+
+            document.addEventListener('pointerdown', (event) => {
+                if (!popover.hidden && !popover.contains(event.target) && event.target !== tab) {
+                    setMobileUiScalePopoverOpen(false);
+                }
+            }, true);
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && !popover.hidden) {
+                    setMobileUiScalePopoverOpen(false);
+                    tab.focus();
+                }
+            });
+        }
+
+        syncMobileUiScaleToolbarControl();
+        return true;
     }
 
     function buildPlaceholder2Content(container) {
@@ -1564,7 +1656,6 @@
         borrowNode(dropZone, container);
         const manageBtn = document.getElementById('gpp-lib-manage-btn');
         if (manageBtn) borrowNode(manageBtn, container);
-        buildMobileUiScaleControl(container);
     }
 
     // Undoes buildPlaceholder2Content's mobile-only simplification of the
@@ -2870,6 +2961,7 @@
             if (!toolbar.id) toolbar.id = 'gpc-paint-menu-toolbar';
             content.appendChild(toolbar);
         }
+        ensureMobileUiScaleToolbarControl();
         // Paint Menu Controls changes the toolbar's top/bottom edge when its
         // own dock control is pressed. Queue alignment after that click has
         // completed, rather than competing with its live handler.
