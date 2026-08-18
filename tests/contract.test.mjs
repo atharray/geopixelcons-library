@@ -51,6 +51,15 @@ test('includes the opt-in native guild territory auto-loader', () => {
 test('defaults Compact Paint Controls on for new installs', () => {
     assert.match(artifact, /compactPaintOverflow: true/);
 });
+test('keeps compact Ghost++ palette state and size separate from the full menu', () => {
+    assert.match(artifact, /compactPaletteViewMode: 'grid'/);
+    assert.match(artifact, /compactWidth: 260/);
+    assert.match(artifact, /compactHeight: null/);
+    assert.match(artifact, /gppSettings\.compactPaletteViewMode/);
+    assert.match(artifact, /--gpp-compact-width/);
+    assert.match(artifact, /--gpp-compact-height/);
+    assert.match(artifact, /function gppPersistCompactSize\(modal\)/);
+});
 test('includes a confirmation gate for large bulk purchases', () => {
     assert.match(artifact, /BULK_PURCHASE_WARNING_THRESHOLD = 50/);
     assert.match(artifact, /gp-bulk-warning-overlay/);

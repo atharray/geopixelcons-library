@@ -27,7 +27,10 @@
         errorSizeScale: 1,        // multiplier on the base marker size
         autoHideUnfocused: true, // when true, focusing a template hides every other one — see gppApplyAutoHideUnfocused
         grayDisabledSwatches: true, // when false, a disabled palette swatch only gets the diagonal slash, no grayscale/opacity dimming — see gpp-palette.js's .gpp-palette-gray-disabled
-        paletteViewMode: 'grid', // 'grid' | 'list' — see gpp-palette.js's gpp-palette-list-mode
+        paletteViewMode: 'grid', // 'grid' | 'list' for the full Ghost++ menu
+        compactPaletteViewMode: 'grid', // independent 'grid' | 'list' choice for the compact menu
+        compactWidth: 260,       // remembered compact-menu width in layout pixels
+        compactHeight: null,     // remembered compact-menu height; null keeps the automatic first-use height
         uiScale: 1,              // 0.5-1.5; whole-modal transform: scale() factor — see View Settings' "Rescale Ghost++" (gpp-view-settings.js) and gpp-ui-shell.js's --gpp-scale
     });
 
