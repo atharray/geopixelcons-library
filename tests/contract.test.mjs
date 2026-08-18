@@ -70,6 +70,8 @@ test('keeps Mobile Painting responsive and exposes selected-colour scan feedback
     assert.match(artifact, /addEventListener\('change', commit\)/);
     assert.match(artifact, /addEventListener\('pointerup', commit\)/);
     assert.match(artifact, /applyMobileUiScale\(liveState\.uiScalePercent\)/);
+    assert.doesNotMatch(artifact, /root\.style\.width\s*=\s*`\$\{100 \/ scale\}%`/);
+    assert.match(artifact, /CSS transforms do not participate in layout/);
     assert.match(artifact, /gpc-ctrl-menu-count/);
     assert.match(artifact, /Minimum pixel count/);
     assert.match(artifact, /countMinInput\.dispatchEvent\(new Event\('input'/);

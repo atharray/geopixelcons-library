@@ -37,9 +37,10 @@
 
     // Scale the existing inner bottom-controls wrapper instead of
     // #bottomControls itself. The site remains responsible for the outer
-    // panel's natural width; transform-origin keeps the scaled surface
-    // anchored to the paint bar's bottom edge, and the compensated width
-    // keeps its visual width equal to the host panel at every scale.
+    // panel's natural width. Do not compensate the wrapper's width for the
+    // transform: CSS transforms do not participate in layout, and changing
+    // width here changes #bottomControls' intrinsic size (causing clipping at
+    // small scales and a detached outer panel at large scales).
     function applyMobileUiScale(percent) {
         if (!liveState || !liveState.scaleRoot) return;
         const appliedPercent = clampMobileUiScale(percent);
@@ -48,7 +49,6 @@
         root.style.setProperty('--gpc-mobile-ui-scale', String(scale));
         root.style.transformOrigin = 'bottom center';
         root.style.transform = `scale(${scale})`;
-        root.style.width = `${100 / scale}%`;
         root.dataset.gpcMobileUiScale = String(appliedPercent);
         liveState.uiScalePercent = appliedPercent;
     }

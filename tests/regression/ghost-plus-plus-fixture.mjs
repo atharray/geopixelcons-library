@@ -3072,6 +3072,8 @@ function buildDriverScript() {
     L.push('    if (!previewCanvas) throw new Error("test setup: Mobile Painting preview canvas was not mounted");');
     L.push('    var scaleRoot = bottom.querySelector(":scope > div");');
     L.push('    var scaleBefore = scaleRoot && scaleRoot.dataset.gpcMobileUiScale;');
+    L.push('    var bottomWidthBeforeScale = bottom.getBoundingClientRect().width;');
+    L.push('    var bottomStyleWidthBeforeScale = bottom.style.width;');
     L.push('    previewCanvas.click();');
     L.push('    var placeholderReady = await waitFor(function() { var group = document.getElementById("gpc-mobile-placeholder-group"); return group && !group.classList.contains("gpc-hidden") && !!document.getElementById("gpc-mobile-ui-scale"); }, 5000);');
     L.push('    if (!placeholderReady) throw new Error("Mobile Painting placeholder mode did not expose the UI scale slider under #gpc-mobile-upload-panel");');
@@ -3083,6 +3085,15 @@ function buildDriverScript() {
     L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== scaleBefore || getComputedStyle(scaleRoot).transform === "none") throw new Error("REGRESSION: UI scale changed while the slider was still being dragged");');
     L.push('    scaleInput.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));');
     L.push('    if (scaleRoot.dataset.gpcMobileUiScale !== "80" || getComputedStyle(scaleRoot).transform === "none") throw new Error("REGRESSION: UI scale did not apply on slider release");');
+    L.push('    var bottomWidthAfterSmallScale = bottom.getBoundingClientRect().width;');
+    L.push('    if (Math.abs(bottomWidthAfterSmallScale - bottomWidthBeforeScale) > 1) throw new Error("REGRESSION: scaling changed #bottomControls outer width at 80% (before=" + bottomWidthBeforeScale + ", after=" + bottomWidthAfterSmallScale + ")");');
+    L.push('    if (bottom.style.width !== bottomStyleWidthBeforeScale) throw new Error("REGRESSION: scaling rewrote #bottomControls inline width");');
+    L.push('    scaleInput.value = "120";');
+    L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
+    L.push('    scaleInput.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));');
+    L.push('    var bottomWidthAfterLargeScale = bottom.getBoundingClientRect().width;');
+    L.push('    if (Math.abs(bottomWidthAfterLargeScale - bottomWidthBeforeScale) > 1) throw new Error("REGRESSION: scaling changed #bottomControls outer width at 120% (before=" + bottomWidthBeforeScale + ", after=" + bottomWidthAfterLargeScale + ")");');
+    L.push('    if (bottom.style.width !== bottomStyleWidthBeforeScale) throw new Error("REGRESSION: large-scale commit rewrote #bottomControls inline width");');
     L.push('    scaleInput.value = "100";');
     L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
     L.push('    scaleInput.dispatchEvent(new Event("change", { bubbles: true }));');

@@ -1243,6 +1243,7 @@
                 { type: 'fixed', text: 'Mobile Painting (in development): Filter within pixel count now exposes working minimum and maximum inputs' },
                 { type: 'changed', text: 'Mobile Painting (in development): replaced the extra gap between the control row and compact palette with a small amount of breathing room' },
                 { type: 'fixed', text: 'Mobile Painting (in development): added a small amount of breathing room below the control row' },
+                { type: 'fixed', text: 'Mobile Painting (in development): UI scaling no longer changes the site-sized bottom controls container' },
             ]
         },
         {
