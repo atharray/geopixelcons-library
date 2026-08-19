@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.8.0](https://github.com/atharray/geopixelcons-library/compare/v2.7.0...v2.8.0) (2026-08-19)
+
+
+### Features
+
+* **settings:** reorganize extension categories ([a22f283](https://github.com/atharray/geopixelcons-library/commit/a22f283ea1e0965a748c8096230db3a1f181b9a7))
+* **settings:** reorganize extension categories ([c50d3ce](https://github.com/atharray/geopixelcons-library/commit/c50d3ced1e96da84f4beb76f48c0885cb1e458e8))
+
+
+### Bug Fixes
+
+* **paint-menu:** restore native swatch selection ([a43aba0](https://github.com/atharray/geopixelcons-library/commit/a43aba0f4f3be24ba740a267af2f84e25e3881bf))
+* restore Painting Menu swatch selection ([d5add43](https://github.com/atharray/geopixelcons-library/commit/d5add43e88116dde0fea6b11a521c01fde778032))
+* **settings:** clean up deprecated controls ([5b69f18](https://github.com/atharray/geopixelcons-library/commit/5b69f18c37343bc66656a6e59ad9b32ad211cce0))
+* **settings:** dim remembered ghost position ([b21ac57](https://github.com/atharray/geopixelcons-library/commit/b21ac5742a37ed70570413dd995392adec28a603))
+* **settings:** make deprecated category top level ([b146987](https://github.com/atharray/geopixelcons-library/commit/b14698733cdb96f980853d53e394de5aac767a85))
+
 ## [2.7.0](https://github.com/atharray/geopixelcons-library/compare/v2.6.0...v2.7.0) (2026-08-19)
 
 
