@@ -1130,6 +1130,8 @@
         ghostPosRow.appendChild(ghostPosLabel);
         ghostPosRow.appendChild(ghostPosToggle);
         deprecatedSection.appendChild(ghostPosRow);
+        ghostPlusPlusDependentRows.add(ghostPosRow);
+        refreshGhostPlusPlusDependentRows();
 
         [emojiRow, compactRow, noiseRow, shiftRow, inspectRow, smoothZoomRow, debugRow, modernBtnsRow, ghostPosRow]
             .forEach(styleStandaloneExtensionRow);

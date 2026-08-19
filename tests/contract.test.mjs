@@ -57,6 +57,7 @@ test('organizes settings into the requested visual extension categories', () => 
     assert.match(artifact, /movementRow\.insertAdjacentElement\('afterend', smoothZoomRow\)/);
     assert.match(artifact, /deprecatedSection\.appendChild\(modernBtnsRow\)/);
     assert.match(artifact, /deprecatedSection\.appendChild\(ghostPosRow\)/);
+    assert.match(artifact, /ghostPlusPlusDependentRows\.add\(ghostPosRow\)/);
     assert.match(artifact, /function styleStandaloneExtensionRow\(row\)/);
     assert.match(artifact, /styleStandaloneExtensionRow\);/);
 });
