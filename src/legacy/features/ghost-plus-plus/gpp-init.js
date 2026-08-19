@@ -45,6 +45,19 @@
         if (typeof gppLastEnsureOpen === 'function') gppLastEnsureOpen();
     }
 
+    // Lets code outside this file (mobile-painting.js's compact bulk-action/
+    // sort/filter row) guarantee #gpp-palette-section's controller exists
+    // and reflects the currently focused template, WITHOUT
+    // gppEnsureGhostPlusPlusOpen()'s side effect of visibly revealing the
+    // modal. ensureShellBuilt() and a palette-only render pass only ever
+    // touch #gpp-left-body's children, never modalEl's own hidden/visible
+    // class, so this is safe to call at any time, whether or not the modal
+    // has ever been opened this session.
+    let gppLastEnsurePaletteReady = null;
+    function gppEnsurePaletteSectionReady() {
+        if (typeof gppLastEnsurePaletteReady === 'function') gppLastEnsurePaletteReady();
+    }
+
     if (_settings.ghostPlusPlus) {
         function gppStartGhostPlusPlus() {
         try {
@@ -53,6 +66,13 @@
                 gppLastRefreshAll = refreshAll;
                 gppLastEnsureOpen = () => {
                     if (modalEl.classList.contains('gpp-hidden')) open();
+                };
+                gppLastEnsurePaletteReady = () => {
+                    ensureShellBuilt();
+                    const paletteContainer = document.getElementById('gpp-palette-section');
+                    if (typeof gppRenderPalette === 'function' && paletteContainer) {
+                        gppRenderPalette(paletteContainer, gppState.getFocusedTemplate(), refreshAll);
+                    }
                 };
                 const openerRefs = gppReplaceNativeOpener(() => {
                     if (modalEl.classList.contains('gpp-hidden')) open();
@@ -224,8 +244,8 @@
                     const body = document.getElementById('gpp-left-body');
                     body.innerHTML = `
                         <div id="gpp-drop-zone">
-                            <div><strong>Drop, paste, or click to choose template files</strong></div>
-                            <div class="gpp-muted" style="font-size:11px;">PNG, JPEG/JFIF, WebP, or .json (export) supported</div>
+                            <div id="gpp-drop-zone-heading"><strong>Drop, paste, or click to choose template files</strong></div>
+                            <div id="gpp-drop-zone-hint" class="gpp-muted" style="font-size:11px;">PNG, JPEG/JFIF, WebP, or .json (export) supported</div>
                             <button type="button" id="gpp-url-upload-btn">or load from a URL</button>
                             <input id="gpp-file-input" type="file" accept="image/png,image/jpeg,image/jfif,image/webp,application/json,.json" multiple style="display:none;">
                         </div>

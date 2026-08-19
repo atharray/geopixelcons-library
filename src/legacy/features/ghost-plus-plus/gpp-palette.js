@@ -828,6 +828,7 @@
             input.type = 'checkbox';
             input.value = value;
             input.addEventListener('change', () => {
+                gppTryAutoScan();
                 updateFilterButtonLabel();
                 performFilterSort();
             });
@@ -849,7 +850,7 @@
         countMaxInput.className = 'gpp-palette-count-input';
         const countDash = document.createElement('span');
         countDash.textContent = '–'; countDash.style.opacity = '.6';
-        [countMinInput, countMaxInput].forEach(input => input.addEventListener('input', () => performFilterSort()));
+        [countMinInput, countMaxInput].forEach(input => input.addEventListener('input', () => { gppTryAutoScan(); performFilterSort(); }));
         countSubRow.append(countMinInput, countDash, countMaxInput);
         filterMenu.appendChild(countSubRow);
 
@@ -890,7 +891,7 @@
             opt.textContent = text;
             sortSelect.appendChild(opt);
         });
-        sortSelect.addEventListener('change', () => performFilterSort());
+        sortSelect.addEventListener('change', () => { gppTryAutoScan(); performFilterSort(); });
         sortSelect.addEventListener('wheel', event => {
             event.preventDefault();
             const dir = event.deltaY > 0 ? 1 : -1;
@@ -899,6 +900,7 @@
             next = Math.min(Math.max(next, 0), sortSelect.options.length - 1);
             if (next !== sortSelect.selectedIndex) {
                 sortSelect.selectedIndex = next;
+                gppTryAutoScan();
                 performFilterSort();
             }
         }, { passive: false });
@@ -1080,6 +1082,7 @@
         allBtn.addEventListener('click', () => {
             const template = controller.template;
             if (!template) return;
+            gppTryAutoScan();
             template.mask = core.makeFullMask(template.palette.length, template.counts);
             persistAndNotify(template);
         });
@@ -1089,9 +1092,13 @@
             template.mask = new Uint32Array(Math.ceil(template.palette.length / 32));
             persistAndNotify(template);
         });
+        // gppTryAutoScan() covers both activeBtn and ownedBtn below, per
+        // explicit product decision this only applies to Enable actions,
+        // not Disable (noneBtn above is deliberately exempt).
         function applyGamePaletteMask(activeOnly) {
             const template = controller.template;
             if (!template) return;
+            gppTryAutoScan();
             const rows = gppReadGamePalette();
             const allowedHex = new Set();
             rows.forEach(row => {
@@ -1118,6 +1125,7 @@
         enableFilteredBtn.addEventListener('click', () => {
             const template = controller.template;
             if (!template) return;
+            gppTryAutoScan();
             // renderState.visible alone is NOT enough here: typing a search
             // term without ALSO checking "Show search results only"
             // (hideUnmatched) only sorts/glows matches by default — it does
@@ -1380,6 +1388,16 @@
             const previousScrollTop = grid.scrollTop;
             grid.innerHTML = '';
             renderState = { visible, visibleGroups, matching, colourLookup, shownCount: 0 };
+            // Exposed on the controller (not just this closure's local
+            // `renderState`) so mobile-painting.js's compact grid can read the
+            // exact same computed sort/filter order via
+            // gppPaletteControllers.get(document.getElementById(
+            // 'gpp-palette-section')).renderState -- a reference assignment,
+            // so it stays live as renderNextBatch() below mutates shownCount.
+            // Deliberately reusing this already-computed result instead of a
+            // second copy of the sort/filter algorithm, which could drift out
+            // of sync with this one.
+            controller.renderState = renderState;
             renderNextBatch();
             // performFilterSort() runs on every refresh (e.g. a single swatch
             // toggle, via controller.update), which always rebuilds the grid

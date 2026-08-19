@@ -334,15 +334,27 @@
         } finally {
             gppScanRunning = false;
             gppScanningTemplateId = null;
+            // The compact Mobile Painting palette listens through this public
+            // refresh path. The regular Progress panel already re-renders via
+            // its local onChange callback, but without this notification the
+            // borrowed Scan progress button could finish with stale swatch
+            // badges and list progress until some unrelated later refresh.
+            if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
         }
     }
 
-    // Flies the map to the wrong/missing cell nearest the current map centre,
-    // among currently-enabled colours. Grid<->world conversion mirrors
-    // encodePositionHeader/computeGridBounds: gridX/gridY are pure grid
-    // indices, offsetMetersX/Y are added only when converting to world meters
-    // (and subtracted when converting the other way), kept symmetric here.
-    async function gppFlyToNearestError(template) {
+    // Finds the wrong/missing cell nearest the current map centre. The normal
+    // Nearest error action leaves paletteIndex null so it respects the live
+    // enabled-colour mask; Mobile Painting passes one explicit palette index
+    // after a solo-color tap. Keeping that index fixed matters because this
+    // scan yields between chunks and a second tap may change template.mask
+    // before the first search completes.
+    //
+    // Grid<->world conversion mirrors encodePositionHeader/computeGridBounds:
+    // gridX/gridY are pure grid indices, offsetMetersX/Y are added only when
+    // converting to world meters (and subtracted when converting the other
+    // way), kept symmetric here.
+    async function gppScanFindNearestError(template, options = {}) {
         if (!template || !template.position || !template.scanSummary) return { ok: false, reason: 'nothing-to-search' };
         const map = gppGetMap();
         const turf = gppGetTurf();
@@ -350,18 +362,26 @@
         const core = gppCreateCore();
         const ERROR_STATE = core.constants.ERROR_STATE;
         const grid = gppReadGridConstants();
-        const states = template.scanSummary.states;
+        // A large template yields between chunks. Freeze the scan/position
+        // inputs at request time so this one lookup never combines an old
+        // state array with a newly moved template halfway through its loop.
+        const scanSummary = template.scanSummary;
+        const states = scanSummary.states;
+        const originGridX = template.position.gridX;
+        const originGridY = template.position.gridY;
+        const paletteIndex = Number.isInteger(options.paletteIndex) ? options.paletteIndex : null;
+        if (paletteIndex !== null && (paletteIndex < 0 || paletteIndex >= template.palette.length)) {
+            return { ok: false, reason: 'invalid-palette-index' };
+        }
 
         const center = map.getCenter();
         const mercator = turf.toMercator([center.lng, center.lat]);
         const centerX = (mercator[0] - grid.offsetMetersX) / grid.gridSize;
         const centerY = (mercator[1] - grid.offsetMetersY) / grid.gridSize;
 
-        // Search whichever of wrong/missing is currently toggled visible; if
-        // neither is (a scan just finished and the user hasn't opted into a
-        // display yet), search both so the action is still useful.
-        const searchWrong = template._gppShowWrong || !template._gppShowMissing;
-        const searchMissing = template._gppShowMissing || !template._gppShowWrong;
+        const searchWrong = options.searchWrong !== false;
+        const searchMissing = options.searchMissing !== false;
+        if (!searchWrong && !searchMissing) return { ok: false, reason: 'nothing-to-search' };
 
         let nearest = null;
         let nearestDistance = Infinity;
@@ -373,12 +393,16 @@
                 if (state === ERROR_STATE.WRONG && !searchWrong) continue;
                 if (state === ERROR_STATE.MISSING && !searchMissing) continue;
                 if (state !== ERROR_STATE.WRONG && state !== ERROR_STATE.MISSING) continue;
-                const paletteIndex = template.indices[pixel];
-                if (!core.maskHas(template.mask, paletteIndex)) continue; // respect current filter
+                const pixelPaletteIndex = template.indices[pixel];
+                if (paletteIndex !== null) {
+                    if (pixelPaletteIndex !== paletteIndex) continue;
+                } else if (!core.maskHas(template.mask, pixelPaletteIndex)) {
+                    continue; // normal Nearest error: respect current filter
+                }
                 const localX = pixel % template.width;
                 const localY = Math.floor(pixel / template.width);
-                const gridX = template.position.gridX + localX;
-                const gridY = template.position.gridY - localY;
+                const gridX = originGridX + localX;
+                const gridY = originGridY - localY;
                 const dx = gridX - centerX;
                 const dy = gridY - centerY;
                 const distance = dx * dx + dy * dy;
@@ -391,6 +415,26 @@
         }
 
         if (!nearest) return { ok: false, reason: 'none-found' };
+        return { ok: true, gridX: nearest.gridX, gridY: nearest.gridY };
+    }
+
+    // Flies the map to the wrong/missing cell nearest the current map centre,
+    // among currently-enabled colours. This preserves the established button
+    // semantics while sharing the actual search with Mobile Painting's
+    // no-teleport selected-colour helper below.
+    async function gppFlyToNearestError(template) {
+        // Search whichever of wrong/missing is currently toggled visible; if
+        // neither is (a scan just finished and the user hasn't opted into a
+        // display yet), search both so the action is still useful.
+        const nearest = await gppScanFindNearestError(template, {
+            searchWrong: template && (template._gppShowWrong || !template._gppShowMissing),
+            searchMissing: template && (template._gppShowMissing || !template._gppShowWrong),
+        });
+        if (!nearest.ok) return nearest;
+        const map = gppGetMap();
+        const turf = gppGetTurf();
+        if (!map || !turf) return { ok: false, reason: 'map-unavailable' };
+        const grid = gppReadGridConstants();
         const target = turf.toWgs84([
             nearest.gridX * grid.gridSize + grid.offsetMetersX,
             nearest.gridY * grid.gridSize + grid.offsetMetersY,
@@ -406,6 +450,22 @@
         // the button click, not the passive crosshair overlay.
         gppScanStartNearestErrorGlow(template.id, nearest.gridX, nearest.gridY);
         return { ok: true };
+    }
+
+    // Convenience no-teleport entry point for callers that do not need to
+    // invalidate a stale async selection. Mobile Painting uses the lower-level
+    // search plus its own request id, then calls the same pulse starter only
+    // if that selected color is still current. Unlike gppFlyToNearestError(),
+    // this never moves the map.
+    async function gppScanHighlightNearestSelectedColor(template, paletteIndex) {
+        const nearest = await gppScanFindNearestError(template, {
+            paletteIndex,
+            searchWrong: true,
+            searchMissing: true,
+        });
+        if (!nearest.ok) return nearest;
+        gppScanStartSelectedColorGlow(template.id, nearest.gridX, nearest.gridY);
+        return nearest;
     }
 
     // Clearing the error DISPLAY is deliberately separate from discarding the
@@ -456,6 +516,18 @@
     const GPP_NEAREST_ERROR_GLOW_DURATION_MS = 2200;
     const GPP_NEAREST_ERROR_GLOW_PULSE_MS = 650;
 
+    // ── Mobile Painting's selected-colour target glow ────────────────────
+    // Kept distinct from the normal Nearest error glow above: the ordinary
+    // button must stay a small, short amber confirmation after a teleport,
+    // while this opt-in helper is a much larger red guide that deliberately
+    // leaves the map where the painter already is.
+    let gppNearestSelectedColorGlow = null; // { templateId, gridX, gridY, startTime } | null
+    let gppNearestSelectedColorGlowRafId = 0;
+    const GPP_NEAREST_SELECTED_COLOR_GLOW_DURATION_MS = 5200;
+    const GPP_NEAREST_SELECTED_COLOR_GLOW_PULSE_MS = 1300;
+    const GPP_NEAREST_SELECTED_COLOR_GLOW_RING_COUNT = 4;
+    const GPP_NEAREST_SELECTED_COLOR_GLOW_RADIUS_CELLS = 50;
+
     function gppScanStartNearestErrorGlow(templateId, gridX, gridY) {
         gppNearestErrorGlow = { templateId, gridX, gridY, startTime: Date.now() };
         if (gppNearestErrorGlowRafId) return; // animation loop already running, will pick up the new target next frame
@@ -472,6 +544,39 @@
             gppNearestErrorGlowRafId = requestAnimationFrame(tick);
         };
         gppNearestErrorGlowRafId = requestAnimationFrame(tick);
+    }
+
+    function gppScanStartSelectedColorGlow(templateId, gridX, gridY) {
+        gppNearestSelectedColorGlow = { templateId, gridX, gridY, startTime: Date.now() };
+        if (gppNearestSelectedColorGlowRafId) return; // latest target is read on the next frame
+        const tick = () => {
+            if (!gppNearestSelectedColorGlow) { gppNearestSelectedColorGlowRafId = 0; return; }
+            const elapsed = Date.now() - gppNearestSelectedColorGlow.startTime;
+            if (elapsed >= GPP_NEAREST_SELECTED_COLOR_GLOW_DURATION_MS) {
+                gppNearestSelectedColorGlow = null;
+                gppNearestSelectedColorGlowRafId = 0;
+                gppScanRedrawErrors(); // clear the final red rings immediately
+                return;
+            }
+            gppScanRedrawErrors();
+            gppNearestSelectedColorGlowRafId = requestAnimationFrame(tick);
+        };
+        gppNearestSelectedColorGlowRafId = requestAnimationFrame(tick);
+    }
+
+    // The mobile Enable > Selected option is opt-in. Turning it off, changing
+    // to another color, or leaving that mode must immediately remove an
+    // already-visible guide rather than merely blocking a still-pending
+    // lookup. Keeping this separate from the regular amber nearest-error glow
+    // means the normal desktop action remains untouched.
+    function gppScanClearSelectedColorGlow() {
+        if (!gppNearestSelectedColorGlow && !gppNearestSelectedColorGlowRafId) return;
+        gppNearestSelectedColorGlow = null;
+        if (gppNearestSelectedColorGlowRafId) {
+            cancelAnimationFrame(gppNearestSelectedColorGlowRafId);
+            gppNearestSelectedColorGlowRafId = 0;
+        }
+        gppScanRedrawErrors();
     }
 
     // Parented inside the map's own container (not window/body) so
@@ -563,6 +668,55 @@
                     ctx.arc(screen.x, screen.y, ringRadius, 0, Math.PI * 2);
                     ctx.stroke();
                     ctx.globalAlpha = 1;
+                }
+            } catch (_) { /* map/turf not ready this frame — try again next tick */ }
+        }
+
+        // Mobile Painting's opt-in selected-colour guide. This is intentionally
+        // drawn before the normal error-display gates below: it is a direct
+        // response to selecting a color, not an ambient error marker. The
+        // expanding radii use projected grid-cell distance, so the outer ring
+        // aims for 50 cells rather than imitating the regular glow's tiny
+        // fixed CSS-pixel radius. It is capped to the visible viewport so a
+        // close zoom never turns the whole canvas into an off-screen circle.
+        // Keep this direct interaction guide independent of the Ghost++
+        // template opacity. A template can be intentionally hidden while the
+        // user is still painting with Mobile Painting, and the selected-color
+        // feedback must remain visible in that state.
+        if (gppNearestSelectedColorGlow && template && template.id === gppNearestSelectedColorGlow.templateId && map && turf) {
+            const grid = gppReadGridConstants();
+            const elapsed = Date.now() - gppNearestSelectedColorGlow.startTime;
+            try {
+                const worldX = gppNearestSelectedColorGlow.gridX * grid.gridSize + grid.offsetMetersX;
+                const worldY = gppNearestSelectedColorGlow.gridY * grid.gridSize + grid.offsetMetersY;
+                const world = turf.toWgs84([worldX, worldY]);
+                const nextCellWorld = turf.toWgs84([worldX + grid.gridSize, worldY]);
+                const screen = map.project(world);
+                const nextCellScreen = map.project(nextCellWorld);
+                const cellPx = Math.hypot(nextCellScreen.x - screen.x, nextCellScreen.y - screen.y);
+                if (Number.isFinite(screen.x) && Number.isFinite(screen.y) && Number.isFinite(cellPx) && cellPx > 0) {
+                    const overallFade = Math.max(0, 1 - elapsed / GPP_NEAREST_SELECTED_COLOR_GLOW_DURATION_MS);
+                    const pulseBase = (elapsed % GPP_NEAREST_SELECTED_COLOR_GLOW_PULSE_MS) / GPP_NEAREST_SELECTED_COLOR_GLOW_PULSE_MS;
+                    const viewportRadius = Math.max(80, Math.min(rect.width, rect.height) * 0.78);
+                    const minRadius = Math.min(Math.max(6, cellPx), Math.max(24, viewportRadius * 0.12));
+                    const maxRadius = Math.max(
+                        minRadius + 1,
+                        Math.min(viewportRadius, Math.max(80, cellPx * GPP_NEAREST_SELECTED_COLOR_GLOW_RADIUS_CELLS)),
+                    );
+                    ctx.save();
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.shadowColor = 'rgba(239, 68, 68, 0.72)';
+                    ctx.shadowBlur = 8;
+                    ctx.lineWidth = Math.max(2, Math.min(5, cellPx * 0.28));
+                    for (let ring = 0; ring < GPP_NEAREST_SELECTED_COLOR_GLOW_RING_COUNT; ring++) {
+                        const phase = (pulseBase + ring / GPP_NEAREST_SELECTED_COLOR_GLOW_RING_COUNT) % 1;
+                        const radius = minRadius + phase * (maxRadius - minRadius);
+                        ctx.globalAlpha = Math.pow(1 - phase, 1.35) * overallFade;
+                        ctx.beginPath();
+                        ctx.arc(screen.x, screen.y, radius, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
                 }
             } catch (_) { /* map/turf not ready this frame — try again next tick */ }
         }
@@ -746,6 +900,24 @@
         }
     }
 
+    // Per explicit product decision: any use of Enable/Sort/Filter (both
+    // here in gpp-palette.js's own controls, and mobile-painting.js's
+    // mirror of them) first tries to run a scan, so progress numbers stay
+    // fresh without a separate manual "Scan progress" click. Finds and
+    // clicks the REAL button (rather than calling gppScanTemplate directly)
+    // so its own disabled-state guard (no template focused, template not
+    // yet placed on the map, a scan already running) is respected exactly
+    // as it would be for a manual click, with no separate copy of that
+    // guard logic to keep in sync. No-ops quietly if the progress section
+    // isn't in the DOM yet, or its button isn't currently clickable.
+    function gppTryAutoScan() {
+        const container = document.getElementById('gpp-progress-section');
+        if (!container) return;
+        const scanBtn = Array.from(container.querySelectorAll('button'))
+            .find(btn => /^(Scan progress|Scanning…)$/.test(btn.textContent.trim()));
+        if (scanBtn && !scanBtn.disabled) scanBtn.click();
+    }
+
     // ── gpp-init.js render-function contract ───────────────────────────
     // container id: 'gpp-progress-section'. `template` may be null.
     function gppRenderProgressBar(container, template, onChange) {
@@ -777,6 +949,7 @@
         const scanBusy = gppScanIsBusyFor(template);
 
         const scanBtn = document.createElement('button');
+        scanBtn.id = 'gpp-scan-btn-scan'; // exposed so mobile-painting.js can borrow this specific button without guessing by position/text
         scanBtn.type = 'button';
         scanBtn.textContent = scanBusy ? 'Scanning…' : 'Scan progress';
         scanBtn.disabled = !template || !template.position || scanBusy;
@@ -789,6 +962,7 @@
         // independent toggles (matching the native ghost menu's own wrong-
         // vs-missing distinction), not bundled into the scan action itself.
         const showErrBtn = document.createElement('button');
+        showErrBtn.id = 'gpp-scan-btn-show-err';
         showErrBtn.type = 'button';
         const wrongOn = !!(template && template._gppShowWrong);
         showErrBtn.textContent = wrongOn ? 'Hide errors' : 'Show errors';
@@ -798,6 +972,7 @@
         headRow.appendChild(showErrBtn);
 
         const showMissBtn = document.createElement('button');
+        showMissBtn.id = 'gpp-scan-btn-show-miss';
         showMissBtn.type = 'button';
         const missingOn = !!(template && template._gppShowMissing);
         showMissBtn.textContent = missingOn ? 'Hide missing' : 'Show missing';
@@ -807,6 +982,7 @@
         headRow.appendChild(showMissBtn);
 
         const nearestBtn = document.createElement('button');
+        nearestBtn.id = 'gpp-scan-btn-nearest';
         nearestBtn.type = 'button';
         nearestBtn.textContent = 'Nearest error';
         nearestBtn.disabled = !template || !template.scanSummary || scanBusy;
@@ -837,10 +1013,12 @@
         wrap.appendChild(autoscanRow);
 
         const barOuter = document.createElement('div');
+        barOuter.id = 'gpp-scan-bar-outer'; // exposed so mobile-painting.js can borrow just the bar without guessing by position
         barOuter.style.cssText = 'display:flex; height:10px; border-radius:5px; overflow:hidden; background:' + t2('#e5e7eb', '#313244') + ';';
         wrap.appendChild(barOuter);
 
         const summaryLine = document.createElement('div');
+        summaryLine.id = 'gpp-scan-summary-line';
         summaryLine.style.cssText = 'font-size:11px; margin-top:4px; color:' + t2('#475569', '#a6adc8') + ';';
         wrap.appendChild(summaryLine);
 
@@ -912,6 +1090,7 @@
                     if (summary.wrong > 0) parts.push(`${summary.wrong.toLocaleString()} error${summary.wrong === 1 ? '' : 's'}`);
                     if (summary.missing > 0) parts.push(`${summary.missing.toLocaleString()} missing`);
                     const countsLine = document.createElement('div');
+                    countsLine.id = 'gpp-scan-counts-line';
                     countsLine.style.cssText = 'font-size:11px; margin-top:2px; color:' + t2('#475569', '#a6adc8') + ';';
                     countsLine.textContent = parts.join(', ')
                         + ((summary.wrong > 0 && summary.missing > 0) ? ` (${(summary.wrong + summary.missing).toLocaleString()} combined)` : '');
@@ -925,8 +1104,18 @@
         scanBtn.addEventListener('click', () => {
             if (gppScanRunning || !template || !template.position) return;
             const pending = gppScanTemplate(template); // sets gppScanRunning synchronously before its first await
-            onChange();
-            pending.then(() => onChange());
+            // The Progress panel's local refresh is still needed for its own
+            // button state, while the public request keeps Mobile Painting's
+            // borrowed Scan progress control and palette current too. Do this
+            // both after the synchronous busy flip and after the promise
+            // settles; gppScanTemplate's finally is a backstop for all other
+            // scan entry points.
+            const refreshScanUi = () => {
+                if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
+                else onChange(); // keeps this renderer usable before gpp-init wires the public gateway
+            };
+            refreshScanUi();
+            pending.then(refreshScanUi, refreshScanUi);
         });
         showErrBtn.addEventListener('click', () => {
             if (!template || !template.scanSummary) return;

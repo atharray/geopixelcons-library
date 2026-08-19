@@ -825,6 +825,7 @@
             ? 'Loading…'
             : (templates.length === 1 ? '1 template' : (templates.length + ' templates'));
         const manageBtn = document.createElement('button');
+        manageBtn.id = 'gpp-lib-manage-btn'; // exposed so mobile-painting.js can borrow this specific button -- .gpp-lib-btn alone is shared with several buttons inside the manage modal itself
         manageBtn.type = 'button';
         manageBtn.className = 'gpp-lib-btn';
         manageBtn.textContent = '🗂️ Manage';

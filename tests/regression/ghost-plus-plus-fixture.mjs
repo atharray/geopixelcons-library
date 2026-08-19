@@ -1,13 +1,15 @@
 // tests/ghost-plus-plus-fixture.mjs
 //
 // Real, runnable verification of the ASSEMBLED Ghost++ feature (the 12 files
-// under src/features/ghost-plus-plus/) as it is actually shipped inside
+// under src/features/ghost-plus-plus/) plus the Paint Menu Controls and
+// Painting Menu Overhaul features as they are actually shipped inside
 // GeoPixelcons++ — not a per-file syntax check, not a mocked/paraphrased
 // re-implementation. This launches a real locally-installed headless
 // Chrome/Edge against a synthetic fixture page (served over a throwaway
 // local HTTP server with a permissive CSP) that provides GeoPixels' page
 // globals (map/turf/grid/palette/native-ghost bindings) as plain top-level
-// `let` bindings, then inlines the 13 Ghost++ source files (read live from
+// `let` bindings, then inlines the 13 Ghost++ source files and the two
+// paint-menu feature files (read live from
 // disk — never hand-copied) so the real, shipped code executes against
 // them, exercising real cross-file calls.
 //
@@ -62,6 +64,9 @@ import { fileURLToPath } from 'node:url';
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const GPP_DIR = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'ghost-plus-plus');
+const HIDE_PAINT_MENU_FILE = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'hide-paint-menu.js');
+const CONTROLS_SCALE_FILE = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'controls-scale.js');
+const MOBILE_PAINTING_FILE = resolve(TEST_DIR, '..', '..', 'src', 'legacy', 'features', 'mobile-painting.js');
 
 // Exactly the 13-file slice of build.js's SRC_ORDER for Ghost++, in the same
 // order build.js concatenates them in.
@@ -85,6 +90,27 @@ function readGhostPlusPlusSource() {
     return GPP_FILES.map(name => readFileSync(join(GPP_DIR, name), 'utf8')).join('\n');
 }
 
+function readMobilePaintingSource() {
+    return readFileSync(MOBILE_PAINTING_FILE, 'utf8');
+}
+
+function readPaintMenuControlsSource() {
+    return readFileSync(HIDE_PAINT_MENU_FILE, 'utf8');
+}
+
+function readControlsScaleSource() {
+    return readFileSync(CONTROLS_SCALE_FILE, 'utf8');
+}
+
+function readFixtureFeatureSource() {
+    return [
+        readGhostPlusPlusSource(),
+        readPaintMenuControlsSource(),
+        readControlsScaleSource(),
+        readMobilePaintingSource(),
+    ].join('\n');
+}
+
 // Runs the exact same real Ghost++ source this fixture already exercises
 // through terser (build.js's own minification pass — see that file) before
 // injecting it into the page, so the "Minified build" pass below proves
@@ -96,7 +122,7 @@ function readGhostPlusPlusSource() {
 // do with minification.
 async function readGhostPlusPlusSourceMinified() {
     const terser = await import('terser');
-    const result = await terser.minify(readGhostPlusPlusSource(), {
+    const result = await terser.minify(readFixtureFeatureSource(), {
         compress: true,
         mangle: true,
         format: { comments: false, ascii_only: false },
@@ -153,6 +179,11 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('<input id="ghostImageInput" type="file" accept="image/*" style="display:none">');
     lines.push('<button id="initiatePlaceGhostBtn" type="button" style="display:none">Native place</button>');
     lines.push('<button id="clearGhostImageBtn" type="button" style="display:none">Native clear</button>');
+    // Deliberately plain site-like paint bar: Paint Menu Controls must preserve
+    // its natural width while Painting Menu Overhaul can replace live content.
+    // The toolbar is intentionally not pre-created: the fixture executes the
+    // real Paint Menu Controls feature, which owns its creation and scaling.
+    lines.push('<div id="bottomControls"><div style="padding:12px;box-sizing:border-box"><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button><span id="currentEnergyDisplay">1/10</span></div><div class="control-container-colors"><button type="button">Native color</button></div></div></div>');
     lines.push('<div id="map-shell"><div id="pixel-canvas"></div><canvas id="ghost-canvas"></canvas></div>');
     lines.push('<pre id="test-result" data-status="pending">pending</pre>');
     lines.push('<script>');
@@ -284,6 +315,8 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('window.__nativeDrawCalls = 0;');
     lines.push('window.__nativeRegenCalls = 0;');
     lines.push('window.__nativeInitCalls = 0;');
+    lines.push('window.__changedColors = [];');
+    lines.push('function changeColor(hex) { window.__changedColors.push(hex); }');
     lines.push('function drawGhostImageOnCanvas() { window.__nativeDrawCalls++; }');
     lines.push('function regenerateGhostCanvas() { window.__nativeRegenCalls++; }');
     lines.push('function initializeGhostFromStorage() { window.__nativeInitCalls++; }');
@@ -293,7 +326,14 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('    document.getElementById(id).addEventListener(type, function() { window.__nativeControlEvents++; });');
     lines.push('});');
     lines.push('');
-    lines.push('let _settings = { ghostPlusPlus: true };');
+    // Start as though Simple Black was already applied before Painting Menu Overhaul
+    // mounts. The feature must consult the live computed root style instead
+    // of only a later settings refresh.
+    lines.push('document.documentElement.style.colorScheme = "dark";');
+    lines.push('localStorage.setItem("geo++_mobile_painting_ui_scale", "90");');
+    lines.push('let _settings = { ghostPlusPlus: true, mobilePaintingExtension: true, hidePaintMenu: true, compactPaintOverflow: true, controlsUiScale: 100 };');
+    lines.push('function saveSettings(settings) { localStorage.setItem("geopixelcons_settings", JSON.stringify(settings)); }');
+    lines.push('let gpcControlsScale = null;');
     lines.push('function gpcMobileOverhaulAvailable() { return false; }');
     lines.push('let _featureStatus = {};');
     lines.push('function dbgPush(message, opts) { console.warn("[dbgPush]", message, opts); }');
@@ -893,6 +933,40 @@ function buildDriverScript() {
     L.push('    return "a template\'s Scan/error/missing/nearest/clear buttons only show Scanning…/disabled while THAT template is the one actually being scanned — a different template\'s in-flight background scan no longer falsely blocks or mislabels this one\'s Progress section";');
     L.push('  });');
     L.push('');
+
+    // ---- item scan.manual-button-refreshes-public-subscribers ----
+    // The compact Painting Menu Overhaul palette subscribes through
+    // gppSubscribeUiRefresh(). Its borrowed Scan progress button used to call
+    // only the private panel callback, leaving mobile checkmarks/status stale
+    // even when the scan itself completed. Exercise the real button and prove
+    // the public gateway fires both at its synchronous busy transition and at
+    // completion.
+    L.push('  await step("scan.manual-button-refreshes-public-subscribers", async function() {');
+    L.push('    var bitmap = await makeTileBitmap("rgb(0,255,0)");');
+    L.push('    var priorTile = tileImageCache.get("0,0");');
+    L.push('    tileImageCache.set("0,0", { colorBitmap: bitmap });');
+    L.push('    var container = document.createElement("div");');
+    L.push('    var refreshStates = [];');
+    L.push('    var unsubscribe = gppSubscribeUiRefresh(function() { refreshStates.push(!!gppScanRunning); });');
+    L.push('    try {');
+    L.push('      var ready = await waitFor(function() { return !gppScanRunning; }, 8000);');
+    L.push('      if (!ready) throw new Error("test setup: a prior scan never settled before clicking the manual Scan progress button");');
+    L.push('      gppRenderProgressBar(container, template, function() {});');
+    L.push('      var scanBtn = container.querySelector("#gpp-scan-btn-scan");');
+    L.push('      if (!scanBtn || scanBtn.disabled) throw new Error("test setup: expected an enabled manual Scan progress button");');
+    L.push('      scanBtn.click();');
+    L.push('      if (refreshStates[0] !== true) throw new Error("REGRESSION: clicking Scan progress did not synchronously notify public UI subscribers of the busy state: " + JSON.stringify(refreshStates));');
+    L.push('      var settled = await waitFor(function() { return !gppScanRunning && refreshStates.indexOf(false) !== -1; }, 8000);');
+    L.push('      if (!settled) throw new Error("REGRESSION: clicking Scan progress did not notify public UI subscribers after completion: " + JSON.stringify(refreshStates));');
+    L.push('    } finally {');
+    L.push('      unsubscribe();');
+    L.push('      container.remove();');
+    L.push('      if (priorTile) tileImageCache.set("0,0", priorTile); else tileImageCache.delete("0,0");');
+    L.push('      bitmap.close();');
+    L.push('    }');
+    L.push('    return "clicking the real Scan progress button now notifies public UI subscribers at both busy and completion states, so Painting Menu Overhaul can refresh its palette status without waiting for its fallback poll";');
+    L.push('  });');
+    L.push('');
     // ---- open real modal (integration + needed for item i) ----
     // gpp-native-shim.js's blocked-click handler (already exercised once by
     // item "f", which clicked the blocked native loadGhostImageBtnLabel)
@@ -1184,6 +1258,64 @@ function buildDriverScript() {
     L.push('    gppScanRedrawErrors();'); // exercises the affine-transform crosshair path with the glow active — must not throw
     L.push('    gppNearestErrorGlow = null;'); // let the glow\'s own rAF loop stop on its next tick instead of running for its full ~2.2s during later steps
     L.push('    return "gppLibraryFlyToTemplate clamps to zoom 12.5 as a floor only; gppFlyToNearestError clamps to zoom 17, finds the seeded WRONG cell, and starts the target-cell glow at the exact right grid cell";');
+    L.push('  });');
+    L.push('');
+
+    // ---- item scan.selected-colour-highlight-no-teleport ----
+    // Enable > Selected's optional guide must search the newly selected
+    // palette index only, then paint its own red multi-ring target without
+    // repurposing the regular Nearest error action (which jumps the map).
+    L.push('  await step("scan.selected-colour-highlight-no-teleport", async function() {');
+    L.push('    var ERROR_STATE = core.constants.ERROR_STATE;');
+    L.push('    var targetPaletteIndex = template.indices[1];');
+    L.push('    var otherPaletteIndex = template.indices[0];');
+    L.push('    if (targetPaletteIndex === otherPaletteIndex) throw new Error("test setup: fixture needs distinct palette indexes for selected-colour scan coverage");');
+    L.push('    var savedSummary = template.scanSummary;');
+    L.push('    var fakeStates = new Uint8Array(template.width * template.height).fill(ERROR_STATE.CORRECT);');
+    L.push('    fakeStates[0] = ERROR_STATE.WRONG;'); // nearest by distance, but deliberately the OTHER colour
+    L.push('    fakeStates[1] = ERROR_STATE.MISSING;'); // selected colour — must win even when it is not nearest overall
+    L.push('    template.scanSummary = { scannedAt: new Date().toISOString(), total: fakeStates.length, correct: fakeStates.length - 2, wrong: 1, missing: 1, unknown: 0, perColour: savedSummary.perColour, states: fakeStates };');
+    L.push('    template.mask = core.makeFullMask(template.palette.length, template.counts);');
+    L.push('    var jumpsBefore = __jumpToCalls.length;');
+    L.push('    var flightsBefore = __flyToCalls.length;');
+    L.push('    gppNearestSelectedColorGlow = null;');
+    L.push('    try {');
+    L.push('      var result = await gppScanHighlightNearestSelectedColor(template, targetPaletteIndex);');
+    L.push('      if (!result.ok) throw new Error("selected-colour nearest scan did not find the seeded target: " + JSON.stringify(result));');
+    L.push('      if (result.gridX !== template.position.gridX + 1 || result.gridY !== template.position.gridY) throw new Error("selected-colour nearest scan chose (" + result.gridX + "," + result.gridY + ") instead of the selected-colour target (" + (template.position.gridX + 1) + "," + template.position.gridY + ")");');
+    L.push('      if (__jumpToCalls.length !== jumpsBefore || __flyToCalls.length !== flightsBefore) throw new Error("REGRESSION: selected-colour highlight moved the map (jump delta=" + (__jumpToCalls.length - jumpsBefore) + ", fly delta=" + (__flyToCalls.length - flightsBefore) + ")");');
+    L.push('      if (!gppNearestSelectedColorGlow || gppNearestSelectedColorGlow.templateId !== template.id) throw new Error("selected-colour scan did not start its separate red pulse state");');
+    L.push('      if (gppNearestSelectedColorGlow.gridX !== result.gridX || gppNearestSelectedColorGlow.gridY !== result.gridY) throw new Error("selected-colour pulse target did not match its selected-colour scan result");');
+    L.push('      gppScanRedrawErrors();'); // smoke test the four-ring canvas drawing path
+    L.push('      gppScanClearSelectedColorGlow();');
+    L.push('      if (gppNearestSelectedColorGlow || gppNearestSelectedColorGlowRafId) throw new Error("selected-colour pulse clear did not synchronously remove the active guide");');
+    L.push('    } finally {');
+    L.push('      template.scanSummary = savedSummary;');
+    L.push('      gppScanClearSelectedColorGlow();');
+    L.push('    }');
+    L.push('    return "the selected-colour nearest helper ignores a closer wrong pixel of another colour, starts and clears its own pulse at the selected-colour cell, and never calls jumpTo/flyTo";');
+    L.push('  });');
+    L.push('');
+    // ---- item scan.nearest-search-snapshots-scan-and-position ----
+    // A full nearest lookup yields between large chunks. It must retain both
+    // its scan state and the template position captured at launch rather than
+    // mixing the first chunk with a later scan/drag update.
+    L.push('  await step("scan.nearest-search-snapshots-scan-and-position", async function() {');
+    L.push('    var ERROR_STATE = core.constants.ERROR_STATE;');
+    L.push('    var targetPaletteIndex = template.indices[1];');
+    L.push('    var stateCount = 65537;');
+    L.push('    var initialStates = new Uint8Array(stateCount).fill(ERROR_STATE.CORRECT);');
+    L.push('    initialStates[stateCount - 1] = ERROR_STATE.MISSING;');
+    L.push('    var indexed = new Uint16Array(stateCount);');
+    L.push('    indexed[stateCount - 1] = targetPaletteIndex;');
+    L.push('    var transientTemplate = { id: "snapshot-search", position: { gridX: 321, gridY: 654 }, scanSummary: { states: initialStates }, palette: template.palette, indices: indexed, width: stateCount, height: 1, mask: core.makeFullMask(template.palette.length, template.counts) };');
+    L.push('    var pending = gppScanFindNearestError(transientTemplate, { paletteIndex: targetPaletteIndex });');
+    L.push('    transientTemplate.position.gridX = 9999;');
+    L.push('    transientTemplate.position.gridY = 9999;');
+    L.push('    transientTemplate.scanSummary = { states: new Uint8Array(stateCount).fill(ERROR_STATE.CORRECT) };');
+    L.push('    var result = await pending;');
+    L.push('    if (!result.ok || result.gridX !== 321 + stateCount - 1 || result.gridY !== 654) throw new Error("nearest lookup mixed in a later scan or position: " + JSON.stringify(result));');
+    L.push('    return "gppScanFindNearestError snapshots both scan states and grid origin before yielding between chunks";');
     L.push('  });');
     L.push('');
     // ---- item manage.grid-view ----
@@ -2731,7 +2863,7 @@ function buildDriverScript() {
     L.push('');
     // ---- item uiShell.narrow-width-toggle-right-swaps-panels ----
     // Feature guard for explicit user request: emulate the legacy Ghost
-    // Template Manager's own gpc-mobile-compat/gpc-mobile-preview-open
+    // Template Manager's own gpc-pmo-compat/gpc-pmo-preview-open
     // pattern -- at a narrow modal width, the SAME toggle-right button
     // should swap between showing the left panel fully or the right panel
     // fully, instead of the plain 34px-stub partial collapse used at wide
@@ -2897,6 +3029,244 @@ function buildDriverScript() {
     L.push('    return "a tooltip left open (continuously hovered, no mouseleave) stays visible through ~9s and auto-dismisses on its own by ~11.5s, matching the requested 10s auto-dismiss";');
     L.push('  });');
     L.push('');
+    // ---- item controls-scale ----
+    // The side clusters remain live native containers. This checks that one
+    // release-applied slider scales both clusters without wrapping/reparenting
+    // either, and that late extension buttons inherit the chosen scale.
+    L.push('  await step("controls-scale", async function() {');
+    L.push('    var controlsLeft = document.createElement("div"); controlsLeft.id = "controls-left"; controlsLeft.style.cssText = "position:fixed;top:12px;left:12px;display:flex;gap:4px"; controlsLeft.append(Object.assign(document.createElement("button"), { type: "button", textContent: "Left control" }));');
+    L.push('    var controlsRight = document.createElement("div"); controlsRight.id = "controls-right"; controlsRight.style.cssText = "position:fixed;top:12px;right:12px;display:flex;gap:4px"; controlsRight.append(Object.assign(document.createElement("button"), { type: "button", textContent: "Right control" }));');
+    L.push('    document.body.append(controlsLeft, controlsRight);');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(resolve); });');
+    L.push('    if (!controlsLeft || !controlsRight || !gpcControlsScale) throw new Error("test setup: Controls Scale did not mount for both native clusters");');
+    L.push('    if (controlsLeft.style.scale || controlsRight.style.scale) throw new Error("REGRESSION: Controls Scale changed native clusters at its default 100% value");');
+    L.push('    gpcControlsScale.open();');
+    L.push('    var controlsScalePopover = document.getElementById("gpc-controls-scale-popover");');
+    L.push('    var controlsScaleInput = document.getElementById("gpc-controls-ui-scale");');
+    L.push('    if (!controlsScalePopover || controlsScalePopover.hidden || !controlsScaleInput) throw new Error("REGRESSION: Controls Scale did not open its dropdown setting slider");');
+    L.push('    controlsScaleInput.value = "80"; controlsScaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
+    L.push('    if (controlsLeft.style.scale || controlsRight.style.scale) throw new Error("REGRESSION: Controls Scale applied while the slider was still being dragged");');
+    L.push('    controlsScaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(resolve); });');
+    L.push('    var leftOrigin = controlsLeft.style.transformOrigin; var rightOrigin = controlsRight.style.transformOrigin;');
+    L.push('    if (controlsLeft.style.scale !== "0.8" || controlsRight.style.scale !== "0.8" || (leftOrigin !== "top left" && leftOrigin !== "left top") || (rightOrigin !== "top right" && rightOrigin !== "right top")) throw new Error("REGRESSION: Controls Scale did not apply the same anchored scale to both side clusters: " + JSON.stringify({ leftScale: controlsLeft.style.scale, rightScale: controlsRight.style.scale, leftOrigin: leftOrigin, rightOrigin: rightOrigin }));');
+    L.push('    var persistedControlsScale = JSON.parse(localStorage.getItem("geopixelcons_settings") || "{}").controlsUiScale;');
+    L.push('    if (persistedControlsScale !== 80) throw new Error("REGRESSION: Controls Scale did not persist its committed value");');
+    L.push('    var lateControl = document.createElement("button"); lateControl.textContent = "Late control"; lateControl.style.height = "40px"; controlsRight.appendChild(lateControl);');
+    L.push('    if (Math.abs(lateControl.getBoundingClientRect().height - 32) > 1) throw new Error("REGRESSION: a late controls-right button did not inherit the active cluster scale");');
+    L.push('    controlsScaleInput.value = "100"; controlsScaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(resolve); });');
+    L.push('    if (controlsLeft.style.scale || controlsRight.style.scale) throw new Error("REGRESSION: Controls Scale did not restore native clusters at 100%");');
+    L.push('    return "one release-applied slider scales both untouched native side clusters, persists the shared value, and restores their original sizing at 100%";');
+    L.push('  });');
+    L.push('');
+    // ---- item mobile-painting.live-controller ----
+    // Loads the real Painting Menu Overhaul source after Ghost++ in the same browser
+    // page. Covers the regressions that a scan-only fixture cannot: natural
+    // host width, Simple Black present before mount, compact palette status
+    // rebuild after the public completed-scan refresh, and a rapid A -> B
+    // selection cancelling A.  The preceding manual-scan test separately
+    // proves that its button emits that public refresh synchronously and when
+    // the scan settles.
+    L.push('  await step("painting-menu-overhaul.live-controller", async function() {');
+    L.push('    if (!template || !template.id) throw new Error("test setup: expected the original template id for Painting Menu Overhaul coverage");');
+    L.push('    // The preceding compact-menu scenario intentionally leaves the full Ghost++ palette in List mode. Force Grid here because the assertion below exercises the grid-only circular progress badge; List mode instead renders its progress as text and a bar.');
+    L.push('    gppSettings.paletteViewMode = "grid"; gppState.saveSettings();');
+    L.push('    var originalTemplateId = template.id;');
+    L.push('    await gppState.focusTemplate(originalTemplateId);');
+    L.push('    template = gppState.getFocusedTemplate();');
+    L.push('    if (!template || template.id !== originalTemplateId || !template.position) throw new Error("test setup: expected the current positioned original template for Painting Menu Overhaul coverage");');
+    L.push('    var focusScanSettled = await waitFor(function() { return !gppScanRunning; }, 8000);');
+    L.push('    if (!focusScanSettled) throw new Error("test setup: focus-triggered scan did not settle before rapid-selection coverage");');
+    L.push('    var seededTotal = 0, seededPerColour = [];');
+    L.push('    for (var seededIndex = 0; seededIndex < template.palette.length; seededIndex++) { var count = template.counts[seededIndex] || 0; if (!count) continue; seededTotal += count; seededPerColour.push({ index: seededIndex, enabled: true, correct: count, wrong: 0, missing: 0, unknown: 0, total: count }); }');
+    L.push('    template.mask = core.makeFullMask(template.palette.length, template.counts);');
+    L.push('    template.scanSummary = { scannedAt: new Date().toISOString(), total: seededTotal, correct: seededTotal, wrong: 0, missing: 0, unknown: 0, perColour: seededPerColour, states: new Uint8Array(template.width * template.height) };');
+    L.push('    gppRequestUiRefresh();');
+    L.push('    var gridReady = await waitFor(function() { return !!document.getElementById("gpc-pmo-palette-grid"); }, 5000);');
+    L.push('    if (!gridReady) throw new Error("Painting Menu Overhaul never mounted its compact palette grid");');
+    L.push('    var bottom = document.getElementById("bottomControls");');
+    L.push('    if (!bottom || bottom.style.width || bottom.style.maxWidth) throw new Error("REGRESSION: Painting Menu Overhaul or Paint Menu Controls imposed an inline width override on #bottomControls");');
+    L.push('    var row = document.querySelector(".gpc-pmo-controls-row");');
+    L.push('    var enableButton = row && Array.from(row.querySelectorAll("button")).find(function(button) { return button.textContent.trim().indexOf("Enable") === 0; });');
+    L.push('    if (!enableButton) throw new Error("Painting Menu Overhaul Enable control was not mounted");');
+    L.push('    if (getComputedStyle(row).justifyContent !== "center") throw new Error("REGRESSION: Painting Menu Overhaul control-row buttons are not centered within .gpc-pmo-controls-row");');
+    L.push('    var paletteWrap = document.querySelector(".gpc-pmo-palette-wrap");');
+    L.push('    if (paletteWrap) { var rowPaletteGap = paletteWrap.getBoundingClientRect().top - row.getBoundingClientRect().bottom; if (rowPaletteGap < 2 || rowPaletteGap > 6) throw new Error("REGRESSION: expected a tiny 4px gap between the Painting Menu Overhaul controls row and compact palette, got " + rowPaletteGap + "px"); }');
+    L.push('    var originalTryAutoScan = gppTryAutoScan; gppTryAutoScan = function() {};');
+    L.push('    var filterButton = Array.from(row.querySelectorAll("button")).find(function(button) { return button.textContent.trim().indexOf("Filter") === 0; });');
+    L.push('    if (!filterButton) throw new Error("Painting Menu Overhaul Filter control was not mounted");');
+    L.push('    filterButton.click();');
+    L.push('    var filterMenu = filterButton.parentElement.querySelector(".gpc-ctrl-menu");');
+    L.push('    var countOption = filterMenu && Array.from(filterMenu.querySelectorAll("label.gpc-ctrl-menu-option")).find(function(option) { return option.textContent.indexOf("Filter within pixel count") !== -1; });');
+    L.push('    var countCheckbox = countOption && countOption.querySelector("input[type=checkbox]");');
+    L.push('    if (!countCheckbox) throw new Error("Painting Menu Overhaul Filter is missing the pixel-count option");');
+    L.push('    countCheckbox.click();');
+    L.push('    var compactCountRow = filterMenu.querySelector(".gpc-ctrl-menu-count");');
+    L.push('    var compactCountInputs = compactCountRow && compactCountRow.querySelectorAll("input[type=number]");');
+    L.push('    if (!compactCountRow || compactCountRow.hidden || !compactCountInputs || compactCountInputs.length !== 2) throw new Error("REGRESSION: Filter within pixel count did not reveal its min/max inputs");');
+    L.push('    compactCountInputs[0].value = "2"; compactCountInputs[0].dispatchEvent(new Event("input", { bubbles: true }));');
+    L.push('    compactCountInputs[1].value = "9"; compactCountInputs[1].dispatchEvent(new Event("input", { bubbles: true }));');
+    L.push('    var realCountInputs = document.querySelectorAll("#gpp-palette-section .gpp-palette-filter-count .gpp-palette-count-input");');
+    L.push('    if (realCountInputs.length !== 2 || realCountInputs[0].value !== "2" || realCountInputs[1].value !== "9") throw new Error("REGRESSION: compact pixel-count range did not forward to Ghost++: " + Array.from(realCountInputs).map(function(input) { return input.value; }).join(","));');
+    L.push('    countCheckbox.click(); document.body.click();');
+    L.push('    if (getComputedStyle(enableButton).backgroundColor !== "rgb(30, 30, 46)") throw new Error("REGRESSION: Simple Black already applied at mount did not dark-theme Painting Menu Overhaul controls: " + getComputedStyle(enableButton).backgroundColor);');
+    L.push('    var originalFindNearest = gppScanFindNearestError;');
+    L.push('    var originalStartGlow = gppScanStartSelectedColorGlow;');
+    L.push('    var originalClearGlow = gppScanClearSelectedColorGlow;');
+    L.push('    var deferred = [], glowCalls = [], clearedPulseCount = 0;');
+    L.push('    try {');
+    L.push('      gppTryAutoScan = function() {};');
+    L.push('      enableButton.click();');
+    L.push('      var enableMenu = enableButton.parentElement.querySelector(".gpc-ctrl-menu");');
+    L.push('      var selectedOption = Array.from(enableMenu.querySelectorAll(".gpc-ctrl-menu-option")).find(function(option) { return option.textContent.trim() === "Selected"; });');
+    L.push('      if (!selectedOption) throw new Error("Painting Menu Overhaul Enable > Selected option is missing");');
+    L.push('      selectedOption.click();');
+    L.push('      var highlightOption = enableMenu.querySelector("label.gpc-ctrl-menu-option-nested");');
+    L.push('      var highlightInput = highlightOption && highlightOption.querySelector("input[type=checkbox]");');
+    L.push('      if (!highlightOption || highlightOption.hidden || !highlightInput || highlightInput.checked) throw new Error("Highlight nearest must appear only under Selected and default unchecked");');
+    L.push('      highlightInput.click();');
+    L.push('      if (!highlightInput.checked) throw new Error("Highlight nearest checkbox did not enable");');
+    L.push('      gppScanFindNearestError = function(_template, options) { return new Promise(function(resolve) { deferred.push({ resolve: resolve, paletteIndex: options.paletteIndex }); }); };');
+    L.push('      gppScanStartSelectedColorGlow = function(templateId, gridX, gridY) { glowCalls.push({ templateId: templateId, gridX: gridX, gridY: gridY }); };');
+    L.push('      var swatches = Array.from(document.querySelectorAll("#gpc-pmo-palette-grid .gpp-swatch"));');
+    L.push('      if (swatches.length < 2) throw new Error("test setup: Painting Menu Overhaul needs two swatches for stale-selection coverage");');
+    L.push('      swatches[0].click();');
+    L.push('      swatches[1].click();');
+    L.push('      if (deferred.length !== 2) throw new Error("test setup: expected one nearest lookup per rapid A -> B selection, got " + deferred.length + " (busy=" + gppScanRunning + ", focused=" + (gppState.getFocusedTemplate() && gppState.getFocusedTemplate().id) + ", summary=" + !!template.scanSummary + ", changed=" + JSON.stringify(window.__changedColors.slice(-2)) + ")");');
+    L.push('      deferred[0].resolve({ ok: true, gridX: 111, gridY: 111 });');
+    L.push('      await new Promise(function(resolve) { setTimeout(resolve, 0); });');
+    L.push('      if (deferred.length !== 2 || glowCalls.length !== 0) throw new Error("REGRESSION: stale A lookup retried or glowed after B became current (lookups=" + deferred.length + ", glows=" + glowCalls.length + ")");');
+    L.push('      deferred[1].resolve({ ok: true, gridX: 222, gridY: 222 });');
+    L.push('      await new Promise(function(resolve) { setTimeout(resolve, 0); });');
+    L.push('      if (glowCalls.length !== 1 || glowCalls[0].gridX !== 222 || glowCalls[0].gridY !== 222) throw new Error("current B lookup did not produce exactly its own selected-colour pulse: " + JSON.stringify(glowCalls));');
+    L.push('      gppScanClearSelectedColorGlow = function() { clearedPulseCount++; };');
+    L.push('      highlightInput.click();');
+    L.push('      if (highlightInput.checked || clearedPulseCount !== 1) throw new Error("REGRESSION: turning off Highlight nearest did not immediately clear its active selected-colour pulse");');
+    L.push('    } finally {');
+    L.push('      gppScanFindNearestError = originalFindNearest;');
+    L.push('      gppScanStartSelectedColorGlow = originalStartGlow;');
+    L.push('      gppScanClearSelectedColorGlow = originalClearGlow;');
+    L.push('      gppTryAutoScan = originalTryAutoScan;');
+    L.push('    }');
+    L.push('    var originalCanvasStroke = CanvasRenderingContext2D.prototype.stroke;');
+    L.push('    var selectedPulseStrokeCount = 0;');
+    L.push('    CanvasRenderingContext2D.prototype.stroke = function() { var strokeColor = String(this.strokeStyle || "").replace(/\\s/g, "").toLowerCase(); if (strokeColor === "#ef4444" || strokeColor === "rgb(239,68,68)") selectedPulseStrokeCount++; return originalCanvasStroke.apply(this, arguments); };');
+    L.push('    try {');
+    L.push('      gppScanStartSelectedColorGlow(template.id, template.position.gridX, template.position.gridY);');
+    L.push('      var pulsePainted = await waitFor(function() { return selectedPulseStrokeCount > 0; }, 1500);');
+    L.push('      if (!pulsePainted) throw new Error("REGRESSION: selected-colour pulse started but did not paint any red rings to the scan overlay canvas");');
+    L.push('    } finally {');
+    L.push('      gppScanClearSelectedColorGlow();');
+    L.push('      CanvasRenderingContext2D.prototype.stroke = originalCanvasStroke;');
+    L.push('    }');
+    L.push('    var compactBeforeCompletedScan = document.getElementById("gpc-pmo-palette-grid");');
+    L.push('    var refreshedPerColour = seededPerColour.map(function(entry) { return { index: entry.index, enabled: entry.enabled, correct: 0, wrong: entry.total, missing: 0, unknown: 0, total: entry.total }; });');
+    L.push('    template.scanSummary = { scannedAt: new Date().toISOString(), total: seededTotal, correct: 0, wrong: seededTotal, missing: 0, unknown: 0, perColour: refreshedPerColour, states: new Uint8Array(template.width * template.height).fill(core.constants.ERROR_STATE.WRONG) };');
+    L.push('    gppRequestUiRefresh();');
+    L.push('    var compactUpdated = await waitFor(function() { var grid = document.getElementById("gpc-pmo-palette-grid"); return grid && grid !== compactBeforeCompletedScan; }, 5000);');
+    L.push('    if (!compactUpdated) throw new Error("REGRESSION: completed Scan progress refresh did not rebuild Painting Menu Overhaul per-colour status/badges");');
+    L.push('    var firstUpdatedBadge = document.querySelector("#gpc-pmo-palette-grid .gpp-swatch-progress");');
+    L.push('    if (!firstUpdatedBadge || !firstUpdatedBadge.classList.contains("gpp-swatch-progress-unstarted")) throw new Error("REGRESSION: compact palette did not consume the completed Scan progress status for its per-colour badge");');
+    L.push('    var previewCanvas = document.querySelector(".gpc-pmo-preview-frame canvas");');
+    L.push('    if (!previewCanvas) throw new Error("test setup: Painting Menu Overhaul preview canvas was not mounted");');
+    L.push('    var scaleRoot = bottom.querySelector(":scope > div");');
+    L.push('    var scaleContent = scaleRoot && scaleRoot.querySelector(":scope > .gpc-pmc-scale-content");');
+    L.push('    var scaleBefore = scaleRoot && scaleRoot.dataset.gpcPmcUiScale;');
+    L.push('    var bottomWidthBeforeScale = bottom.getBoundingClientRect().width;');
+    L.push('    var surfaceWidthBeforeScale = scaleRoot.getBoundingClientRect().width;');
+    L.push('    var surfaceStyle = getComputedStyle(scaleRoot);');
+    L.push('    var surfaceContentWidth = surfaceWidthBeforeScale - parseFloat(surfaceStyle.paddingLeft || "0") - parseFloat(surfaceStyle.paddingRight || "0") - parseFloat(surfaceStyle.borderLeftWidth || "0") - parseFloat(surfaceStyle.borderRightWidth || "0");');
+    L.push('    var bottomStyleWidthBeforeScale = bottom.style.width;');
+    L.push('    var paintMenuToolbar = document.getElementById("gpc-paint-menu-toolbar");');
+    L.push('    if (!scaleContent || !paintMenuToolbar || paintMenuToolbar.parentElement !== scaleContent || !paintMenuToolbar.querySelector("#gpc-compact-brush")) throw new Error("REGRESSION: Paint Menu Controls toolbar (including compact Brush Swap) was not mounted inside its own scale content");');
+    L.push('    var scaleTab = document.getElementById("gpc-pmc-scale-tab");');
+    L.push('    var scalePopover = document.getElementById("gpc-pmc-scale-popover");');
+    L.push('    var flipPaintMenu = document.getElementById("gpc-paint-flip-pos");');
+    L.push('    if (!scaleTab || !scalePopover || scaleTab.previousElementSibling !== flipPaintMenu || !scalePopover.hidden) throw new Error("REGRESSION: Paint Menu Controls scale tab was not mounted immediately to the right of its flip button");');
+    L.push('    var flipPaintStyle = getComputedStyle(flipPaintMenu); var scaleTabStyle = getComputedStyle(scaleTab);');
+    L.push('    if (scaleTab.className !== flipPaintMenu.className || scaleTabStyle.backgroundColor !== flipPaintStyle.backgroundColor || scaleTabStyle.color !== flipPaintStyle.color || scaleTabStyle.borderTopColor !== flipPaintStyle.borderTopColor) throw new Error("REGRESSION: Paint Menu Controls scale tab did not inherit its toolbar button styling");');
+    L.push('    previewCanvas.click();');
+    L.push('    var placeholderReady = await waitFor(function() { var group = document.getElementById("gpc-pmo-placeholder-group"); return group && !group.classList.contains("gpc-hidden"); }, 5000);');
+    L.push('    if (!placeholderReady) throw new Error("Painting Menu Overhaul placeholder mode did not open");');
+    L.push('    var uploadPanel = document.getElementById("gpc-pmo-upload-panel");');
+    L.push('    scaleTab.click();');
+    L.push('    var scaleInput = document.getElementById("gpc-pmc-ui-scale");');
+    L.push('    if (!uploadPanel || !scaleInput || !scalePopover.contains(scaleInput) || scalePopover.hidden || uploadPanel.contains(scaleInput)) throw new Error("REGRESSION: Paint Menu Controls scale slider did not open from its toolbar tab");');
+    L.push('    if (scalePopover.getBoundingClientRect().bottom > scaleTab.getBoundingClientRect().top + 1) throw new Error("REGRESSION: Paint Menu Controls scale popover did not open upward from its toolbar tab");');
+    L.push('    var scaleLabel = scalePopover.querySelector("label[for=\\\"gpc-pmc-ui-scale\\\"]");');
+    L.push('    if (!scaleLabel || scaleLabel.textContent.trim() !== "Paint Menu scale") throw new Error("REGRESSION: scale slider did not use the Paint Menu Controls brand");');
+    L.push('    if (scaleInput.value !== "90" || localStorage.getItem("geo++_paint_menu_controls_ui_scale") !== "90") throw new Error("REGRESSION: scale setting did not migrate the previous preview value into the Paint Menu Controls key");');
+    L.push('    scaleInput.value = "80";');
+    L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
+    L.push('    if (scaleRoot.dataset.gpcPmcUiScale !== scaleBefore || getComputedStyle(scaleContent).transform === "none") throw new Error("REGRESSION: Paint Menu Controls scale changed while the slider was still being dragged");');
+    L.push('    scaleInput.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));');
+    L.push('    if (scaleRoot.dataset.gpcPmcUiScale !== scaleBefore) throw new Error("REGRESSION: Paint Menu Controls scale committed before the native range release completed");');
+    L.push('    scaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
+    L.push('    if (scaleRoot.dataset.gpcPmcUiScale !== "80" || getComputedStyle(scaleRoot).transform !== "none" || getComputedStyle(scaleContent).transform === "none" || localStorage.getItem("geo++_paint_menu_controls_ui_scale") !== "80") throw new Error("REGRESSION: Paint Menu Controls scale did not apply to content and persist on slider release");');
+    L.push('    var toolbarHeightAt80 = paintMenuToolbar.getBoundingClientRect().height;');
+    L.push('    if (Math.abs(toolbarHeightAt80 - 19.2) > 1.5) throw new Error("REGRESSION: Paint Menu Controls toolbar did not scale with the surface at 80% (height=" + toolbarHeightAt80 + ")");');
+    L.push('    if (Math.abs(paintMenuToolbar.getBoundingClientRect().bottom - scaleRoot.getBoundingClientRect().top) > 1.5) throw new Error("REGRESSION: scaled Paint Menu Controls toolbar is detached from the scaled paint surface at 80%");');
+    L.push('    var bottomWidthAfterSmallScale = bottom.getBoundingClientRect().width;');
+    L.push('    var surfaceWidthAt80 = scaleRoot.getBoundingClientRect().width;');
+    L.push('    var surfaceHeightAt80 = scaleRoot.getBoundingClientRect().height;');
+    L.push('    if (Math.abs(bottomWidthAfterSmallScale - bottomWidthBeforeScale) > 1) throw new Error("REGRESSION: scaling changed #bottomControls outer width at 80% (before=" + bottomWidthBeforeScale + ", after=" + bottomWidthAfterSmallScale + ")");');
+    L.push('    if (Math.abs(surfaceWidthAt80 - surfaceWidthBeforeScale) > 1 || Math.abs(scaleContent.getBoundingClientRect().width - surfaceContentWidth) > 1) throw new Error("REGRESSION: Paint Menu Controls scale changed the visual surface width at 80% instead of only its height");');
+    L.push('    if (bottom.style.width !== bottomStyleWidthBeforeScale) throw new Error("REGRESSION: scaling rewrote #bottomControls inline width");');
+    L.push('    var resizedHostWidth = Math.max(240, bottomWidthBeforeScale - 180);');
+    L.push('    bottom.style.width = resizedHostWidth + "px"; window.dispatchEvent(new Event("resize"));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); }); });');
+    L.push('    var surfaceWidthAfterResize = scaleRoot.getBoundingClientRect().width;');
+    L.push('    var visualWidthAfterResize = scaleContent.getBoundingClientRect().width;');
+    L.push('    var resizedRootStyle = getComputedStyle(scaleRoot);');
+    L.push('    var resizedSurfaceContentWidth = surfaceWidthAfterResize - parseFloat(resizedRootStyle.paddingLeft || "0") - parseFloat(resizedRootStyle.paddingRight || "0") - parseFloat(resizedRootStyle.borderLeftWidth || "0") - parseFloat(resizedRootStyle.borderRightWidth || "0");');
+    L.push('    if (Math.abs(bottom.getBoundingClientRect().width - resizedHostWidth) > 1 || Math.abs(surfaceWidthAfterResize - resizedHostWidth) > 1 || Math.abs(visualWidthAfterResize - resizedSurfaceContentWidth) > 1) throw new Error("REGRESSION: a scaled Paint Menu Controls surface kept its old pixel width after the host viewport changed: " + JSON.stringify({ expected: resizedHostWidth, expectedContent: resizedSurfaceContentWidth, bottom: bottom.getBoundingClientRect().width, root: surfaceWidthAfterResize, visual: visualWidthAfterResize }));');
+    L.push('    var bottomStyleWidthAfterResize = bottom.style.width;');
+    L.push('    var placeholderSurfaceHeightAt80 = scaleRoot.getBoundingClientRect().height;');
+    L.push('    previewCanvas.click();');
+    L.push('    await waitFor(function() { var group = document.getElementById("gpc-pmo-placeholder-group"); return group && group.classList.contains("gpc-hidden"); }, 5000);');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
+    L.push('    var nativeSurfaceHeightAt80 = scaleRoot.getBoundingClientRect().height;');
+    L.push('    if (Math.abs(nativeSurfaceHeightAt80 - placeholderSurfaceHeightAt80) < 1) throw new Error("REGRESSION: preview-frame switch left the scaled surface height stale until another interaction");');
+    L.push('    previewCanvas.click();');
+    L.push('    await waitFor(function() { var group = document.getElementById("gpc-pmo-placeholder-group"); return group && !group.classList.contains("gpc-hidden") && !!document.getElementById("gpc-pmc-ui-scale"); }, 5000);');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
+    L.push('    var restoredPlaceholderHeightAt80 = scaleRoot.getBoundingClientRect().height;');
+    L.push('    if (Math.abs(restoredPlaceholderHeightAt80 - placeholderSurfaceHeightAt80) > 2) throw new Error("REGRESSION: preview-frame return did not restore the scaled placeholder height immediately");');
+    L.push('    scaleInput = document.getElementById("gpc-pmc-ui-scale");');
+    L.push('    if (!scaleInput || scaleInput.value !== "80") throw new Error("REGRESSION: preview-frame switch did not retain the committed Paint Menu Controls scale");');
+    L.push('    scaleInput.value = "120";');
+    L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
+    L.push('    scaleInput.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));');
+    L.push('    scaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
+    L.push('    var bottomWidthAfterLargeScale = bottom.getBoundingClientRect().width;');
+    L.push('    var surfaceWidthAt120 = scaleRoot.getBoundingClientRect().width;');
+    L.push('    var surfaceHeightAt120 = scaleRoot.getBoundingClientRect().height;');
+    L.push('    if (Math.abs(bottomWidthAfterLargeScale - resizedHostWidth) > 1) throw new Error("REGRESSION: scaling changed #bottomControls outer width at 120% after the host resized (expected=" + resizedHostWidth + ", after=" + bottomWidthAfterLargeScale + ")");');
+    L.push('    if (Math.abs(surfaceWidthAt120 - surfaceWidthAfterResize) > 1 || Math.abs(scaleContent.getBoundingClientRect().width - resizedSurfaceContentWidth) > 1) throw new Error("REGRESSION: Paint Menu Controls scale changed the resized surface width at 120% instead of only its height");');
+    L.push('    if (surfaceHeightAt120 <= surfaceHeightAt80 + 1) throw new Error("REGRESSION: Paint Menu Controls scale did not change the fixed-width surface height (80%=" + surfaceHeightAt80 + ", 120%=" + surfaceHeightAt120 + ")");');
+    L.push('    if (bottom.style.width !== bottomStyleWidthAfterResize) throw new Error("REGRESSION: large-scale commit rewrote the host\'s resized #bottomControls width");');
+    L.push('    var toolbarHeightAt120 = paintMenuToolbar.getBoundingClientRect().height;');
+    L.push('    if (Math.abs(toolbarHeightAt120 - 28.8) > 1.5) throw new Error("REGRESSION: Paint Menu Controls toolbar did not scale with the surface at 120% (height=" + toolbarHeightAt120 + ")");');
+    L.push('    if (Math.abs(paintMenuToolbar.getBoundingClientRect().bottom - scaleRoot.getBoundingClientRect().top) > 1.5) throw new Error("REGRESSION: scaled Paint Menu Controls toolbar is detached from the scaled paint surface at 120%");');
+    L.push('    scaleInput.value = "100";');
+    L.push('    scaleInput.dispatchEvent(new Event("input", { bubbles: true }));');
+    L.push('    scaleInput.dispatchEvent(new Event("change", { bubbles: true }));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(function() { requestAnimationFrame(resolve); }); });');
+    L.push('    if (scaleRoot.dataset.gpcPmcUiScale !== "100") throw new Error("REGRESSION: Paint Menu Controls scale did not reset after a committed change");');
+    L.push('    if (scaleRoot.style.height) throw new Error("REGRESSION: 100% Paint Menu Controls scale left a fixed inline surface height behind");');
+    L.push('    var paintMenuToggle = paintMenuToolbar.querySelector("#gpc-hide-paint-toggle");');
+    L.push('    if (!paintMenuToggle) throw new Error("test setup: Paint Menu Controls toggle was not retained in the scale content");');
+    L.push('    paintMenuToggle.click(); paintMenuToggle.click();');
+    L.push('    await new Promise(function(resolve) { setTimeout(resolve, 0); });');
+    L.push('    if (document.getElementById("gpc-native-top-bar").parentElement !== scaleContent || document.querySelector(".control-container-colors").parentElement !== scaleContent) throw new Error("REGRESSION: Paint Menu Controls collapse/dock logic no longer works with its scale content");');
+    L.push('    previewCanvas.click();');
+    L.push('    await waitFor(function() { var group = document.getElementById("gpc-pmo-placeholder-group"); return group && group.classList.contains("gpc-hidden"); }, 5000);');
+    L.push('    return "Painting Menu Overhaul centers its control row, preserves native bar width, sees Simple Black at first mount, exposes a default-off Selected-only highlight, cancels stale A -> B lookups, rebuilds compact status, and asks Paint Menu Controls to remeasure its independently-owned fixed-width scale surface";');
+    L.push('  });');
+    L.push('');
     L.push('  var resultEl = document.getElementById("test-result");');
     L.push('  resultEl.dataset.status = "done";');
     L.push('  var payload = {');
@@ -2922,7 +3292,9 @@ function buildDriverScript() {
 
 async function buildFixtureHtml(forceCanvas2D, minify) {
     const head = buildFixtureHead(forceCanvas2D);
-    const source = minify ? await readGhostPlusPlusSourceMinified() : readGhostPlusPlusSource();
+    const source = minify
+        ? await readGhostPlusPlusSourceMinified()
+        : readFixtureFeatureSource();
     const ghostScript = '<script>\n\'use strict\';\n' + source + '\n</script>';
     const driver = buildDriverScript();
     return head + '\n' + ghostScript + '\n' + driver + '\n</body></html>';
@@ -3018,11 +3390,19 @@ async function runBrowserFixture(html, options = {}) {
         });
 
         const wallTimeoutMs = options.wallTimeoutMs || 90_000;
+        let timeoutId = null;
         const timeoutPromise = new Promise((_, rej) => {
-            setTimeout(() => rej(new Error(`timed out after ${wallTimeoutMs}ms waiting for the fixture's /report POST`)), wallTimeoutMs);
+            timeoutId = setTimeout(() => rej(new Error(`timed out after ${wallTimeoutMs}ms waiting for the fixture's /report POST`)), wallTimeoutMs);
         });
-        const body = await Promise.race([reportPromise, timeoutPromise]);
-        return { body, stdout, stderr, browserPath };
+        try {
+            const body = await Promise.race([reportPromise, timeoutPromise]);
+            return { body, stdout, stderr, browserPath };
+        } finally {
+            // A successful report does not cancel Promise.race's losing timer
+            // automatically. Clearing it keeps a passing three-browser run
+            // from appearing to hang for its full watchdog duration.
+            if (timeoutId !== null) clearTimeout(timeoutId);
+        }
     } finally {
         if (browser && !browser.killed) { try { browser.kill(); } catch (_) { /* ignore */ } }
         await new Promise(resolveClose => server.close(resolveClose));

@@ -4,6 +4,10 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const artifact = readFileSync(new URL('../dist/geopixelcons-library.js', import.meta.url), 'utf8');
+const legacyCoreSource = readFileSync(new URL('../src/legacy/core.js', import.meta.url), 'utf8');
+const paintMenuControlsSource = readFileSync(new URL('../src/legacy/features/hide-paint-menu.js', import.meta.url), 'utf8');
+const controlsScaleSource = readFileSync(new URL('../src/legacy/features/controls-scale.js', import.meta.url), 'utf8');
+const paintingMenuOverhaulSource = readFileSync(new URL('../src/legacy/features/mobile-painting.js', import.meta.url), 'utf8');
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 test('loads as a side-effect-free factory before the main userscript', () => {
@@ -26,7 +30,7 @@ test('publishes the library bridge when @require wraps the source', () => {
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Ghost Template Manager/);
-    assert.match(artifact, /const VERSION = '2\.6\.0';/);
+    assert.match(artifact, /const VERSION = '2\.7\.0';/);
     const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const versionPattern = new RegExp(`const LIBRARY_VERSION = '${escapedVersion}'; // x-release-please-version`);
     assert.match(artifact, versionPattern);
@@ -50,6 +54,74 @@ test('includes the opt-in native guild territory auto-loader', () => {
 });
 test('defaults Compact Paint Controls on for new installs', () => {
     assert.match(artifact, /compactPaintOverflow: true/);
+});
+test('keeps Painting Menu Overhaul responsive and exposes selected-colour scan feedback', () => {
+    assert.doesNotMatch(artifact, /function applyFullWidthBottomControls\(/);
+    assert.doesNotMatch(artifact, /style\.width = '100vw'/);
+    assert.match(artifact, /rootStyle\.colorScheme/);
+    assert.match(artifact, /scanSummaryRef/);
+    assert.match(artifact, /gppRequestUiRefresh/);
+    assert.match(artifact, /Highlight nearest/);
+    assert.match(artifact, /gppScanFindNearestError/);
+    assert.match(artifact, /gppScanStartSelectedColorGlow/);
+    assert.match(artifact, /gppScanClearSelectedColorGlow/);
+    assert.match(artifact, /pendingHighlightPaletteIndex/);
+    assert.match(artifact, /requestStillCurrent/);
+    assert.match(artifact, /retintBorrowedScanButtons/);
+    assert.match(artifact, /justify-content: center/);
+    assert.match(artifact, /Painting Menu Overhaul/);
+    assert.doesNotMatch(paintingMenuOverhaulSource, /root\.style\.width\s*=/);
+    assert.doesNotMatch(artifact, /root\.style\.transform\s*=/);
+    assert.doesNotMatch(artifact, /function buildMobileUiScaleControl\(/);
+    assert.match(artifact, /gpc-ctrl-menu-count/);
+    assert.match(artifact, /Minimum pixel count/);
+    assert.match(artifact, /countMinInput\.dispatchEvent\(new Event\('input'/);
+    assert.match(artifact, /gpc-hide-paint-toggle/);
+    assert.match(artifact, /controlsRowEl\.style\.marginBottom/);
+    assert.match(artifact, /-rowGap \+ 4/);
+    assert.match(paintingMenuOverhaulSource, /gpc-pmo-palette-grid/);
+    assert.doesNotMatch(paintingMenuOverhaulSource, /gpc-mobile-/);
+});
+
+test('makes scale a Paint Menu Controls capability independent of Painting Menu Overhaul', () => {
+    assert.match(artifact, /gpc-pmc-scale-tab/);
+    assert.match(artifact, /geo\+\+_paint_menu_controls_ui_scale/);
+    assert.match(paintMenuControlsSource, /let gpcPaintMenuControlsScale = null/);
+    assert.match(paintMenuControlsSource, /createPaintMenuControlsScale/);
+    assert.match(paintMenuControlsSource, /gpc-pmc-scale-content/);
+    assert.match(paintMenuControlsSource, /gpc-pmc-scale-tab/);
+    assert.match(paintMenuControlsSource, /gpc-pmc-scale-popover/);
+    assert.match(paintMenuControlsSource, /geo\+\+_paint_menu_controls_ui_scale/);
+    assert.match(paintMenuControlsSource, /geo\+\+_painting_menu_overhaul_ui_scale/);
+    assert.match(paintMenuControlsSource, /geo\+\+_mobile_painting_ui_scale/);
+    assert.match(paintMenuControlsSource, /addEventListener\('input', updateReadout\)/);
+    assert.match(paintMenuControlsSource, /addEventListener\('change', commit\)/);
+    assert.doesNotMatch(paintMenuControlsSource, /addEventListener\('pointerup', commit\)/);
+    assert.match(paintMenuControlsSource, /pendingCommitFrame/);
+    assert.match(paintMenuControlsSource, /inverseWidthPercent/);
+    assert.match(paintMenuControlsSource, /lockNativeWidth/);
+    assert.match(paintMenuControlsSource, /releaseNativeWidth/);
+    assert.match(paintMenuControlsSource, /requestViewportReflow/);
+    assert.match(paintMenuControlsSource, /window\.addEventListener\('resize', requestViewportReflow/);
+    assert.match(paintMenuControlsSource, /root\.style\.height/);
+    assert.match(paintMenuControlsSource, /gpc-paint-flip-pos/);
+    assert.match(paintMenuControlsSource, /making the scale tab a Paint Menu Controls capability/);
+    assert.doesNotMatch(paintingMenuOverhaulSource, /gpc-pmc-scale-tab/);
+});
+test('keeps native controls scale independent and places its setting below Map Markers', () => {
+    assert.match(artifact, /gpc-controls-scale-popover/);
+    assert.match(artifact, /controlsUiScale: 100/);
+    assert.match(controlsScaleSource, /document\.getElementById\('controls-left'\)/);
+    assert.match(controlsScaleSource, /document\.getElementById\('controls-right'\)/);
+    assert.match(controlsScaleSource, /element\.style\.scale = String\(percent \/ 100\)/);
+    assert.match(controlsScaleSource, /top left/);
+    assert.match(controlsScaleSource, /top right/);
+    assert.match(controlsScaleSource, /addEventListener\('change'/);
+    assert.doesNotMatch(controlsScaleSource, /addEventListener\('pointerup'/);
+    const mapMarkersEntry = legacyCoreSource.lastIndexOf("dropdown.appendChild(makeSubBtn('📌', 'Map Markers'");
+    const scaleEntry = legacyCoreSource.lastIndexOf("dropdown.appendChild(makeSubBtn('↔️', 'Controls scale'");
+    const settingsEntry = legacyCoreSource.lastIndexOf("dropdown.appendChild(makeSubBtn('⚙️', 'Settings...'");
+    assert.ok(mapMarkersEntry !== -1 && mapMarkersEntry < scaleEntry && scaleEntry < settingsEntry);
 });
 test('keeps compact Ghost++ palette state and size separate from the full menu', () => {
     assert.match(artifact, /compactPaletteViewMode: 'grid'/);

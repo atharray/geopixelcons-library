@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.6.0';
+    const VERSION = '2.7.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -12,7 +12,7 @@
         { key: 'bulkPurchaseColors', name: 'Bulk Purchase Colors', icon: '🛒', desc: 'Advanced color purchasing with queue management.', features: ['Bulk color purchase with preview modal', 'Queue management in profile panel', 'Duplicate detection & insufficient-pixels handling', 'Purchase progress tracking'] },
         { key: 'ghostPlusPlus', name: 'Ghost++ Template Overlay', icon: '👻', desc: 'A scalable, multi-template ghost/overlay manager that replaces the native ghost image tool.', features: ['Indexed-core rendering that scales to large, high-colour templates', 'Draggable, resizable, fully collapsible manager with a two-column layout', 'Thumbnail template library with hover preview, edit/teleport, and bulk export/delete', 'Sort/filter/search palette with hover-to-copy hex readout', 'Segmented completion progress bar with per-colour breakdown, unaffected by which colours are toggled on/off', 'One-click full-opacity template Preview toggle'] },
         { key: 'guildOverhaul', name: 'Guild Overhaul', icon: '⚔️', desc: 'Comprehensive guild interface improvements.', features: ['Enhanced member management UI', 'Bank/treasury system', 'Color limit tracking', 'Role hierarchy display', 'Guild-specific moderation tools'] },
-        { key: 'hidePaintMenu', name: 'Paint Menu Controls', icon: '🫣', desc: 'Adds a collapse/expand toggle for the bottom controls panel.', features: ['Collapse & expand the bottom paint controls', 'Reposition controls (left/center/right)', 'Smooth CSS animations'] },
+        { key: 'hidePaintMenu', name: 'Paint Menu Controls', icon: '🫣', desc: 'Adds a collapse/expand toggle for the bottom controls panel.', features: ['Collapse & expand the bottom paint controls', 'Reposition controls (left/center/right)', 'Optional toolbar scale changes controls and height without changing paint-panel width', 'Smooth CSS animations'] },
         { key: 'paintBrushSwap', name: 'Paint Brush Swap', icon: '🖌️', desc: 'Rapid paintbrush tool switching with keyboard shortcuts.', features: ['Configurable keyboard shortcuts for brush swap', 'Brush preset profiles for different painting patterns', 'Quick-switch between brush types'] },
         { key: 'regionScreenshot', name: 'Region Screenshot', icon: '📸', desc: 'Capture region-level screenshots with coordinate overlays.', features: ['Region image capture with coordinate overlay', 'Alpha channel support', 'Save as PNG directly'] },
         { key: 'regionsHighscore', name: 'Regions Highscore', icon: '🏆', desc: 'Displays regional pixel/color contribution rankings.', features: ['Sort rankings by player or guild', 'Filter by pixel count, color, or region', 'Historical contribution statistics'] },
@@ -32,9 +32,10 @@
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', desc: 'Superseded by Ghost++ Template Overlay. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
         { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', desc: 'Superseded by Ghost++ Template Overlay. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
+        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '📱', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
     ];
 
-    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
+    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, controlsUiScale: 100, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
     FEATURE_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = true);
     // Ghost++ deliberately opts out of the blanket "every feature defaults on" rule above:
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
@@ -73,6 +74,9 @@
     }
 
     const _settings = loadSettings();
+    // Assigned by features/controls-scale.js later in the assembled IIFE.
+    // The dropdown's click handler runs only after every feature has loaded.
+    let gpcControlsScale = null;
 
     // ============================================================
     //  DEBUG SYSTEM
@@ -467,6 +471,9 @@
                 },
                 extLogOutButton: () => {
                     flashEl(document.getElementById('gpc-logout-btn'));
+                },
+                mobilePaintingExtension: () => {
+                    flashEl(document.getElementById('bottomControls'));
                 },
             };
             const fn = nav[key];
@@ -1230,6 +1237,25 @@
     // ============================================================
     const CHANGELOG = [
         {
+            version: '2.7.0',
+            date: '2026-08-17',
+            items: [
+                { type: 'changed', text: 'Painting Menu Overhaul: the bottom control-row buttons are now centered within their row' },
+                { type: 'added', text: 'Controls Scale: a new GeoPixelcons++ dropdown setting scales both left and right native control clusters together' },
+                { type: 'changed', text: 'Paint Menu Controls: the scale slider opens upward from a toolbar tab beside its flip button, applies when released, and works without Painting Menu Overhaul enabled' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: control-row dropdowns now stay above the Paint Menu Controls buttons' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: Filter within pixel count now exposes working minimum and maximum inputs' },
+                { type: 'changed', text: 'Painting Menu Overhaul: replaced the extra gap between the control row and compact palette with a small amount of breathing room' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: added a small amount of breathing room below the control row' },
+                { type: 'fixed', text: 'Paint Menu Controls: scaling keeps the paint panel\'s visual width fixed; only its controls and height change' },
+                { type: 'fixed', text: 'Paint Menu Controls: its toolbar and compact Brush Swap buttons stay attached and scale with the paint surface' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: switching between the template preview and native controls now updates the scaled panel height immediately' },
+                { type: 'fixed', text: 'Paint Menu Controls: its toolbar sits flush against the scaled panel edge' },
+                { type: 'fixed', text: 'Paint Menu Controls: the scale slider keeps the exact released value, and its toolbar tab matches the selected theme' },
+                { type: 'fixed', text: 'Paint Menu Controls: a scaled paint panel now follows the site\'s normal responsive width and stays centered after resizing the window' },
+            ]
+        },
+        {
             version: '2.6.0',
             date: '2026-08-17',
             items: [
@@ -1238,8 +1264,77 @@
         },
         {
             version: '2.5.0',
-            date: '2026-08-17',
+            date: '2026-08-16',
             items: [
+                { type: 'changed', text: 'Mobile Painting (in development): bottom paint controls now keep the site\'s natural responsive width instead of being forced full-screen' },
+                { type: 'fixed', text: 'Mobile Painting (in development): controls now apply the active GeoPixels++ Simple Black theme when the extension first loads' },
+                { type: 'fixed', text: 'Mobile Painting (in development): Scan progress now refreshes the compact palette\'s per-color checkmarks and status when its scan finishes' },
+                { type: 'added', text: 'Mobile Painting (in development): Enable > Selected now reveals an optional, session-only Highlight nearest checkbox; selecting a new color can show its nearest remaining pixel with large fading red rings without teleporting the map (off by default)' },
+                { type: 'fixed', text: 'Mobile Painting (in development): Highlight nearest red rings now remain visible even when the focused Ghost++ template is hidden or set to 0% opacity' },
+                { type: 'added', text: 'Mobile Painting (in development): native color grid replaced with the focused Ghost++ template\'s own color grid, styled like the Ghost++ manager' },
+                { type: 'added', text: 'Mobile Painting (in development): the color grid now stays live-synced with the Ghost++ manager -- switching templates or changing a color\'s visibility there updates it automatically' },
+                { type: 'added', text: 'Mobile Painting (in development): tapping a color now shows only that color\'s remaining pixels on the map and selects it as your active paint color in one tap' },
+                { type: 'added', text: 'Mobile Painting (in development): the selected color now shows in the hex display, and colors get the same hover tooltip as the Ghost++ manager' },
+                { type: 'added', text: 'Mobile Painting (in development): the color grid now respects whatever sort/filter is set in the Ghost++ manager\'s own color panel' },
+                { type: 'added', text: 'Mobile Painting (in development): stronger hover feedback (bigger scale, soft shadow), plus a rotating dashed ring marking whichever color is currently selected' },
+                { type: 'fixed', text: 'Mobile Painting (in development): swatches were missing their base style class, so the hover/selected effects above never actually appeared -- now they do' },
+                { type: 'fixed', text: 'Mobile Painting (in development): stopped a repeating native "Color container not found" console error by hiding the native color grid instead of removing it' },
+                { type: 'fixed', text: 'Mobile Painting (in development): disabled colors no longer gray out -- that was always on regardless of the Ghost++ manager\'s own "Gray unselected color boxes" setting' },
+                { type: 'added', text: 'Mobile Painting (in development): added a control row below the color grid -- Enable (all/owned/filtered), Disable all, Get hex values, Sort, and Filter, all sharing state with the Ghost++ manager' },
+                { type: 'removed', text: 'Mobile Painting (in development): removed the redundant native Sort button now that the control row has its own Sort' },
+                { type: 'changed', text: 'Mobile Painting (in development): the color grid now shows 2 rows before scrolling instead of ~10, matching the Ghost++ manager\'s own compact view' },
+                { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring is now a square (was a circle) and spins 4x slower' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the control row now shows above the color grid instead of below it' },
+                { type: 'removed', text: 'Mobile Painting (in development): disabled colors no longer show a diagonal slash in the mobile grid either -- the underlying show/hide state is unchanged, only the visual indicator is gone' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the control row buttons now use this extension\'s own dark-mode palette consistently -- "Disable all" had no styling of its own before and rendered as bare text; every button, the Sort dropdown, and Filter/Enable/Get hex values menus now match' },
+                { type: 'changed', text: 'Mobile Painting (in development): control row buttons now have a capped width sized to their label instead of stretching to fill the row' },
+                { type: 'changed', text: 'Mobile Painting (in development): the Enable, Filter, and Get hex values menus now open upward instead of downward, since the row sits at the bottom of the screen' },
+                { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring no longer spins -- it\'s now a stationary square dashed border' },
+                { type: 'changed', text: 'Mobile Painting (in development): Sort is now a plain "Sort" button with a dropdown menu instead of a native select that displayed whatever option was last chosen' },
+                { type: 'fixed', text: 'Mobile Painting (in development): control row buttons now stay white with black text by default, only switching to the dark palette when the GeoPixels++ extension\'s own theme selector is explicitly set to a dark theme -- previously also reacted to the OS/browser dark preference even though the surrounding native controls never actually go dark' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the Enable/Filter/Get hex values dropdown menus no longer render underneath the Paint Menu Controls collapse/drag button row' },
+                { type: 'added', text: 'Mobile Painting (in development): the Enable dropdown has a new "Selected" option that switches the color grid back to solo-select mode and immediately re-solos whichever color was last individually tapped' },
+                { type: 'fixed', text: 'Mobile Painting (in development): tapping a color in the grid now actually changes the game\'s active paint color -- it was silently failing to reach the real page function in some browsers, even though the grid\'s own solo-select highlighting still updated correctly' },
+                { type: 'added', text: 'Mobile Painting (in development): picking Enable All/Owned/Filtered now switches the color grid to multi-select mode -- tapping a color toggles just that one color instead of soloing it, and the selected-color ring stops showing since there\'s no longer a single "the" selected color; picking Selected switches back' },
+                { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring is now a plain black square border with a white glow, replacing the dashed frame' },
+                { type: 'added', text: 'Ghost++ / Mobile Painting: using Enable, Sort, or Filter (in either the real Ghost++ manager or its mobile mirror, excluding Disable) now first tries to run Scan Progress, so progress numbers stay fresh without a separate manual click' },
+                { type: 'changed', text: 'Mobile Painting (in development): the selected-color ring now sits above every other element under the bottom paint bar, and its corners match the swatch\'s own rounding instead of being square' },
+                { type: 'fixed', text: 'Mobile Painting (in development): toggling the Paint Menu Controls collapse button no longer shifts the color-grid controls row above the native hex display / sort / brush row' },
+                { type: 'added', text: 'Mobile Painting (in development): a small preview of the focused template\'s ghost image now sits to the right of the color grid, sized to the grid\'s own height without distorting the image' },
+                { type: 'added', text: 'Mobile Painting (in development): the native hexDisplay/sortBtn/brush-buttons/energy row now has a stable id (gpc-native-top-bar) instead of being reachable only by class' },
+                { type: 'added', text: 'Mobile Painting (in development): tapping the template preview thumbnail now hides the native top bar and the control row, showing two placeholder panels in their place (scaffolding for a feature to come)' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the two placeholder panels shown after tapping the preview thumbnail no longer have awkward extra spacing between them -- they now share one parent instead of each stacking its own margin on top of the surrounding layout\'s own gap' },
+                { type: 'fixed', text: 'Mobile Painting (in development): fixed a real bug where the native top bar id (#gpc-native-top-bar) could end up on the entire white bottom-bar panel instead of just the small top bar row -- tapping the preview thumbnail was hiding that whole panel\'s white background, exposing the map behind it' },
+                { type: 'changed', text: 'Mobile Painting (in development): tapping the template preview thumbnail is now a proper toggle -- tap again to switch back from the placeholder panels to the native controls, instead of it only going one way' },
+                { type: 'added', text: 'Mobile Painting (in development): the placeholder panels are now three real columns instead of two placeholders -- left is Ghost++\'s own scan progress bar, summary text, and Scan/Show errors/Show missing/Nearest error buttons; middle is the real template drop zone; right is Place/Unset/Go to/Preview, Lock Position, Group noise, and a Manage templates button that opens the real template manager -- all genuine Ghost++ controls, borrowed from their real locations while this view is open and returned when switching back' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the real Ghost++ buttons/checkboxes/drop zone borrowed into the p1/p2/p3 columns now follow the same light/dark theme signal as the rest of this row instead of Ghost++\'s own, which could render them dark on a light page for the same reason the control row\'s own buttons had this bug fixed earlier' },
+                { type: 'fixed', text: 'Mobile Painting (in development): fixed the p1/p2/p3 columns going stale after any single interaction -- using one borrowed control (a checkbox, Show errors, etc.) silently caused Ghost++ to redraw the other columns\' real content invisibly elsewhere, which is why Lock Position/Group noise looked out of sync and Place/Preview appeared unresponsive (a fresh Ghost++ render cancels any in-progress "click the map to place" capture). The columns now stay live-synced with Ghost++\'s own redraws for as long as this view is open' },
+                { type: 'fixed', text: 'Mobile Painting (in development): pasting a file to upload a template now works again while the drop zone is showing in the p2 column -- it previously only worked inside the real (currently hidden) Ghost++ modal' },
+                { type: 'changed', text: 'Mobile Painting (in development): the Manage templates button now sits in the p2 column, directly under the drop zone, instead of below Place/Unset/Go to/Preview in p3' },
+                { type: 'changed', text: 'Mobile Painting (in development): the drop zone\'s own desktop-oriented text (drag/drop + paste instructions, supported formats, "or load from a URL") is now replaced with a single "Click to upload template files" line while shown here -- mobile painters only ever tap to pick a file. The real text is restored the instant this view closes, so the actual Ghost++ modal is unaffected' },
+                { type: 'fixed', text: 'Mobile Painting (in development): fixed this row\'s buttons and the p1/p2/p3 columns staying in whichever light/dark theme was active the very first time they rendered, even after switching the GeoPixels++ extension\'s own theme setting -- the color values were baked into a stylesheet that was only ever written once per page load and never refreshed' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the control row buttons (Enable/Disable/Sort/Filter/Get hex values) were still stuck in whichever theme was active on first render even after the previous fix, because the stylesheet refresh only ever ran when the color grid itself got rebuilt from scratch (switching templates) -- an idle tick with the same template focused, by far the common case, skipped it entirely. The stylesheet now refreshes on every tick regardless, so switching the GeoPixels++ theme takes effect within about a second without needing to touch a template' },
+                { type: 'changed', text: 'Mobile Painting (in development): the three columns\' ids now describe what they actually hold (#gpc-pmo-scan-panel / #gpc-pmo-upload-panel / #gpc-pmo-placement-panel) instead of their leftover scaffolding-era gpc-pmo-placeholder-1/2/3 names, from back when they held nothing but literal "placeholder 1"/"placeholder 2" text' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the three columns no longer size to their own content\'s height independently -- since p1\'s counts line only shows once there\'s something to report and the drop zone/scan bar can wrap differently, they could end up visibly uneven heights. All three now stretch to match whichever one is tallest' },
+                { type: 'added', text: 'Mobile Painting (in development): a real Palette view (Grid/List) toggle from Ghost++ now sits directly left of the template preview thumbnail, with its label stacked above the toggle instead of beside it -- toggling it updates Ghost++\'s own real view-mode setting (so it\'s remembered if the real modal is ever opened), though this row\'s own compact grid always stays a grid regardless' },
+                { type: 'added', text: 'Mobile Painting (in development): pressing Place now temporarily switches into Inspect mode for as long as the click-to-place capture is active, and switches back the instant it ends -- placed, Escape-cancelled, or superseded -- so aiming a tap at the map doesn\'t fight with paint mode' },
+                { type: 'added', text: 'Mobile Painting (in development): the real left/up/down/right nudge arrows now sit to the right of Lock Position/Group noise in the placement column, with the real opacity slider below both' },
+                { type: 'added', text: 'Mobile Painting (in development): color swatches now show the same completion badge Ghost++\'s own grid does once a scan has run -- a white circle with a green check when a color is fully placed, a black ring before it\'s started, and a red-to-green ring while in progress' },
+                { type: 'fixed', text: 'Mobile Painting (in development): fixed a real regression from the palette view toggle addition that froze the entire page on tapping the template preview thumbnail -- two independent MutationObservers ended up watching the same Ghost++ modal, and each one\'s own disconnect-before-mutate-reconnect-after guard only ever covered ITS OWN mutations, not the other observer\'s, so each one\'s reconnect kept re-triggering the other forever. Merged into a single shared observer, which is the only way one disconnect can actually cover both concerns at once' },
+                { type: 'added', text: 'Mobile Painting (in development): the color grid now actually switches to the same compact list layout (color chip, hex, "<placed>/<total>", and a mini progress bar per row) Ghost++\'s own grid does when the borrowed Grid/List toggle is set to List -- previously only the real Ghost++ panel changed layout; this grid stayed a tiled grid regardless of which mode was selected' },
+                { type: 'fixed', text: 'Mobile Painting (in development): switching Grid/List without also switching templates now actually updates this grid -- it only ever rebuilt on a template or visible-color-order change, so toggling the view mode alone silently did nothing until something else happened to trigger a rebuild' },
+                { type: 'fixed', text: 'Mobile Painting (in development): the opacity slider was nearly unusable on a phone-width screen -- its row packed the label, the slider, the percentage, and the reset button into one line, leaving almost no width for the actual draggable track. The label/percentage/reset now share one line and the slider gets a full line to itself below them' },
+                { type: 'fixed', text: 'Mobile Painting (in development): fixed the palette-view toggle drifting to the right of the preview thumbnail over time instead of staying to its left -- borrowing always re-appends at the end of whatever it\'s given, and by the time a live-sync tick fires the thumbnail is already there too. It now borrows into its own stable column instead, which never moves once placed' },
+                { type: 'added', text: 'Mobile Painting (in development): a new "Visible rows" dropdown (1-10, default 2) below the Grid/List toggle controls how many rows show in the color grid before it scrolls' },
+                { type: 'added', text: 'Mobile Painting (in development): an eye icon on the template preview thumbnail opens a larger preview -- a bigger image, the same progress bar and summary text, every color in the template in a copyable list, and a Buy all colors button that opens the real purchase flow pre-filled with whatever you don\'t already own' },
+                { type: 'added', text: 'Mobile Painting (in development): pressing Place now also shows a reminder toast pointing at where to actually tap to place the template' },
+                { type: 'changed', text: 'Mobile Painting (in development): the template preview thumbnail now stretches to fill and center within whatever height its row actually ends up (which can vary now that Visible rows exists), instead of always staying a fixed 60px tall regardless' },
+                { type: 'changed', text: 'Mobile Painting (in development): the preview thumbnail\'s larger-preview button is now an info icon instead of an eye' },
+                { type: 'changed', text: 'Mobile Painting (in development): the larger-preview modal (and its own bigger preview image) is now about 40% larger' },
+                { type: 'added', text: 'Mobile Painting (in development): with no Ghost++ template focused yet -- most notably the very first time this feature is ever opened -- a "Click for template options" prompt now shows in place of the color grid. Tapping it opens the same template options (drop zone, Manage templates, Scan progress, and so on) placeholder mode already provides once a template exists; previously there was no way to reach any of that at all with nothing focused yet' },
+                { type: 'changed', text: 'Mobile Painting (in development): the template preview thumbnail is now a square, its width matching whatever height its own row ends up (was a plain rectangle sized to the image itself)' },
+                { type: 'fixed', text: 'Mobile Painting (in development): Enable, Sort, Filter, and Get hex values in the bottom controls row now close each other when a different one is opened, instead of leaving multiple of them visibly open on top of each other at once' },
+                { type: 'changed', text: 'Mobile Painting (in development): the "Visible rows" dropdown now defaults to 3 instead of 2' },
                 { type: 'added', text: 'Guild Overhaul: XP Tracker and player markers now show each member\'s last observed activity from snapshot XP gains, with configurable inactive-after days and yellow inactive markers that take priority over territory colors' },
                 { type: 'fixed', text: 'Guild Overhaul: opening the XP Tracker now records activity that happened since the latest stored snapshot, so current tracker changes no longer appear as unknown' },
                 { type: 'changed', text: 'Guild Overhaul: members with unknown activity are now treated as inactive and shown with the inactive marker color until activity is observed' },
@@ -2645,6 +2740,12 @@
                 if (_mapMarkers) _mapMarkers.openModal();
             }));
         }
+
+        // Controls scale is deliberately a standalone dropdown setting: it
+        // applies to both native side clusters, independent of any paint UI.
+        dropdown.appendChild(makeSubBtn('↔️', 'Controls scale', () => {
+            if (gpcControlsScale) gpcControlsScale.open();
+        }));
 
         // Settings button (always visible)
         dropdown.appendChild(makeSubBtn('⚙️', 'Settings...', createSettingsModal));

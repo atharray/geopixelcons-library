@@ -241,8 +241,10 @@
         // on every refresh, same live-toggle pattern as Gray unselected
         // color boxes above — no template switch needed to see it apply).
         const viewModeRow = document.createElement('div');
+        viewModeRow.id = 'gpp-vs-palette-view-row';
         viewModeRow.className = 'gpp-vs-row';
         const viewModeLabel = document.createElement('span');
+        viewModeLabel.id = 'gpp-vs-palette-view-label';
         viewModeLabel.className = 'gpp-vs-label';
         viewModeLabel.textContent = 'Palette view';
         const viewModeToggle = document.createElement('div');
