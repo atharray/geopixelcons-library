@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.6.0 - readable release bundle */
+/* GeoPixelcons Library v2.7.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.7.0'; // x-release-please-version
@@ -32837,14 +32837,34 @@ if (_settings.profileColorsCollapse) {
     // in a sandboxed realm in some browsers -- see the `unsafeWindow`
     // fallback used almost everywhere else in this codebase, e.g.
     // hide-paint-menu.js, paint-brush-swap.js, ghost-plus-plus/gpp-*.js).
-    // soloColor()/toggleColor() previously called bare `window.changeColor`,
-    // which silently no-ops when `window` is sandboxed -- the grid's own
-    // solo/toggle visuals still updated fine (self-contained DOM state), but
-    // the real native active paint color (`pixelColor`, js/index148.js)
-    // never actually changed. This matches this file's own established
-    // convention instead of inventing a new one.
     function pageWindow() {
         return (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
+    }
+
+    // Select a real game-palette button before falling back to the page
+    // function. The native buttons' existing click handler is the one code
+    // path guaranteed to update the site's lexical `pixelColor` state in
+    // every userscript sandbox. PMO deliberately hides that container rather
+    // than removing it, so this continues to work while the compact grid is
+    // visible and survives native SetColors() rebuilding its children.
+    function selectNativePaintColor(hex) {
+        const normalizedHex = String(hex || '').toUpperCase();
+        if (!normalizedHex) return false;
+
+        const nativeSwatch = document.getElementById(normalizedHex)
+            || Array.from(document.querySelectorAll('.control-container-colors .color-swatch'))
+                .find((swatch) => String(swatch.id || '').toUpperCase() === normalizedHex);
+        if (nativeSwatch && typeof nativeSwatch.click === 'function') {
+            nativeSwatch.click();
+            return true;
+        }
+
+        const pw = pageWindow();
+        if (pw && typeof pw.changeColor === 'function') {
+            pw.changeColor(normalizedHex);
+            return true;
+        }
+        return false;
     }
 
     // Reads the SAME already-computed sort/filter result the real Ghost++
@@ -33838,8 +33858,7 @@ if (_settings.profileColorsCollapse) {
                 const swatchIndex = Number(swatch.dataset.index);
                 setSwatchState(swatch, swatch.dataset.hex, swatchIndex === targetIndex);
             }
-            const pw = pageWindow();
-            if (typeof pw.changeColor === 'function') pw.changeColor(hex);
+            selectNativePaintColor(hex);
             updateHexDisplay(hex);
             gppState.persistTemplateState(template).catch((err) => {
                 console.error('[GeoPixelcons++] Painting Menu Overhaul: failed to persist template state', err);
@@ -33883,8 +33902,7 @@ if (_settings.profileColorsCollapse) {
                 }
             }
             if (nowEnabled) {
-                const pw = pageWindow();
-                if (typeof pw.changeColor === 'function') pw.changeColor(hex);
+                selectNativePaintColor(hex);
                 updateHexDisplay(hex);
             }
             gppState.persistTemplateState(template).catch((err) => {
@@ -34210,8 +34228,7 @@ if (_settings.profileColorsCollapse) {
         for (let index = 0; index < template.palette.length; index++) {
             core.maskSet(template.mask, index, index === targetIndex);
         }
-        const pw = pageWindow();
-        if (typeof pw.changeColor === 'function') pw.changeColor(hex);
+        selectNativePaintColor(hex);
         updateHexDisplay(hex);
         notifyMaskChanged(template);
     }

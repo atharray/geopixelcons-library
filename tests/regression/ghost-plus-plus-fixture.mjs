@@ -183,7 +183,7 @@ function buildFixtureHead(forceCanvas2D) {
     // its natural width while Painting Menu Overhaul can replace live content.
     // The toolbar is intentionally not pre-created: the fixture executes the
     // real Paint Menu Controls feature, which owns its creation and scaling.
-    lines.push('<div id="bottomControls"><div style="padding:12px;box-sizing:border-box"><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button><span id="currentEnergyDisplay">1/10</span></div><div class="control-container-colors"><button type="button">Native color</button></div></div></div>');
+    lines.push('<div id="bottomControls"><div style="padding:12px;box-sizing:border-box"><div class="w-full flex"><span id="hexDisplay"></span><button id="sortBtn" type="button">Sort</button><span id="currentEnergyDisplay">1/10</span></div><div class="control-container-colors"><button id="#FF0000" class="color-swatch" type="button">Native red</button><button id="#00FF00" class="color-swatch" type="button">Native green</button></div></div></div>');
     lines.push('<div id="map-shell"><div id="pixel-canvas"></div><canvas id="ghost-canvas"></canvas></div>');
     lines.push('<pre id="test-result" data-status="pending">pending</pre>');
     lines.push('<script>');
@@ -317,6 +317,8 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('window.__nativeInitCalls = 0;');
     lines.push('window.__changedColors = [];');
     lines.push('function changeColor(hex) { window.__changedColors.push(hex); }');
+    lines.push('window.__nativePaletteClicks = [];');
+    lines.push('["#FF0000", "#00FF00"].forEach(function(hex) { document.getElementById(hex).addEventListener("click", function() { window.__nativePaletteClicks.push(hex); changeColor(hex); }); });');
     lines.push('function drawGhostImageOnCanvas() { window.__nativeDrawCalls++; }');
     lines.push('function regenerateGhostCanvas() { window.__nativeRegenCalls++; }');
     lines.push('function initializeGhostFromStorage() { window.__nativeInitCalls++; }');
@@ -3132,6 +3134,8 @@ function buildDriverScript() {
     L.push('      var swatches = Array.from(document.querySelectorAll("#gpc-pmo-palette-grid .gpp-swatch"));');
     L.push('      if (swatches.length < 2) throw new Error("test setup: Painting Menu Overhaul needs two swatches for stale-selection coverage");');
     L.push('      swatches[0].click();');
+    L.push('      var firstSwatchHex = swatches[0].dataset.hex;');
+    L.push('      if (window.__nativePaletteClicks[window.__nativePaletteClicks.length - 1] !== firstSwatchHex || window.__changedColors[window.__changedColors.length - 1] !== firstSwatchHex) throw new Error("REGRESSION: Painting Menu Overhaul swatch selection did not invoke the matching native game color button: " + JSON.stringify({ expected: firstSwatchHex, nativeClicks: window.__nativePaletteClicks, changedColors: window.__changedColors }));');
     L.push('      swatches[1].click();');
     L.push('      if (deferred.length !== 2) throw new Error("test setup: expected one nearest lookup per rapid A -> B selection, got " + deferred.length + " (busy=" + gppScanRunning + ", focused=" + (gppState.getFocusedTemplate() && gppState.getFocusedTemplate().id) + ", summary=" + !!template.scanSummary + ", changed=" + JSON.stringify(window.__changedColors.slice(-2)) + ")");');
     L.push('      deferred[0].resolve({ ok: true, gridX: 111, gridY: 111 });');
