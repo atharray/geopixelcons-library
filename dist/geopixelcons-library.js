@@ -55,6 +55,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView'] },
         { name: 'Menuing', keys: ['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'] },
         { name: 'Misc', keys: ['extGoToLastLocation'] },
+        { name: 'Deprecated', keys: ['ghostPaletteSearch', 'ghostTemplateManager'] },
     ];
 
     const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, controlsUiScale: 100, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
@@ -649,24 +650,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             extPanel.appendChild(section);
         });
 
-        // Keep superseded controls together at the bottom of Misc instead of
-        // presenting them as current Ghost Template features.
-        const miscCategoryPanel = extensionCategoryPanels.get('Misc');
-        const deprecatedSection = document.createElement('div');
-        deprecatedSection.dataset.category = 'Deprecated';
-        deprecatedSection.style.cssText = `display:flex;flex-direction:column;gap:8px;margin-top:4px;padding:10px;border-radius:8px;background:${dark ? '#11111b' : '#f1f5f9'};border:1px dashed ${dark ? '#45475a' : '#cbd5e1'};`;
-        const deprecatedHeading = document.createElement('div');
-        deprecatedHeading.style.cssText = `font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:${dark ? '#7f849c' : '#64748b'};padding:0 4px 2px;`;
-        deprecatedHeading.textContent = 'Deprecated';
-        deprecatedSection.appendChild(deprecatedHeading);
-        ['ghostPaletteSearch', 'ghostTemplateManager'].forEach((key) => {
-            const feature = extensionDefinitions.get(key);
-            if (!feature) return;
-            const row = buildToggleRow(feature, true);
-            extensionRowsByKey.set(key, row);
-            deprecatedSection.appendChild(row);
-        });
-        if (miscCategoryPanel) miscCategoryPanel.appendChild(deprecatedSection);
+        const deprecatedSection = extensionCategoryPanels.get('Deprecated');
 
         tabPanels.push(extPanel);
         modal.appendChild(extPanel);

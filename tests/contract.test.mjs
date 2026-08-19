@@ -43,14 +43,14 @@ test('organizes settings into the requested visual extension categories', () => 
     assert.match(artifact, /name: 'Map', keys: \['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView'\]/);
     assert.match(artifact, /name: 'Menuing', keys: \['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'\]/);
     assert.match(artifact, /name: 'Misc', keys: \['extGoToLastLocation'\]/);
+    assert.match(artifact, /name: 'Deprecated', keys: \['ghostPaletteSearch', 'ghostTemplateManager'\]/);
     assert.match(artifact, /const tabs = \['Extensions', 'Keybindings'\]/);
     assert.match(artifact, /name: 'Paint Brush Overhaul'/);
     assert.match(artifact, /name: 'Ghost\+\+'/);
     assert.match(artifact, /name: 'Painting Menu Overhaul', icon: '🎨'/);
     assert.match(artifact, /name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true/);
     assert.match(artifact, /name: 'Ghost Template Manager', icon: '👻', deprecated: true, ghostPlusPlusGray: true/);
-    assert.match(artifact, /deprecatedSection\.dataset\.category = 'Deprecated'/);
-    assert.match(artifact, /deprecatedHeading\.textContent = 'Deprecated'/);
+    assert.match(artifact, /const deprecatedSection = extensionCategoryPanels\.get\('Deprecated'\)/);
     assert.match(artifact, /modernBtnsLabel\.innerHTML = '<span>🎛️<\/span><span>Ghost Menu UI Overhaul<\/span>'/);
     assert.match(artifact, /ghostPosLabel\.innerHTML = '<span>📌<\/span><span>Remember ghost template position and size<\/span>'/);
     assert.match(artifact, /miscSettingsSection\.appendChild\(emojiRow\)/);
