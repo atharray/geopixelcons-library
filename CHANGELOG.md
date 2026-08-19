@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/atharray/geopixelcons-library/compare/v2.6.0...v2.7.0) (2026-08-19)
+
+
+### Features
+
+* Painting Menu Overhaul ([#31](https://github.com/atharray/geopixelcons-library/issues/31)) ([7a6d7a1](https://github.com/atharray/geopixelcons-library/commit/7a6d7a12519a5819b0ac6e1867a19f7fc4a2b979))
+
 ## [2.6.0](https://github.com/atharray/geopixelcons-library/compare/v2.5.0...v2.6.0) (2026-08-18)
 
 
