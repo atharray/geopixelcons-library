@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.1](https://github.com/atharray/geopixelcons-library/compare/v2.8.0...v2.8.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **guild:** resync member-row parsing with current GeoPixelsFront markup ([#36](https://github.com/atharray/geopixelcons-library/issues/36)) ([6a3de59](https://github.com/atharray/geopixelcons-library/commit/6a3de594a23f91e331274ad251ddfb9e7107c3c6))
+
 ## [2.8.0](https://github.com/atharray/geopixelcons-library/compare/v2.7.0...v2.8.0) (2026-08-19)
 
 
