@@ -30,10 +30,36 @@ test('publishes the library bridge when @require wraps the source', () => {
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Ghost Template Manager/);
-    assert.match(artifact, /const VERSION = '2\.7\.0';/);
+    assert.match(artifact, /const VERSION = '2\.8\.0';/);
     const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const versionPattern = new RegExp(`const LIBRARY_VERSION = '${escapedVersion}'; // x-release-please-version`);
     assert.match(artifact, versionPattern);
+});
+
+test('organizes settings into the requested visual extension categories', () => {
+    assert.match(artifact, /const EXTENSION_CATEGORIES = \[/);
+    assert.match(artifact, /name: 'Painting', keys: \['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'\]/);
+    assert.match(artifact, /name: 'Ghost Template', keys: \['ghostPlusPlus', 'showSyncGhostBtn'\]/);
+    assert.match(artifact, /name: 'Map', keys: \['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView'\]/);
+    assert.match(artifact, /name: 'Menuing', keys: \['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'\]/);
+    assert.match(artifact, /name: 'Misc', keys: \['extGoToLastLocation'\]/);
+    assert.match(artifact, /name: 'Deprecated', keys: \['ghostPaletteSearch', 'ghostTemplateManager'\]/);
+    assert.match(artifact, /const tabs = \['Extensions', 'Keybindings'\]/);
+    assert.match(artifact, /name: 'Paint Brush Overhaul'/);
+    assert.match(artifact, /name: 'Ghost\+\+'/);
+    assert.match(artifact, /name: 'Painting Menu Overhaul', icon: '🎨'/);
+    assert.match(artifact, /name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true/);
+    assert.match(artifact, /name: 'Ghost Template Manager', icon: '👻', deprecated: true, ghostPlusPlusGray: true/);
+    assert.match(artifact, /const deprecatedSection = extensionCategoryPanels\.get\('Deprecated'\)/);
+    assert.match(artifact, /modernBtnsLabel\.innerHTML = '<span>🎛️<\/span><span>Ghost Menu UI Overhaul<\/span>'/);
+    assert.match(artifact, /ghostPosLabel\.innerHTML = '<span>📌<\/span><span>Remember ghost template position and size<\/span>'/);
+    assert.match(artifact, /miscSettingsSection\.appendChild\(emojiRow\)/);
+    assert.match(artifact, /movementRow\.insertAdjacentElement\('afterend', smoothZoomRow\)/);
+    assert.match(artifact, /deprecatedSection\.appendChild\(modernBtnsRow\)/);
+    assert.match(artifact, /deprecatedSection\.appendChild\(ghostPosRow\)/);
+    assert.match(artifact, /ghostPlusPlusDependentRows\.add\(ghostPosRow\)/);
+    assert.match(artifact, /function styleStandaloneExtensionRow\(row\)/);
+    assert.match(artifact, /styleStandaloneExtensionRow\);/);
 });
 
 test('includes the profile color list collapse feature', () => {
