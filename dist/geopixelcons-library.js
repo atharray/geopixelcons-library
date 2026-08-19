@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.7.0 - readable release bundle */
+/* GeoPixelcons Library v2.8.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.8.0'; // x-release-please-version
@@ -19938,25 +19938,50 @@ patch();
 
     // --- XP Tracking Logic ---
 
+    // GeoPixelsFront renders each guild-member row as a direct child of
+    // #guildMembersContainer, but the exact Tailwind utility classes and the
+    // tag used for the name element have changed across frontend releases
+    // (the row went from `div.flex.items-center.justify-between.p-2...` to
+    // `div.flex.flex-col.p-2.5...`, and the name moved from a <p> to a
+    // <span>). Match structurally instead of pinning an exact class
+    // combination, so the next unrelated layout tweak doesn't silently zero
+    // out every row again: a member row is any direct child of the container
+    // that has a `.font-semibold` name element; header rows ("Pending
+    // Applications", "Guild Roster") don't have one and are skipped
+    // automatically.
+    function getGuildMemberRows(container) {
+        if (!container) return [];
+        return Array.from(container.children).filter(el => el.querySelector('.font-semibold'));
+    }
+
+    function getGuildMemberNameEl(row) {
+        return row.querySelector('.font-semibold');
+    }
+
     function parseGuildMembers() {
         const container = document.getElementById('guildMembersContainer');
         if (!container) return null;
 
         const members = {};
-        const memberRows = container.querySelectorAll('div.flex.items-center.justify-between.p-2.rounded-md.bg-white.shadow-sm');
+        const memberRows = getGuildMemberRows(container);
 
         memberRows.forEach(row => {
-            const nameEl = row.querySelector('p.font-semibold');
-            const xpEl = row.querySelector('p.text-xs.text-gray-500');
+            const nameEl = getGuildMemberNameEl(row);
+            const xpEl = row.querySelector('.text-xs.text-gray-500');
 
             if (nameEl && xpEl) {
                 let fullName = nameEl.textContent.trim();
                 const badge = nameEl.querySelector('span');
                 if (badge) fullName = fullName.replace(badge.textContent, '').trim();
-                
+
                 const xpText = xpEl.textContent;
-                const xpMatch = xpText.match(/([\d,.]+)\s*XP$/);
-                
+                // Not anchored to the end of the string: guild owners see an
+                // extra "(x,y)" last-known-coordinate suffix appended after
+                // "XP" for any member who has one, which would otherwise
+                // silently drop exactly the members that have coordinates —
+                // the members "Show Players" and the XP tracker most need.
+                const xpMatch = xpText.match(/([\d,.]+)\s*XP\b/);
+
                 let coords = null;
                 const findBtn = row.querySelector('button[onclick^="goToGridLocation"]');
                 if (findBtn) {
@@ -21498,10 +21523,10 @@ patch();
                         mapBtn.onclick = () => {
                             // Find the original Find button in the member row and click it
                             const memberName = change.name || change.id;
-                            const memberRows = document.querySelectorAll('#guildMembersContainer div.flex.items-center.justify-between');
+                            const memberRows = getGuildMemberRows(document.getElementById('guildMembersContainer'));
                             let found = false;
                             for (const row of memberRows) {
-                                const nameEl = row.querySelector('p.font-semibold');
+                                const nameEl = getGuildMemberNameEl(row);
                                 if (nameEl) {
                                     // Remove badge the same way parseGuildMembers does
                                     let displayName = nameEl.textContent.trim();
@@ -22718,9 +22743,9 @@ patch();
             e.stopPropagation();
 
             let found = false;
-            const memberRows = document.querySelectorAll('#guildMembersContainer div.flex.items-center.justify-between');
+            const memberRows = getGuildMemberRows(document.getElementById('guildMembersContainer'));
             for (const row of memberRows) {
-                const nameEl = row.querySelector('p.font-semibold');
+                const nameEl = getGuildMemberNameEl(row);
                 if (nameEl) {
                     let displayName = nameEl.textContent.trim();
                     const badge = nameEl.querySelector('span');
@@ -23327,7 +23352,7 @@ patch();
 
             // Members: guildMembersContainer has member rows
             const membersEl = document.getElementById('guildMembersContainer');
-            if (membersEl && membersEl.querySelectorAll('div.flex.items-center.justify-between').length > 0) {
+            if (membersEl && getGuildMemberRows(membersEl).length > 0) {
                 markDone('members');
             }
 
