@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.7.0';
+    const VERSION = '2.8.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -22,10 +22,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const STORAGE_KEY = 'geopixelcons_settings';
     const FEATURE_LIST = [
         { key: 'bulkPurchaseColors', name: 'Bulk Purchase Colors', icon: '🛒', desc: 'Advanced color purchasing with queue management.', features: ['Bulk color purchase with preview modal', 'Queue management in profile panel', 'Duplicate detection & insufficient-pixels handling', 'Purchase progress tracking'] },
-        { key: 'ghostPlusPlus', name: 'Ghost++ Template Overlay', icon: '👻', desc: 'A scalable, multi-template ghost/overlay manager that replaces the native ghost image tool.', features: ['Indexed-core rendering that scales to large, high-colour templates', 'Draggable, resizable, fully collapsible manager with a two-column layout', 'Thumbnail template library with hover preview, edit/teleport, and bulk export/delete', 'Sort/filter/search palette with hover-to-copy hex readout', 'Segmented completion progress bar with per-colour breakdown, unaffected by which colours are toggled on/off', 'One-click full-opacity template Preview toggle'] },
+        { key: 'ghostPlusPlus', name: 'Ghost++', icon: '👻', desc: 'A scalable, multi-template ghost/overlay manager that replaces the native ghost image tool.', features: ['Indexed-core rendering that scales to large, high-colour templates', 'Draggable, resizable, fully collapsible manager with a two-column layout', 'Thumbnail template library with hover preview, edit/teleport, and bulk export/delete', 'Sort/filter/search palette with hover-to-copy hex readout', 'Segmented completion progress bar with per-colour breakdown, unaffected by which colours are toggled on/off', 'One-click full-opacity template Preview toggle'] },
         { key: 'guildOverhaul', name: 'Guild Overhaul', icon: '⚔️', desc: 'Comprehensive guild interface improvements.', features: ['Enhanced member management UI', 'Bank/treasury system', 'Color limit tracking', 'Role hierarchy display', 'Guild-specific moderation tools'] },
         { key: 'hidePaintMenu', name: 'Paint Menu Controls', icon: '🫣', desc: 'Adds a collapse/expand toggle for the bottom controls panel.', features: ['Collapse & expand the bottom paint controls', 'Reposition controls (left/center/right)', 'Optional toolbar scale changes controls and height without changing paint-panel width', 'Smooth CSS animations'] },
-        { key: 'paintBrushSwap', name: 'Paint Brush Swap', icon: '🖌️', desc: 'Rapid paintbrush tool switching with keyboard shortcuts.', features: ['Configurable keyboard shortcuts for brush swap', 'Brush preset profiles for different painting patterns', 'Quick-switch between brush types'] },
+        { key: 'paintBrushSwap', name: 'Paint Brush Overhaul', icon: '🖌️', desc: 'Rapid paintbrush tool switching with keyboard shortcuts.', features: ['Configurable keyboard shortcuts for brush swap', 'Brush preset profiles for different painting patterns', 'Quick-switch between brush types'] },
         { key: 'regionScreenshot', name: 'Region Screenshot', icon: '📸', desc: 'Capture region-level screenshots with coordinate overlays.', features: ['Region image capture with coordinate overlay', 'Alpha channel support', 'Save as PNG directly'] },
         { key: 'regionsHighscore', name: 'Regions Highscore', icon: '🏆', desc: 'Displays regional pixel/color contribution rankings.', features: ['Sort rankings by player or guild', 'Filter by pixel count, color, or region', 'Historical contribution statistics'] },
         { key: 'themeEditor', name: 'Theme Editor', icon: '🎨', desc: 'Visual map theme editor — edit MapLibre GL styles with color pickers, save/load/manage custom themes.', features: ['Bundled themes (Fjord, Obsidian, Monokai, Ayu Mirage, etc.)', 'Simple & Full color editing modes', 'Live preview toggle for instant feedback', 'Import/export themes as JSON files', 'Quick theme-switch submenu in the dropdown', 'Theme manager with create, edit & delete'] },
@@ -41,10 +41,20 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
-        { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', desc: 'Superseded by Ghost++ Template Overlay. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
-        { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', desc: 'Superseded by Ghost++ Template Overlay. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
+        { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
+        { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
-        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '📱', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
+        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '🎨', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
+    ];
+
+    // Presentation-only grouping for the Settings modal. Runtime feature keys,
+    // defaults, and status tracking continue to come from the two lists above.
+    const EXTENSION_CATEGORIES = [
+        { name: 'Painting', keys: ['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'] },
+        { name: 'Ghost Template', keys: ['ghostPaletteSearch', 'ghostTemplateManager', 'ghostPlusPlus', 'showSyncGhostBtn'] },
+        { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView'] },
+        { name: 'Menuing', keys: ['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'] },
+        { name: 'Misc', keys: ['extGoToLastLocation'] },
     ];
 
     const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, controlsUiScale: 100, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
@@ -492,6 +502,16 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             if (fn) fn();
         }
 
+        const ghostPlusPlusDependentRows = new Set();
+
+        function refreshGhostPlusPlusDependentRows() {
+            const gray = !!_settings.ghostPlusPlus;
+            ghostPlusPlusDependentRows.forEach((row) => {
+                row.style.opacity = gray ? '0.58' : '';
+                row.style.filter = gray ? 'grayscale(0.75)' : '';
+            });
+        }
+
         // ---- Helper: build a toggle row ----
         function buildToggleRow(f, showHelp) {
             const status = _featureStatus[f.key];
@@ -517,7 +537,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             const iconSpan = document.createElement('span');
             iconSpan.textContent = f.icon;
             const nameSpan = document.createElement('span');
-            nameSpan.textContent = f.name;
+            nameSpan.textContent = f.deprecated
+                ? f.name.replace(/\s*\(legacy\)$/, ' (legacy, deprecated)')
+                : f.name;
             nameSpan.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border-bottom:1px dashed ' + (dark ? '#6c7086' : '#94a3b8') + ';transition:color .15s,border-color .15s;';
             nameSpan.addEventListener('mouseenter', () => { nameSpan.style.color = '#3b82f6'; nameSpan.style.borderBottomColor = '#3b82f6'; });
             nameSpan.addEventListener('mouseleave', () => { nameSpan.style.color = ''; nameSpan.style.borderBottomColor = dark ? '#6c7086' : '#94a3b8'; });
@@ -569,6 +591,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 row.style.borderColor = input.checked
                     ? (dark ? '#a6e3a144' : '#bbf7d0')
                     : (dark ? '#f38ba844' : '#fecaca');
+                if (f.key === 'ghostPlusPlus') refreshGhostPlusPlusDependentRows();
                 banner.style.display = 'block';
             });
 
@@ -577,35 +600,53 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 
             row.appendChild(labelWrap);
             row.appendChild(toggle);
+            if (f.ghostPlusPlusGray) {
+                row.dataset.deprecated = 'true';
+                ghostPlusPlusDependentRows.add(row);
+                refreshGhostPlusPlusDependentRows();
+            }
             return row;
         }
 
         // ============ TAB 1: Extensions ============
         const extPanel = document.createElement('div');
-        extPanel.style.cssText = 'padding: 12px 20px; display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto;';
+        extPanel.style.cssText = 'padding: 12px 20px; display: flex; flex-direction: column; gap: 14px; max-height: 50vh; overflow-y: auto;';
+        const extensionDefinitions = new Map([...FEATURE_LIST, ...EXTENSION_LIST].map((feature) => [feature.key, feature]));
+        const extensionRowsByKey = new Map();
+        const extensionCategoryPanels = new Map();
 
-        // Section: Built-in features
-        const builtinLabel = document.createElement('div');
-        builtinLabel.style.cssText = `font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${dark ? '#6c7086' : '#94a3b8'};margin-bottom:2px;`;
-        builtinLabel.textContent = 'Built-in Features';
-        extPanel.appendChild(builtinLabel);
-
-        FEATURE_LIST.forEach(f => extPanel.appendChild(buildToggleRow(f, true)));
-
-        // Section: Additional extensions
-        const extLabel = document.createElement('div');
-        extLabel.style.cssText = `font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${dark ? '#6c7086' : '#94a3b8'};margin-top:8px;margin-bottom:2px;`;
-        extLabel.textContent = 'Additional Extensions';
-        extPanel.appendChild(extLabel);
-
-        EXTENSION_LIST.forEach(f => extPanel.appendChild(buildToggleRow(f, true)));
+        EXTENSION_CATEGORIES.forEach((category) => {
+            const section = document.createElement('section');
+            section.style.cssText = `display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:10px;background:${dark ? '#181825' : '#f8fafc'};border:1px solid ${dark ? '#313244' : '#e2e8f0'};`;
+            const heading = document.createElement('div');
+            heading.style.cssText = `font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:${dark ? '#a6adc8' : '#64748b'};padding:0 4px 2px;`;
+            heading.textContent = category.name;
+            section.appendChild(heading);
+            category.keys.forEach((key) => {
+                const feature = extensionDefinitions.get(key);
+                if (!feature) return;
+                const row = buildToggleRow(feature, true);
+                extensionRowsByKey.set(key, row);
+                section.appendChild(row);
+            });
+            extensionCategoryPanels.set(category.name, section);
+            extPanel.appendChild(section);
+        });
 
         tabPanels.push(extPanel);
         modal.appendChild(extPanel);
 
         // ============ TAB 2: GeoPixelcons++ Settings ============
         const settingsPanel = document.createElement('div');
-        settingsPanel.style.cssText = 'padding: 12px 20px; display: none; flex-direction: column; gap: 12px;';
+        settingsPanel.style.cssText = 'padding: 12px 20px; display: none; flex-direction: column; gap: 12px; max-height: 50vh; overflow-y: auto;';
+        const settingsNote = document.createElement('div');
+        settingsNote.style.cssText = `padding:12px 14px;border-radius:8px;background:${dark ? '#313244' : '#f1f5f9'};border:1px solid ${dark ? '#45475a' : '#e2e8f0'};color:${dark ? '#a6adc8' : '#64748b'};font-size:13px;`;
+        settingsNote.textContent = 'Feature controls have moved to the Extensions tab, organized by purpose.';
+        settingsPanel.appendChild(settingsNote);
+
+        // The remaining former GPC Settings rows are appended to the already
+        // visible Extensions → Misc category below as they are constructed.
+        const miscSettingsSection = extensionCategoryPanels.get('Misc');
 
         // Emoji icon toggle
         const emojiRow = document.createElement('div');
@@ -668,7 +709,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         emojiToggle.appendChild(emojiSlider);
         emojiRow.appendChild(emojiLabel);
         emojiRow.appendChild(emojiToggle);
-        settingsPanel.appendChild(emojiRow);
+        miscSettingsSection.appendChild(emojiRow);
 
         // Compact paint overflow toggle
         const compactRow = document.createElement('div');
@@ -720,7 +761,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         compactToggle.appendChild(compactSlider);
         compactRow.appendChild(compactLabel);
         compactRow.appendChild(compactToggle);
-        settingsPanel.appendChild(compactRow);
+        miscSettingsSection.appendChild(compactRow);
 
         // Disable Group Noise toggle
         const noiseRow = document.createElement('div');
@@ -772,7 +813,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         noiseToggle.appendChild(noiseSlider);
         noiseRow.appendChild(noiseLabel);
         noiseRow.appendChild(noiseToggle);
-        settingsPanel.appendChild(noiseRow);
+        miscSettingsSection.appendChild(noiseRow);
 
         // Start in Shift Lock toggle
         const shiftRow = document.createElement('div');
@@ -823,7 +864,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         shiftToggle.appendChild(shiftSlider);
         shiftRow.appendChild(shiftLabel);
         shiftRow.appendChild(shiftToggle);
-        settingsPanel.appendChild(shiftRow);
+        miscSettingsSection.appendChild(shiftRow);
 
         // Start in Inspect Mode toggle
         const inspectRow = document.createElement('div');
@@ -874,7 +915,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         inspectToggle.appendChild(inspectSlider);
         inspectRow.appendChild(inspectLabel);
         inspectRow.appendChild(inspectToggle);
-        settingsPanel.appendChild(inspectRow);
+        miscSettingsSection.appendChild(inspectRow);
 
         // Smooth Zoom Buttons toggle
         const smoothZoomRow = document.createElement('div');
@@ -926,7 +967,12 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         smoothZoomToggle.appendChild(smoothZoomSlider);
         smoothZoomRow.appendChild(smoothZoomLabel);
         smoothZoomRow.appendChild(smoothZoomToggle);
-        settingsPanel.appendChild(smoothZoomRow);
+        const mapCategoryPanel = extensionCategoryPanels.get('Map');
+        if (mapCategoryPanel) {
+            const movementRow = extensionRowsByKey.get('extMapMovementLock');
+            if (movementRow) movementRow.insertAdjacentElement('afterend', smoothZoomRow);
+            else mapCategoryPanel.appendChild(smoothZoomRow);
+        }
 
         // Enable Debugging toggle
         const debugRow = document.createElement('div');
@@ -978,7 +1024,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         debugToggle.appendChild(debugSlider);
         debugRow.appendChild(debugLabel);
         debugRow.appendChild(debugToggle);
-        settingsPanel.appendChild(debugRow);
+        miscSettingsSection.appendChild(debugRow);
 
         // Ghost Menu UI Overhaul toggle (Ghost Template Manager)
         const modernBtnsRow = document.createElement('div');
@@ -1030,7 +1076,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         modernBtnsToggle.appendChild(modernBtnsSlider);
         modernBtnsRow.appendChild(modernBtnsLabel);
         modernBtnsRow.appendChild(modernBtnsToggle);
-        settingsPanel.appendChild(modernBtnsRow);
+        modernBtnsLabel.querySelector('span:nth-child(2)').textContent = 'Ghost Menu UI Overhaul (deprecated)';
+        modernBtnsRow.dataset.deprecated = 'true';
+        ghostPlusPlusDependentRows.add(modernBtnsRow);
+        refreshGhostPlusPlusDependentRows();
+        const ghostCategoryPanel = extensionCategoryPanels.get('Ghost Template');
+        const ghostPlusPlusRow = extensionRowsByKey.get('ghostPlusPlus');
+        if (ghostCategoryPanel && ghostPlusPlusRow) ghostPlusPlusRow.insertAdjacentElement('beforebegin', modernBtnsRow);
+        else if (ghostCategoryPanel) ghostCategoryPanel.appendChild(modernBtnsRow);
 
         // Remember ghost template modal position & size toggle
         const ghostPosRow = document.createElement('div');
@@ -1081,7 +1134,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         ghostPosToggle.appendChild(ghostPosSlider);
         ghostPosRow.appendChild(ghostPosLabel);
         ghostPosRow.appendChild(ghostPosToggle);
-        settingsPanel.appendChild(ghostPosRow);
+        ghostPosLabel.querySelector('span:nth-child(2)').textContent = 'Remember ghost template position and size (deprecated)';
+        if (modernBtnsRow.parentElement) modernBtnsRow.insertAdjacentElement('afterend', ghostPosRow);
+        else if (ghostCategoryPanel) ghostCategoryPanel.appendChild(ghostPosRow);
 
         tabPanels.push(settingsPanel);
         modal.appendChild(settingsPanel);
@@ -1248,6 +1303,15 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.8.0',
+            date: '2026-08-18',
+            items: [
+                { type: 'changed', text: 'GeoPixelcons++ Settings: Extensions are now organized into Painting, Ghost Template, Map, Menuing, and Misc categories' },
+                { type: 'changed', text: 'GeoPixelcons++ Settings: renamed Paint Brush Overhaul and Ghost++, replaced the misleading Painting Menu Overhaul icon, and marked superseded Ghost controls as deprecated' },
+                { type: 'changed', text: 'GeoPixelcons++ Settings: moved remaining general controls into Extensions → Misc and placed Smooth Zoom Buttons with the Map controls' },
+            ]
+        },
         {
             version: '2.7.0',
             date: '2026-08-17',
