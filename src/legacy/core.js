@@ -29,8 +29,8 @@
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
-        { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search (legacy)', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
-        { key: 'ghostTemplateManager', name: 'Ghost Template Manager (legacy)', icon: '👻', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
+        { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
+        { key: 'ghostTemplateManager', name: 'Ghost Template Manager', icon: '👻', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
         { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '🎨', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
     ];
@@ -39,7 +39,7 @@
     // defaults, and status tracking continue to come from the two lists above.
     const EXTENSION_CATEGORIES = [
         { name: 'Painting', keys: ['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'] },
-        { name: 'Ghost Template', keys: ['ghostPaletteSearch', 'ghostTemplateManager', 'ghostPlusPlus', 'showSyncGhostBtn'] },
+        { name: 'Ghost Template', keys: ['ghostPlusPlus', 'showSyncGhostBtn'] },
         { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView'] },
         { name: 'Menuing', keys: ['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'] },
         { name: 'Misc', keys: ['extGoToLastLocation'] },
@@ -311,7 +311,7 @@
             display: flex; background: ${dark ? '#1e1e2e' : '#ffffff'};
             border-bottom: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
         `;
-        const tabs = ['Extensions', 'GPC Settings', 'Keybindings'];
+        const tabs = ['Extensions', 'Keybindings'];
         const tabBtns = [];
         const tabPanels = [];
 
@@ -525,9 +525,7 @@
             const iconSpan = document.createElement('span');
             iconSpan.textContent = f.icon;
             const nameSpan = document.createElement('span');
-            nameSpan.textContent = f.deprecated
-                ? f.name.replace(/\s*\(legacy\)$/, ' (legacy, deprecated)')
-                : f.name;
+            nameSpan.textContent = f.name;
             nameSpan.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border-bottom:1px dashed ' + (dark ? '#6c7086' : '#94a3b8') + ';transition:color .15s,border-color .15s;';
             nameSpan.addEventListener('mouseenter', () => { nameSpan.style.color = '#3b82f6'; nameSpan.style.borderBottomColor = '#3b82f6'; });
             nameSpan.addEventListener('mouseleave', () => { nameSpan.style.color = ''; nameSpan.style.borderBottomColor = dark ? '#6c7086' : '#94a3b8'; });
@@ -596,6 +594,24 @@
             return row;
         }
 
+        // Former GPC Settings rows now live beside extension rows. Keep their
+        // enabled/disabled surface colors identical to the standard rows.
+        function styleStandaloneExtensionRow(row) {
+            const input = row.querySelector('input[type="checkbox"]');
+            if (!input) return;
+            const sync = () => {
+                const enabled = !!input.checked;
+                row.style.background = enabled
+                    ? (dark ? '#a6e3a122' : '#f0fdf4')
+                    : (dark ? '#f38ba822' : '#fef2f2');
+                row.style.borderColor = enabled
+                    ? (dark ? '#a6e3a144' : '#bbf7d0')
+                    : (dark ? '#f38ba844' : '#fecaca');
+            };
+            sync();
+            input.addEventListener('change', sync);
+        }
+
         // ============ TAB 1: Extensions ============
         const extPanel = document.createElement('div');
         extPanel.style.cssText = 'padding: 12px 20px; display: flex; flex-direction: column; gap: 14px; max-height: 50vh; overflow-y: auto;';
@@ -621,19 +637,30 @@
             extPanel.appendChild(section);
         });
 
+        // Keep superseded controls together at the bottom of Misc instead of
+        // presenting them as current Ghost Template features.
+        const miscCategoryPanel = extensionCategoryPanels.get('Misc');
+        const deprecatedSection = document.createElement('div');
+        deprecatedSection.dataset.category = 'Deprecated';
+        deprecatedSection.style.cssText = `display:flex;flex-direction:column;gap:8px;margin-top:4px;padding:10px;border-radius:8px;background:${dark ? '#11111b' : '#f1f5f9'};border:1px dashed ${dark ? '#45475a' : '#cbd5e1'};`;
+        const deprecatedHeading = document.createElement('div');
+        deprecatedHeading.style.cssText = `font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:${dark ? '#7f849c' : '#64748b'};padding:0 4px 2px;`;
+        deprecatedHeading.textContent = 'Deprecated';
+        deprecatedSection.appendChild(deprecatedHeading);
+        ['ghostPaletteSearch', 'ghostTemplateManager'].forEach((key) => {
+            const feature = extensionDefinitions.get(key);
+            if (!feature) return;
+            const row = buildToggleRow(feature, true);
+            extensionRowsByKey.set(key, row);
+            deprecatedSection.appendChild(row);
+        });
+        if (miscCategoryPanel) miscCategoryPanel.appendChild(deprecatedSection);
+
         tabPanels.push(extPanel);
         modal.appendChild(extPanel);
 
-        // ============ TAB 2: GeoPixelcons++ Settings ============
-        const settingsPanel = document.createElement('div');
-        settingsPanel.style.cssText = 'padding: 12px 20px; display: none; flex-direction: column; gap: 12px; max-height: 50vh; overflow-y: auto;';
-        const settingsNote = document.createElement('div');
-        settingsNote.style.cssText = `padding:12px 14px;border-radius:8px;background:${dark ? '#313244' : '#f1f5f9'};border:1px solid ${dark ? '#45475a' : '#e2e8f0'};color:${dark ? '#a6adc8' : '#64748b'};font-size:13px;`;
-        settingsNote.textContent = 'Feature controls have moved to the Extensions tab, organized by purpose.';
-        settingsPanel.appendChild(settingsNote);
-
-        // The remaining former GPC Settings rows are appended to the already
-        // visible Extensions → Misc category below as they are constructed.
+        // Former GPC Settings rows are appended to their purpose-based
+        // Extensions sections below as they are constructed.
         const miscSettingsSection = extensionCategoryPanels.get('Misc');
 
         // Emoji icon toggle
@@ -1014,7 +1041,7 @@
         debugRow.appendChild(debugToggle);
         miscSettingsSection.appendChild(debugRow);
 
-        // Ghost Menu UI Overhaul toggle (Ghost Template Manager)
+        // Ghost Menu UI Overhaul toggle (deprecated)
         const modernBtnsRow = document.createElement('div');
         modernBtnsRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
@@ -1064,14 +1091,10 @@
         modernBtnsToggle.appendChild(modernBtnsSlider);
         modernBtnsRow.appendChild(modernBtnsLabel);
         modernBtnsRow.appendChild(modernBtnsToggle);
-        modernBtnsLabel.querySelector('span:nth-child(2)').textContent = 'Ghost Menu UI Overhaul (deprecated)';
         modernBtnsRow.dataset.deprecated = 'true';
         ghostPlusPlusDependentRows.add(modernBtnsRow);
         refreshGhostPlusPlusDependentRows();
-        const ghostCategoryPanel = extensionCategoryPanels.get('Ghost Template');
-        const ghostPlusPlusRow = extensionRowsByKey.get('ghostPlusPlus');
-        if (ghostCategoryPanel && ghostPlusPlusRow) ghostPlusPlusRow.insertAdjacentElement('beforebegin', modernBtnsRow);
-        else if (ghostCategoryPanel) ghostCategoryPanel.appendChild(modernBtnsRow);
+        deprecatedSection.appendChild(modernBtnsRow);
 
         // Remember ghost template modal position & size toggle
         const ghostPosRow = document.createElement('div');
@@ -1122,14 +1145,12 @@
         ghostPosToggle.appendChild(ghostPosSlider);
         ghostPosRow.appendChild(ghostPosLabel);
         ghostPosRow.appendChild(ghostPosToggle);
-        ghostPosLabel.querySelector('span:nth-child(2)').textContent = 'Remember ghost template position and size (deprecated)';
-        if (modernBtnsRow.parentElement) modernBtnsRow.insertAdjacentElement('afterend', ghostPosRow);
-        else if (ghostCategoryPanel) ghostCategoryPanel.appendChild(ghostPosRow);
+        deprecatedSection.appendChild(ghostPosRow);
 
-        tabPanels.push(settingsPanel);
-        modal.appendChild(settingsPanel);
+        [emojiRow, compactRow, noiseRow, shiftRow, inspectRow, smoothZoomRow, debugRow, modernBtnsRow, ghostPosRow]
+            .forEach(styleStandaloneExtensionRow);
 
-        // ============ TAB 3: Keybindings ============
+        // ============ TAB 2: Keybindings ============
         const kbPanel = document.createElement('div');
         kbPanel.style.cssText = 'padding: 12px 20px; display: none;';
 
@@ -1298,6 +1319,8 @@
                 { type: 'changed', text: 'GeoPixelcons++ Settings: Extensions are now organized into Painting, Ghost Template, Map, Menuing, and Misc categories' },
                 { type: 'changed', text: 'GeoPixelcons++ Settings: renamed Paint Brush Overhaul and Ghost++, replaced the misleading Painting Menu Overhaul icon, and marked superseded Ghost controls as deprecated' },
                 { type: 'changed', text: 'GeoPixelcons++ Settings: moved remaining general controls into Extensions → Misc and placed Smooth Zoom Buttons with the Map controls' },
+                { type: 'changed', text: 'GeoPixelcons++ Settings: removed the redundant GPC Settings tab so extension controls live in one organized place' },
+                { type: 'changed', text: 'GeoPixelcons++ Settings: moved superseded Ghost controls into Misc → Deprecated and aligned all moved rows with the standard red/green state styling' },
             ]
         },
         {
