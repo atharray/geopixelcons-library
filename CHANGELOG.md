@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.7.1](https://github.com/atharray/geopixelcons-library/compare/v2.7.0...v2.7.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **paint-menu:** restore native swatch selection ([a43aba0](https://github.com/atharray/geopixelcons-library/commit/a43aba0f4f3be24ba740a267af2f84e25e3881bf))
+* restore Painting Menu swatch selection ([d5add43](https://github.com/atharray/geopixelcons-library/commit/d5add43e88116dde0fea6b11a521c01fde778032))
+
 ## [2.7.0](https://github.com/atharray/geopixelcons-library/compare/v2.6.0...v2.7.0) (2026-08-19)
 
 
