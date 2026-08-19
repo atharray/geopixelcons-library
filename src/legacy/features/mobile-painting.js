@@ -2614,7 +2614,34 @@
             }),
         })));
 
-        row.append(enableDropdown.el, disableAllBtn, sortControl, filterDropdown, hexDropdown.el);
+        // Per explicit user feedback (ReaCreations, via Discord): a checkbox
+        // to opt out of the palette-grid swap entirely, so a focused
+        // template's own colors no longer force out colors the user keeps
+        // on their palette by hand. Built on the same empty-menu +
+        // manually-appended-checkbox shape as the Enable dropdown's own
+        // "Highlight nearest" option above (buildDropdownButton's `menu` is
+        // exposed for exactly this). Persisted through _settings (core.js)
+        // rather than gppSettings -- this is a Painting Menu Overhaul-only
+        // preference, not a real Ghost++ setting, and has no reason to also
+        // surface inside the desktop Ghost++ modal's own View Settings.
+        const paletteOptionsDropdown = buildDropdownButton('Palette', []);
+        const manualPaletteOption = document.createElement('label');
+        manualPaletteOption.className = 'gpc-ctrl-menu-option';
+        const manualPaletteInput = document.createElement('input');
+        manualPaletteInput.type = 'checkbox';
+        manualPaletteInput.checked = !!_settings.mobilePaintingManualPalette;
+        const manualPaletteText = document.createElement('span');
+        manualPaletteText.textContent = 'Use manual palette';
+        manualPaletteOption.title = "Keep your own manually-chosen color palette instead of syncing to the focused Ghost++ template's colors.";
+        manualPaletteOption.append(manualPaletteInput, manualPaletteText);
+        paletteOptionsDropdown.menu.appendChild(manualPaletteOption);
+        manualPaletteInput.addEventListener('change', () => {
+            _settings.mobilePaintingManualPalette = manualPaletteInput.checked;
+            saveSettings(_settings);
+            resync();
+        });
+
+        row.append(enableDropdown.el, disableAllBtn, sortControl, filterDropdown, hexDropdown.el, paletteOptionsDropdown.el);
         return row;
     }
 
@@ -2696,8 +2723,20 @@
         // without ever taking over its width.
         requestPaintMenuControlsScaleLayout();
         const template = getFocusedTemplateWithPalette();
+        // Per explicit user feedback (ReaCreations, via Discord): focusing
+        // ANY template -- personal or guild -- used to force-swap the native
+        // manual color grid for the template's own palette with no way to
+        // opt out, so colors the user keeps on their palette by hand (e.g. a
+        // shade not in the template, or transparent) became unreachable
+        // without editing the template itself. This setting keeps the
+        // native grid in place even while a template is focused; every
+        // other control row feature (Enable/Disable/Sort/Filter/Get hex,
+        // scanning) still targets the focused template exactly as before,
+        // since those call getFocusedTemplateWithPalette() independently --
+        // only which color grid is visually shown is affected here.
+        const wantsManualPalette = !!_settings.mobilePaintingManualPalette;
 
-        if (!template) {
+        if (!template || wantsManualPalette) {
             leaveEnableSelectedMode();
             liveState.scanSummaryRef = null;
             if (liveState.wrap) {
@@ -2720,7 +2759,9 @@
                 // native sync ticks log "Color container
                 // '.control-container-colors' not found." to the console.
                 liveState.savedNativeContainer.style.display = '';
-                dbgPush('Painting Menu Overhaul: no focused Ghost++ template anymore -- restored the native color grid.', { uiComponent: 'Painting Menu Overhaul' });
+                dbgPush(wantsManualPalette
+                    ? 'Painting Menu Overhaul: manual palette enabled -- restored the native color grid despite a focused template.'
+                    : 'Painting Menu Overhaul: no focused Ghost++ template anymore -- restored the native color grid.', { uiComponent: 'Painting Menu Overhaul' });
                 liveState.wrap = null;
                 liveState.grid = null;
                 liveState.templateId = null;
@@ -2729,7 +2770,11 @@
                 liveState.selectedHex = null;
                 liveState.soloMode = true;
             }
-            ensureNoTemplatePrompt();
+            // The "Click for template options" prompt only makes sense when
+            // there is genuinely no template focused -- showing it while the
+            // user simply opted into a manual palette (with a template very
+            // much focused) would be actively misleading.
+            if (template) removeNoTemplatePrompt(); else ensureNoTemplatePrompt();
             return;
         }
 

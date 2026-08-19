@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.8.0 - readable release bundle */
+/* GeoPixelcons Library v2.8.1 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.8.1'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.8.0';
+    const VERSION = '2.9.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -44,7 +44,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
         { key: 'ghostTemplateManager', name: 'Ghost Template Manager', icon: '👻', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
-        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '🎨', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager'] },
+        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '🎨', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager', 'Palette → Use manual palette keeps your own hand-picked colors instead of syncing to the focused template'] },
     ];
 
     // Presentation-only grouping for the Settings modal. Runtime feature keys,
@@ -58,7 +58,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { name: 'Deprecated', keys: ['ghostPaletteSearch', 'ghostTemplateManager'] },
     ];
 
-    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, controlsUiScale: 100, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
+    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, mobilePaintingManualPalette: false, controlsUiScale: 100, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
     FEATURE_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = true);
     // Ghost++ deliberately opts out of the blanket "every feature defaults on" rule above:
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
@@ -1310,6 +1310,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.9.0',
+            date: '2026-08-19',
+            items: [
+                { type: 'added', text: 'Painting Menu Overhaul: new "Use manual palette" checkbox keeps your own color palette instead of syncing to the focused Ghost++ template' },
+            ]
+        },
         {
             version: '2.8.0',
             date: '2026-08-18',
@@ -34781,7 +34788,34 @@ if (_settings.profileColorsCollapse) {
             }),
         })));
 
-        row.append(enableDropdown.el, disableAllBtn, sortControl, filterDropdown, hexDropdown.el);
+        // Per explicit user feedback (ReaCreations, via Discord): a checkbox
+        // to opt out of the palette-grid swap entirely, so a focused
+        // template's own colors no longer force out colors the user keeps
+        // on their palette by hand. Built on the same empty-menu +
+        // manually-appended-checkbox shape as the Enable dropdown's own
+        // "Highlight nearest" option above (buildDropdownButton's `menu` is
+        // exposed for exactly this). Persisted through _settings (core.js)
+        // rather than gppSettings -- this is a Painting Menu Overhaul-only
+        // preference, not a real Ghost++ setting, and has no reason to also
+        // surface inside the desktop Ghost++ modal's own View Settings.
+        const paletteOptionsDropdown = buildDropdownButton('Palette', []);
+        const manualPaletteOption = document.createElement('label');
+        manualPaletteOption.className = 'gpc-ctrl-menu-option';
+        const manualPaletteInput = document.createElement('input');
+        manualPaletteInput.type = 'checkbox';
+        manualPaletteInput.checked = !!_settings.mobilePaintingManualPalette;
+        const manualPaletteText = document.createElement('span');
+        manualPaletteText.textContent = 'Use manual palette';
+        manualPaletteOption.title = "Keep your own manually-chosen color palette instead of syncing to the focused Ghost++ template's colors.";
+        manualPaletteOption.append(manualPaletteInput, manualPaletteText);
+        paletteOptionsDropdown.menu.appendChild(manualPaletteOption);
+        manualPaletteInput.addEventListener('change', () => {
+            _settings.mobilePaintingManualPalette = manualPaletteInput.checked;
+            saveSettings(_settings);
+            resync();
+        });
+
+        row.append(enableDropdown.el, disableAllBtn, sortControl, filterDropdown, hexDropdown.el, paletteOptionsDropdown.el);
         return row;
     }
 
@@ -34863,8 +34897,20 @@ if (_settings.profileColorsCollapse) {
         // without ever taking over its width.
         requestPaintMenuControlsScaleLayout();
         const template = getFocusedTemplateWithPalette();
+        // Per explicit user feedback (ReaCreations, via Discord): focusing
+        // ANY template -- personal or guild -- used to force-swap the native
+        // manual color grid for the template's own palette with no way to
+        // opt out, so colors the user keeps on their palette by hand (e.g. a
+        // shade not in the template, or transparent) became unreachable
+        // without editing the template itself. This setting keeps the
+        // native grid in place even while a template is focused; every
+        // other control row feature (Enable/Disable/Sort/Filter/Get hex,
+        // scanning) still targets the focused template exactly as before,
+        // since those call getFocusedTemplateWithPalette() independently --
+        // only which color grid is visually shown is affected here.
+        const wantsManualPalette = !!_settings.mobilePaintingManualPalette;
 
-        if (!template) {
+        if (!template || wantsManualPalette) {
             leaveEnableSelectedMode();
             liveState.scanSummaryRef = null;
             if (liveState.wrap) {
@@ -34887,7 +34933,9 @@ if (_settings.profileColorsCollapse) {
                 // native sync ticks log "Color container
                 // '.control-container-colors' not found." to the console.
                 liveState.savedNativeContainer.style.display = '';
-                dbgPush('Painting Menu Overhaul: no focused Ghost++ template anymore -- restored the native color grid.', { uiComponent: 'Painting Menu Overhaul' });
+                dbgPush(wantsManualPalette
+                    ? 'Painting Menu Overhaul: manual palette enabled -- restored the native color grid despite a focused template.'
+                    : 'Painting Menu Overhaul: no focused Ghost++ template anymore -- restored the native color grid.', { uiComponent: 'Painting Menu Overhaul' });
                 liveState.wrap = null;
                 liveState.grid = null;
                 liveState.templateId = null;
@@ -34896,7 +34944,11 @@ if (_settings.profileColorsCollapse) {
                 liveState.selectedHex = null;
                 liveState.soloMode = true;
             }
-            ensureNoTemplatePrompt();
+            // The "Click for template options" prompt only makes sense when
+            // there is genuinely no template focused -- showing it while the
+            // user simply opted into a manual palette (with a template very
+            // much focused) would be actively misleading.
+            if (template) removeNoTemplatePrompt(); else ensureNoTemplatePrompt();
             return;
         }
 
