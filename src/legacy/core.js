@@ -1302,7 +1302,7 @@
             version: '2.9.1',
             date: '2026-08-20',
             items: [
-                { type: 'fixed', text: 'Painting Menu Overhaul: restored the "or load from a URL" option in the template upload panel, which was accidentally hidden along with the desktop-only instructions' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: restored the "or load from a URL" option in the template upload panel (it was hidden and also boxed in an unwanted background)' },
             ]
         },
         {

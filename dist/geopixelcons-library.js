@@ -1314,7 +1314,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             version: '2.9.1',
             date: '2026-08-20',
             items: [
-                { type: 'fixed', text: 'Painting Menu Overhaul: restored the "or load from a URL" option in the template upload panel, which was accidentally hidden along with the desktop-only instructions' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: restored the "or load from a URL" option in the template upload panel (it was hidden and also boxed in an unwanted background)' },
             ]
         },
         {
@@ -32742,9 +32742,29 @@ if (_settings.profileColorsCollapse) {
                 border-color: ${tc('#d1d5db', '#45475a')} !important;
             }
             #gpc-pmo-placeholder-group .gpp-muted,
-            #gpc-pmo-placeholder-group #gpp-url-upload-btn,
             #gpc-pmo-placeholder-group .gpp-pt-opacity-value {
                 color: ${tc('#64748b', '#a6adc8')} !important;
+            }
+            /* #gpp-url-upload-btn is a real <button> (see gpp-init.js's
+               drop-zone markup), so it also matches the generic
+               "#gpc-pmo-placeholder-group button" rule above -- which wins
+               on background/border (nothing more specific overrides those
+               two properties otherwise), boxing this plain underlined
+               text-link button in an unwanted card background, per explicit
+               user feedback/screenshot. Its own real CSS (gpp-ui-shell.js)
+               is background:none/border:none/padding:0 -- restored here at
+               matching specificity (2 IDs, same as the color rule below)
+               rather than just adding a color override alongside the
+               generic rule. */
+            #gpc-pmo-placeholder-group #gpp-url-upload-btn {
+                color: ${tc('#64748b', '#a6adc8')} !important;
+                background: none !important;
+                border: none !important;
+                padding: 0 !important;
+            }
+            #gpc-pmo-placeholder-group #gpp-url-upload-btn:hover {
+                background: none !important;
+                color: ${tc('#2563eb', '#89b4fa')} !important;
             }
             /* #gpp-pt-opacity-row's real CSS packs label+slider+value+reset
                into one nowrap flex row with a 50px-min-width label -- fine
