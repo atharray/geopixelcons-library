@@ -417,23 +417,31 @@
                        class="bg-white ... p-4 ... w-full", confirmed live at
                        16px on all four sides) sat between .gpc-pmc-scale-
                        content and the panel's outer edge more than wanted.
-                       Reduced by 20% (16px * 0.8 = 12.8px) here rather than
-                       touched via JS -- measureHeight()/lockNativeWidth()
-                       both already re-read root's OWN computed padding live
+                       Reduced by ~20% here rather than touched via JS --
+                       measureHeight()/lockNativeWidth() both already re-read
+                       root's OWN computed padding live
                        (getComputedStyle(root).paddingTop etc.) every time
                        they run, so overriding it here is picked up by that
                        existing math automatically; no JS changes needed.
-                       !important since native p-4 is a real Tailwind
-                       utility class applied via root's own class="", not
-                       ours -- source order alone (this tag is appended to
-                       <head> after page load) would likely already win, but
-                       !important matches this codebase's own established
-                       convention for overriding native utility classes
-                       regardless. Scoped to .gpc-pmc-scale-root itself (only
-                       ever added by THIS feature's own mount(), see below)
-                       so #bottomControls keeps its native 16px whenever
-                       Paint Menu Controls is off. */
-                    .gpc-pmc-scale-root { position: relative; z-index: 30; overflow: visible; padding: 12.8px !important; }
+                       13px, not the literal 16*0.8=12.8px: confirmed live
+                       (getBoundingClientRect vs. alignToolbar's own
+                       content.offsetTop, which rounds to the nearest whole
+                       pixel by spec) that a fractional padding value leaves
+                       a ~0.2px gap between #gpc-paint-menu-toolbar/
+                       #gpc-compact-brush and the panel edge -- integer
+                       padding values measured drift:0 in every case tested,
+                       fractional ones didn't. !important since native p-4
+                       is a real Tailwind utility class applied via root's
+                       own class="", not ours -- source order alone (this
+                       tag is appended to <head> after page load) would
+                       likely already win, but !important matches this
+                       codebase's own established convention for overriding
+                       native utility classes regardless. Scoped to
+                       .gpc-pmc-scale-root itself (only ever added by THIS
+                       feature's own mount(), see below) so #bottomControls
+                       keeps its native 16px whenever Paint Menu Controls is
+                       off. */
+                    .gpc-pmc-scale-root { position: relative; z-index: 30; overflow: visible; padding: 13px !important; }
                     .gpc-pmc-scale-content { position: relative; display: flex; flex-direction: column; flex: 0 0 auto; width: 100%; box-sizing: border-box; gap: inherit; min-width: 0; }
                     #gpc-pmc-scale-tab { pointer-events: auto; margin-left: 2px; }
                     #gpc-paint-menu-toolbar.gpc-pmc-scale-popover-open { z-index: 1200 !important; }
