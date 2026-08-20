@@ -1318,6 +1318,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Painting Menu Overhaul: tapping a template color you don\'t own now shows a brief red X over it and an alert instead of silently failing to select it, and no longer marks it as selected' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: the Filter dropdown no longer closes after picking one option, so multiple filters can be selected in one open' },
                 { type: 'changed', text: 'Painting Menu Overhaul: restyled the top control bar (color readout, eyedropper/brush/shift-lock, Paint, saved brushes, charge timer, energy) to match the rest of this feature\'s own look, including matching font sizes and button padding' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: reduced the gap between the top control bar and the row below it to 5px' },
             ]
         },
         {
@@ -35460,10 +35461,15 @@ if (_settings.profileColorsCollapse) {
         const controlsRowEl = buildControlsRow();
         nativeContainer.insertAdjacentElement('beforebegin', controlsRowEl);
         // The host wrapper normally contributes a flex column gap (gap-4)
-        // between the row and the native/compact palette. Cancel only that
-        // one gap; do not alter spacing between the host's other children.
+        // between the row and its neighbors on BOTH sides -- the native/
+        // compact palette below (unchanged, 4px) and #gpc-native-top-bar
+        // above (per explicit user feedback, brought down to 5px here too;
+        // was the full uncancelled 16px gap-4, visibly more than the 4px
+        // below). Cancel only those two gaps; do not alter spacing between
+        // the host's other children.
         const wrapperStyle = innerWrapperEl ? getComputedStyle(innerWrapperEl) : null;
         const rowGap = wrapperStyle ? parseFloat(wrapperStyle.rowGap || wrapperStyle.gap || '0') : 0;
+        controlsRowEl.style.marginTop = Number.isFinite(rowGap) && rowGap > 0 ? `${-rowGap + 5}px` : '5px';
         controlsRowEl.style.marginBottom = Number.isFinite(rowGap) && rowGap > 0 ? `${-rowGap + 4}px` : '4px';
 
         // The Paint Menu Controls feature's own collapse toggle
