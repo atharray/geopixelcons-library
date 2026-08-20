@@ -1307,6 +1307,7 @@
                 { type: 'fixed', text: 'Painting Menu Overhaul: the Filter dropdown no longer closes after picking one option, so multiple filters can be selected in one open' },
                 { type: 'changed', text: 'Painting Menu Overhaul: restyled the top control bar (color readout, eyedropper/brush/shift-lock, Paint, saved brushes, charge timer, energy) to match the rest of this feature\'s own look, including matching font sizes and button padding' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: reduced the gap between the top control bar and the row below it to 5px' },
+                { type: 'changed', text: 'Paint Menu Controls: reduced the scaled panel\'s own outer padding by 20%' },
             ]
         },
         {
