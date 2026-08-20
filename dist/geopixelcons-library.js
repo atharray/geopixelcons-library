@@ -44,7 +44,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
         { key: 'ghostTemplateManager', name: 'Ghost Template Manager', icon: '👻', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Full ghost image template history with import/export and overlay preview on the native ghost tool — only useful if Ghost++ is disabled.', features: ['IndexedDB-backed template history', 'Import/export ghost templates as files', 'Preview overlay on the map', 'Position encoding in image header', 'Duplicate detection'] },
         { key: 'showSyncGhostBtn', name: 'Sync Ghost With Selected Color', icon: '♻️', desc: 'Adds a button to the Image Tools (🖼️) dropdown. When toggled on in-game, changing your active paint color automatically enables only that color in the ghost palette and disables all others.', features: ['Toggle button in the Image Tools dropdown', 'Auto-enables only the currently selected paint color in the ghost palette, disabling the rest', 'Works with Ghost++\'s own focused template as well as the native ghost palette'] },
-        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '🎨', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager', 'Palette → Use manual palette keeps your own hand-picked colors instead of syncing to the focused template'] },
+        { key: 'mobilePaintingExtension', name: 'Painting Menu Overhaul', icon: '🎨', desc: 'Touch-friendly painting menu adjustments. Requires Ghost++ with a focused template. Under active development — features are being added incrementally.', features: ['Keeps the site\'s natural responsive paint-panel width', 'Native color grid replaced with the focused Ghost++ template\'s own color grid, live-synced with the Ghost++ manager', 'Tap a color to show only its remaining pixels and select it as your active paint color', 'Enable > Selected can optionally highlight the nearest selected-color pixel with a large red pulse without moving the map', 'Hover tooltip and hex display match the Ghost++ manager; sort/filter set there carries over too', 'Enable/Disable/Get hex/Sort/Filter controls that share live state with the Ghost++ manager', 'Preview thumbnail → upload panel → Use manual palette keeps your own hand-picked colors instead of syncing to the focused template', 'Tapping a template color you don\'t own shows an alert instead of silently failing to select it'] },
     ];
 
     // Presentation-only grouping for the Settings modal. Runtime feature keys,
@@ -1314,7 +1314,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             version: '2.9.0',
             date: '2026-08-19',
             items: [
-                { type: 'added', text: 'Painting Menu Overhaul: new "Use manual palette" checkbox keeps your own color palette instead of syncing to the focused Ghost++ template' },
+                { type: 'added', text: 'Painting Menu Overhaul: new "Use manual palette" checkbox (under the template preview\'s upload panel) shows your own color palette instead of the focused Ghost++ template\'s colors' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: tapping a template color you don\'t own now shows an alert instead of silently failing to select it' },
             ]
         },
         {
@@ -3697,6 +3698,29 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             '})()'
         );
         return raw || [];
+    }
+
+    // Returns the exact ordered list of hex values the native
+    // .control-container-colors palette actually renders -- activeColors
+    // mapped through Colors, in the SAME order js/index151.js's SetColors()
+    // itself iterates (the player's own sort/arrangement, e.g. via
+    // sortAndSetColors() or manual reordering), not gppReadGamePalette's own
+    // Colors-catalog-index order. Used by mobile-painting.js's Painting Menu
+    // Overhaul to mirror the player's manually-curated palette faithfully
+    // when "Use manual palette" is on, rather than approximating it by
+    // filtering gppReadGamePalette()'s rows (which would drop the player's
+    // own ordering).
+    function gppReadActiveColorOrder() {
+        const raw = gppEvalPageExpr(
+            '(function(){' +
+            'if (typeof Colors === "undefined" || !Array.isArray(Colors)) return null;' +
+            'var active = (typeof activeColors !== "undefined" && Array.isArray(activeColors)) ? activeColors : [];' +
+            'var out = [];' +
+            'for (var i = 0; i < active.length; i++) { var c = Colors[active[i]]; if (c !== undefined) out.push(c); }' +
+            'return out;' +
+            '})()'
+        );
+        return Array.isArray(raw) ? raw : [];
     }
 
     // One bulk read of every "gridX,gridY" key currently reserved in the
@@ -32599,6 +32623,18 @@ if (_settings.profileColorsCollapse) {
             .gpc-pmo-p3-checkboxes {
                 display: flex; flex-direction: column; gap: 4px;
             }
+            /* "Use manual palette" -- our own control (not borrowed from
+               Ghost++), living in the upload placeholder column alongside
+               the drop zone / manage-templates button. Inherits
+               .gpc-pmo-placeholder's own tc()-themed color/font-size, but
+               declared explicitly here to match every other own-content
+               row's convention in this file (see .gpc-ctrl-menu-option). */
+            .gpc-pmo-manual-palette-option {
+                display: flex; align-items: center; gap: 6px; margin-top: 2px;
+                font-size: 11px; cursor: pointer; user-select: none;
+                color: ${tc('#111827', '#f5f5f5')};
+            }
+            .gpc-pmo-manual-palette-option input { width: 13px; height: 13px; cursor: pointer; flex-shrink: 0; }
             /* Lock Position/Group noise (.gpc-pmo-p3-checkboxes) on the
                left, the real nudge-arrow cluster (#gpp-pt-nudge-row,
                borrowed wholesale -- its own inline flex-wrap:wrap;gap:6px
@@ -32740,6 +32776,22 @@ if (_settings.profileColorsCollapse) {
                style-tag injection order. */
             #gpc-pmo-palette-grid .gpp-swatch.gpp-swatch-off::after {
                 content: none;
+            }
+            /* Manual-palette mode (buildManualPaletteSwatches) -- per
+               explicit user feedback, its swatches should read as part of
+               the SAME visual family as .gpc-ctrl-btn/.gpc-pmo-placeholder
+               (tc(), tracking the OTHER "GeoPixels++" extension's own theme
+               toggle) rather than Ghost++'s own real grid border (t2(),
+               tracking body.dark/OS prefers-color-scheme instead -- see
+               .gpc-ctrl-btn's own comment for why that distinction matters
+               against this always-white-background host). Only the border
+               changes -- .gpp-swatch's fill IS the color itself
+               (background-color/-image set directly in JS), nothing to
+               theme there. Scoped to the .gpc-pmo-manual-mode modifier
+               class (toggled only on THIS grid, only in that mode) so
+               Ghost++'s own real palette grid is never touched. */
+            #gpc-pmo-palette-grid.gpc-pmo-manual-mode .gpp-swatch {
+                border-color: ${tc('#d1d5db', '#45475a')};
             }
             /* List mode (buildTemplatePaletteGrid mirrors gpp-palette.js's
                own .gpp-swatch-list row exactly, via the SAME real
@@ -32970,6 +33022,51 @@ if (_settings.profileColorsCollapse) {
             return true;
         }
         return false;
+    }
+
+    // Native paint-color values are 8-digit RGBA hex strings (js/index151.js's
+    // Colors array -- see gpp-palette.js's own
+    // gppApplySelectedColorToFocusedTemplate comment); Ghost++'s own 6-digit
+    // RGB template hex (core.packedToHex) has to be compared against just the
+    // leading 7 characters ("#RRGGBB") of each owned entry, the same
+    // truncation that function already uses -- NOT the unfiltered
+    // whole-string comparison this file's own bulkEnableOwned/
+    // buildModalBuyAllButton use elsewhere (which never actually matches a
+    // 6-digit hex against an 8-digit one -- a separate, pre-existing issue,
+    // out of scope here).
+    function isTemplateColorOwned(hex) {
+        if (typeof gppReadGamePalette !== 'function') return true; // no bridge -- fail open, don't block painting over it
+        const normalized = String(hex || '').toUpperCase();
+        const rows = gppReadGamePalette();
+        return rows.some((row) => {
+            if (!row || !row.hex) return false;
+            const rowHex = String(row.hex);
+            return (rowHex.length >= 7 ? rowHex.slice(0, 7) : rowHex).toUpperCase() === normalized;
+        });
+    }
+
+    // General Painting Menu Overhaul bugfix, per explicit user feedback:
+    // tapping a template color the player doesn't actually own used to still
+    // silently try to select it as the active native paint color -- there's
+    // no real native swatch for an unowned color to select at all, since it
+    // never appears in .control-container-colors -- with no feedback that
+    // anything went wrong. Guards soloColor/toggleColor's own selection step
+    // with this instead, using the same showAlert(title, body) convention
+    // already used elsewhere in this file (see handlePlacementCaptureStart's
+    // own comment). Callers still set the template's own enabled/disabled
+    // mask bit regardless of ownership, before this runs -- Ghost++
+    // tracking/progress for a not-yet-owned color is a legitimate, common
+    // case (the whole point of Enable > All/Owned, and of scan progress in
+    // general); only actually PAINTING with a color you don't own doesn't
+    // make sense.
+    function notifyOrSelectNativePaintColor(hex) {
+        if (isTemplateColorOwned(hex)) {
+            selectNativePaintColor(hex);
+            updateHexDisplay(hex);
+            return;
+        }
+        const win = pageWindow();
+        if (win && typeof win.showAlert === 'function') win.showAlert('Error', "You don't own this color.");
     }
 
     // Reads the SAME already-computed sort/filter result the real Ghost++
@@ -33525,6 +33622,33 @@ if (_settings.profileColorsCollapse) {
         borrowNode(dropZone, container);
         const manageBtn = document.getElementById('gpp-lib-manage-btn');
         if (manageBtn) borrowNode(manageBtn, container);
+
+        // "Use manual palette" -- per explicit user feedback (ReaCreations,
+        // via Discord), lives here rather than the always-visible control
+        // row: it's a rarely-toggled preference, reachable via the preview
+        // thumbnail tap alongside the other template-management controls
+        // (upload/manage templates) instead of crowding that row with a
+        // dedicated dropdown for one checkbox. Recreated fresh on every
+        // rebuild -- same as this column's borrowed-content siblings
+        // (buttonsGrid in buildPlaceholder1Content/buildPlaceholder3Content)
+        // -- because rebuildPlaceholderColumns() always clears this
+        // container's innerHTML first; state lives in _settings, not the
+        // DOM, so there's nothing to preserve across that wipe.
+        const manualPaletteOption = document.createElement('label');
+        manualPaletteOption.className = 'gpc-pmo-manual-palette-option';
+        const manualPaletteInput = document.createElement('input');
+        manualPaletteInput.type = 'checkbox';
+        manualPaletteInput.checked = !!_settings.mobilePaintingManualPalette;
+        const manualPaletteText = document.createElement('span');
+        manualPaletteText.textContent = 'Use manual palette';
+        manualPaletteOption.title = "Show your own manually-chosen color palette instead of the focused Ghost++ template's colors.";
+        manualPaletteOption.append(manualPaletteInput, manualPaletteText);
+        manualPaletteInput.addEventListener('change', () => {
+            _settings.mobilePaintingManualPalette = manualPaletteInput.checked;
+            saveSettings(_settings);
+            resync();
+        });
+        container.appendChild(manualPaletteOption);
     }
 
     // Undoes buildPlaceholder2Content's mobile-only simplification of the
@@ -33921,6 +34045,14 @@ if (_settings.profileColorsCollapse) {
         // leaves an existing grid's DOM alone between rebuilds, same as it
         // does for every other per-template detail this function decides.
         const listMode = gppSettings.paletteViewMode === 'list';
+        // Per explicit user feedback (ReaCreations, via Discord): whether
+        // this grid's swatches come from the focused template's own palette
+        // or the player's manually-curated native palette instead. Read
+        // fresh here too, same reasoning as listMode above -- resync()'s
+        // own sameEverything fast path already accounts for this (see its
+        // own liveState.manualPalette comparison), so a plain rebuild-time
+        // read is all this needs.
+        const wantsManualPalette = !!_settings.mobilePaintingManualPalette;
 
         const wrap = document.createElement('div');
         wrap.className = 'gpc-pmo-palette-wrap';
@@ -33932,11 +34064,15 @@ if (_settings.profileColorsCollapse) {
         // gppInjectPaletteStyle -- display:flex/column instead of the
         // tiled display:grid); its rule isn't scoped to any one container
         // id, so reusing the class here is enough to pick it up, no new
-        // CSS needed for the container itself.
+        // CSS needed for the container itself. .gpc-pmo-manual-mode is our
+        // own modifier (see this file's own injected style) so manual-mode
+        // swatches can pick up tc()-themed borders matching the rest of
+        // this feature's own UI, without touching Ghost++'s real grid.
         const grid = document.createElement('div');
         grid.id = 'gpc-pmo-palette-grid';
         grid.className = 'gpp-palette-grid';
         grid.classList.toggle('gpp-palette-list-mode', listMode);
+        grid.classList.toggle('gpc-pmo-manual-mode', wantsManualPalette);
         // Overrides the class rule's own hardcoded max-height:60px (inline
         // beats class, no !important needed) with the user's own "Visible
         // rows" preference -- see ensureVisibleRowsControl/
@@ -33963,8 +34099,7 @@ if (_settings.profileColorsCollapse) {
                 const swatchIndex = Number(swatch.dataset.index);
                 setSwatchState(swatch, swatch.dataset.hex, swatchIndex === targetIndex);
             }
-            selectNativePaintColor(hex);
-            updateHexDisplay(hex);
+            notifyOrSelectNativePaintColor(hex);
             gppState.persistTemplateState(template).catch((err) => {
                 console.error('[GeoPixelcons++] Painting Menu Overhaul: failed to persist template state', err);
             });
@@ -34006,10 +34141,7 @@ if (_settings.profileColorsCollapse) {
                     break;
                 }
             }
-            if (nowEnabled) {
-                selectNativePaintColor(hex);
-                updateHexDisplay(hex);
-            }
+            if (nowEnabled) notifyOrSelectNativePaintColor(hex);
             gppState.persistTemplateState(template).catch((err) => {
                 console.error('[GeoPixelcons++] Painting Menu Overhaul: failed to persist template state', err);
             });
@@ -34017,6 +34149,77 @@ if (_settings.profileColorsCollapse) {
             if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
         }
 
+        // Manual-palette mode: mirrors the player's own native
+        // .control-container-colors palette (see gppReadActiveColorOrder's
+        // own comment in gpp-bridge.js) instead of the focused template's.
+        // Per explicit user feedback (ReaCreations, via Discord) -- and per
+        // requirement that this only ever changes what's INSIDE this grid,
+        // nothing else about .gpc-pmo-palette-wrap. No enabled/disabled
+        // concept here: these hex values aren't indexed into
+        // template.palette at all, so there's no mask bit to toggle and
+        // every swatch always reads as "on" -- tapping one just selects it
+        // as the active native paint color, the same end effect tapping any
+        // native swatch directly would have. Always owned by construction
+        // (sourced from the player's own active/purchased colors), so no
+        // isTemplateColorOwned() guard is needed here. Transparent gets the
+        // exact same checkerboard treatment SetColors() itself uses
+        // (js/index151.js) so it stays recognizable -- a flat
+        // background-color: #00000000 alone would just look identical to an
+        // empty tile.
+        function buildManualColorSwatches() {
+            const hexList = (typeof gppReadActiveColorOrder === 'function') ? gppReadActiveColorOrder() : [];
+            hexList.forEach((hex) => {
+                const isTransparent = String(hex).toLowerCase() === '#00000000';
+                const swatch = document.createElement('button');
+                swatch.type = 'button';
+                swatch.className = 'gpp-swatch' + (listMode ? ' gpp-swatch-list' : '');
+                swatch.dataset.hex = hex;
+                setSwatchState(swatch, hex, true);
+                swatch.title = hex;
+
+                if (listMode) {
+                    // No per-color progress concept for a manual palette --
+                    // an empty stats object gives gppPaletteApplyListLayout
+                    // its required shape (it reads stats.total even when
+                    // hasProgress is false) without claiming any real
+                    // pixel-count data.
+                    if (typeof gppPaletteApplyListLayout === 'function') {
+                        gppPaletteApplyListLayout(swatch, hex, { total: 0, completed: 0 }, false);
+                    } else {
+                        swatch.style.backgroundColor = hex;
+                    }
+                } else if (isTransparent) {
+                    swatch.style.backgroundImage =
+                        'linear-gradient(45deg, #ccc 25%, transparent 25%),' +
+                        'linear-gradient(-45deg, #ccc 25%, transparent 25%),' +
+                        'linear-gradient(45deg, transparent 75%, #ccc 75%),' +
+                        'linear-gradient(-45deg, transparent 75%, #ccc 75%)';
+                    swatch.style.backgroundSize = '15px 15px';
+                    swatch.style.backgroundPosition = '0 0, 0 7.5px, 7.5px -7.5px, -7.5px 0px';
+                } else {
+                    swatch.style.backgroundColor = hex;
+                }
+
+                swatch.addEventListener('click', () => {
+                    if (liveState) { liveState.selectedHex = hex; liveState.soloMode = true; }
+                    const swatches = grid.children;
+                    for (let i = 0; i < swatches.length; i++) {
+                        setSwatchState(swatches[i], swatches[i].dataset.hex, true);
+                    }
+                    selectNativePaintColor(hex);
+                    updateHexDisplay(hex);
+                });
+                grid.appendChild(swatch);
+            });
+        }
+
+        if (wantsManualPalette) {
+            buildManualColorSwatches();
+        } else {
+        // Body deliberately left at its original indentation (not nested
+        // one level deeper for the new `else`) so this diff stays reviewable
+        // against the pre-existing template-swatch logic -- see the closing
+        // brace's own comment below.
         order.forEach((index) => {
             const hex = core.packedToHex(template.palette[index]);
             const enabled = core.maskHas(template.mask, index);
@@ -34102,6 +34305,9 @@ if (_settings.profileColorsCollapse) {
             }
             grid.appendChild(swatch);
         });
+        } // end of the `else` branch opened above the order.forEach call --
+          // deliberately not re-indented (see this block's own opening
+          // comment) to keep this diff reviewable.
 
         wrap.appendChild(grid);
 
@@ -34788,34 +34994,7 @@ if (_settings.profileColorsCollapse) {
             }),
         })));
 
-        // Per explicit user feedback (ReaCreations, via Discord): a checkbox
-        // to opt out of the palette-grid swap entirely, so a focused
-        // template's own colors no longer force out colors the user keeps
-        // on their palette by hand. Built on the same empty-menu +
-        // manually-appended-checkbox shape as the Enable dropdown's own
-        // "Highlight nearest" option above (buildDropdownButton's `menu` is
-        // exposed for exactly this). Persisted through _settings (core.js)
-        // rather than gppSettings -- this is a Painting Menu Overhaul-only
-        // preference, not a real Ghost++ setting, and has no reason to also
-        // surface inside the desktop Ghost++ modal's own View Settings.
-        const paletteOptionsDropdown = buildDropdownButton('Palette', []);
-        const manualPaletteOption = document.createElement('label');
-        manualPaletteOption.className = 'gpc-ctrl-menu-option';
-        const manualPaletteInput = document.createElement('input');
-        manualPaletteInput.type = 'checkbox';
-        manualPaletteInput.checked = !!_settings.mobilePaintingManualPalette;
-        const manualPaletteText = document.createElement('span');
-        manualPaletteText.textContent = 'Use manual palette';
-        manualPaletteOption.title = "Keep your own manually-chosen color palette instead of syncing to the focused Ghost++ template's colors.";
-        manualPaletteOption.append(manualPaletteInput, manualPaletteText);
-        paletteOptionsDropdown.menu.appendChild(manualPaletteOption);
-        manualPaletteInput.addEventListener('change', () => {
-            _settings.mobilePaintingManualPalette = manualPaletteInput.checked;
-            saveSettings(_settings);
-            resync();
-        });
-
-        row.append(enableDropdown.el, disableAllBtn, sortControl, filterDropdown, hexDropdown.el, paletteOptionsDropdown.el);
+        row.append(enableDropdown.el, disableAllBtn, sortControl, filterDropdown, hexDropdown.el);
         return row;
     }
 
@@ -34836,7 +35015,7 @@ if (_settings.profileColorsCollapse) {
     //      performFilterSort() directly -- neither reaches subscribers.
     //      Polling is the only reliable way to catch either without patching
     //      more of Ghost++'s own code than the one renderState hook above.
-    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
+    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, manualPalette, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
 
     // Shown in .gpc-pmo-palette-wrap's usual spot whenever no Ghost++
     // template is focused -- most notably the very first time a mobile
@@ -34897,20 +35076,8 @@ if (_settings.profileColorsCollapse) {
         // without ever taking over its width.
         requestPaintMenuControlsScaleLayout();
         const template = getFocusedTemplateWithPalette();
-        // Per explicit user feedback (ReaCreations, via Discord): focusing
-        // ANY template -- personal or guild -- used to force-swap the native
-        // manual color grid for the template's own palette with no way to
-        // opt out, so colors the user keeps on their palette by hand (e.g. a
-        // shade not in the template, or transparent) became unreachable
-        // without editing the template itself. This setting keeps the
-        // native grid in place even while a template is focused; every
-        // other control row feature (Enable/Disable/Sort/Filter/Get hex,
-        // scanning) still targets the focused template exactly as before,
-        // since those call getFocusedTemplateWithPalette() independently --
-        // only which color grid is visually shown is affected here.
-        const wantsManualPalette = !!_settings.mobilePaintingManualPalette;
 
-        if (!template || wantsManualPalette) {
+        if (!template) {
             leaveEnableSelectedMode();
             liveState.scanSummaryRef = null;
             if (liveState.wrap) {
@@ -34933,22 +35100,17 @@ if (_settings.profileColorsCollapse) {
                 // native sync ticks log "Color container
                 // '.control-container-colors' not found." to the console.
                 liveState.savedNativeContainer.style.display = '';
-                dbgPush(wantsManualPalette
-                    ? 'Painting Menu Overhaul: manual palette enabled -- restored the native color grid despite a focused template.'
-                    : 'Painting Menu Overhaul: no focused Ghost++ template anymore -- restored the native color grid.', { uiComponent: 'Painting Menu Overhaul' });
+                dbgPush('Painting Menu Overhaul: no focused Ghost++ template anymore -- restored the native color grid.', { uiComponent: 'Painting Menu Overhaul' });
                 liveState.wrap = null;
                 liveState.grid = null;
                 liveState.templateId = null;
                 liveState.orderKey = null;
                 liveState.paletteViewMode = null;
+                liveState.manualPalette = null;
                 liveState.selectedHex = null;
                 liveState.soloMode = true;
             }
-            // The "Click for template options" prompt only makes sense when
-            // there is genuinely no template focused -- showing it while the
-            // user simply opted into a manual palette (with a template very
-            // much focused) would be actively misleading.
-            if (template) removeNoTemplatePrompt(); else ensureNoTemplatePrompt();
+            ensureNoTemplatePrompt();
             return;
         }
 
@@ -34972,17 +35134,35 @@ if (_settings.profileColorsCollapse) {
         // per-colour checkmarks/list progress instead of taking the mask-only
         // fast path when Scan progress updates the same template in place.
         const scanSummaryRef = template.scanSummary || null;
-        const sameEverything = liveState.grid && liveState.templateId === template.id && liveState.orderKey === orderKey && liveState.paletteViewMode === paletteViewMode && liveState.scanSummaryRef === scanSummaryRef;
+        // Per explicit user feedback (ReaCreations, via Discord): whether
+        // #gpc-pmo-palette-grid's swatches come from the focused template's
+        // own palette or the player's manually-curated native palette is
+        // now a toggle (see buildTemplatePaletteGrid's own swatch-source
+        // branch) -- included in sameEverything for the exact same reason
+        // paletteViewMode is: flipping the checkbox with no accompanying
+        // template/order change must not silently stay on the fast path
+        // below forever.
+        const wantsManualPalette = !!_settings.mobilePaintingManualPalette;
+        const sameEverything = liveState.grid && liveState.templateId === template.id && liveState.orderKey === orderKey && liveState.paletteViewMode === paletteViewMode && liveState.scanSummaryRef === scanSummaryRef && liveState.manualPalette === wantsManualPalette;
 
         if (sameEverything) {
-            const core = gppCreateCore();
-            const swatches = liveState.grid.children;
-            for (let i = 0; i < swatches.length; i++) {
-                const swatch = swatches[i];
-                const index = Number(swatch.dataset.index);
-                const enabled = core.maskHas(template.mask, index);
-                if (swatch.classList.contains('gpp-swatch-off') === enabled) {
-                    setSwatchState(swatch, swatch.dataset.hex, enabled);
+            // The reconciliation loop below reads template.mask by palette
+            // index (swatch.dataset.index) -- meaningless for manual-palette
+            // swatches, which aren't indexed into the template at all (see
+            // buildManualPaletteSwatches) and have no enabled/disabled
+            // concept to reconcile in the first place. Nothing to do here in
+            // that mode; the grid only ever changes via a full rebuild
+            // (toggling the checkbox itself already forces one, above).
+            if (!wantsManualPalette) {
+                const core = gppCreateCore();
+                const swatches = liveState.grid.children;
+                for (let i = 0; i < swatches.length; i++) {
+                    const swatch = swatches[i];
+                    const index = Number(swatch.dataset.index);
+                    const enabled = core.maskHas(template.mask, index);
+                    if (swatch.classList.contains('gpp-swatch-off') === enabled) {
+                        setSwatchState(swatch, swatch.dataset.hex, enabled);
+                    }
                 }
             }
             retryPendingSelectedNearestHighlight(template);
@@ -34996,6 +35176,7 @@ if (_settings.profileColorsCollapse) {
         liveState.orderKey = orderKey;
         liveState.paletteViewMode = paletteViewMode;
         liveState.scanSummaryRef = scanSummaryRef;
+        liveState.manualPalette = wantsManualPalette;
         retryPendingSelectedNearestHighlight(template);
         dbgPush('Painting Menu Overhaul: (re)built palette grid for template "' + template.id + '" (' + order.length + '/' + template.palette.length + ' colors visible).', { uiComponent: 'Painting Menu Overhaul' });
     }
@@ -35063,7 +35244,7 @@ if (_settings.profileColorsCollapse) {
         liveState = {
             bottomControls, savedNativeContainer: nativeContainer,
             wrap: null, grid: null, templateId: null, orderKey: null,
-            paletteViewMode: null, scanSummaryRef: null, selectedHex: null,
+            paletteViewMode: null, manualPalette: null, scanSummaryRef: null, selectedHex: null,
             soloMode: true, enableSelectedMode: false, highlightNearest: false,
             highlightRequestId: 0, pendingHighlightTemplateId: null,
             pendingHighlightPaletteIndex: null, syncEnableSelectedModeUi: null,
