@@ -652,6 +652,25 @@
                 border: 2px solid #000;
                 box-shadow: 0 0 0 1px rgba(255,255,255,.9), 0 0 6px 2px rgba(255,255,255,.9);
             }
+            /* Brief "not owned" flash (flashSwatchNotOwned) -- a real child
+               element, not a pseudo-element, so it can't conflict with the
+               ring above (::before) or the off-state slash (::after,
+               suppressed in this grid anyway). Sits above the ring
+               (z-index 2000) since it's reporting on the SAME tap that
+               would otherwise have produced one. A fixed color (not tc()/
+               t2()) on purpose -- "not owned" reads as an error regardless
+               of theme, same as the red used elsewhere for it (e.g.
+               gppPaletteProgressColor's own red-to-green scale). Removed by
+               its own setTimeout, not a CSS animation -- nothing here needs
+               to react to the animation ending. */
+            .gpc-pmo-not-owned-flash {
+                position: absolute; inset: 0; z-index: 2500;
+                display: flex; align-items: center; justify-content: center;
+                pointer-events: none; border-radius: inherit;
+                background: rgba(0, 0, 0, .35);
+                color: #ef4444; font-size: 16px; font-weight: 900; line-height: 1;
+                text-shadow: 0 0 2px #fff, 0 0 3px #fff;
+            }
             /* Shared with Ghost++'s own tooltip (#gpp-palette-tooltip is a
                page-global singleton -- see gpp-palette.js's
                gppPaletteEnsureTooltipEl) -- injected here too so the tooltip
@@ -847,6 +866,27 @@
         });
     }
 
+    // Brief red-X overlay on the tapped swatch itself, per explicit user
+    // feedback -- a quick, immediate visual cue right where the player just
+    // tapped, alongside (not instead of) the showAlert toast below, which
+    // can be easy to miss on a small screen. Auto-removes itself after
+    // ~1s; a real child element rather than reusing .gpp-swatch's own
+    // ::before (the selected-ring) or ::after (the off-state slash,
+    // suppressed inside this grid anyway) pseudo-elements, so it can't
+    // conflict with either regardless of the swatch's other state at the
+    // moment this fires. No-ops quietly if the swatch wasn't found (e.g.
+    // filtered out of the currently visible order) -- there's nothing to
+    // flash in that case, not an error.
+    function flashSwatchNotOwned(swatchEl) {
+        if (!swatchEl) return;
+        const badge = document.createElement('span');
+        badge.className = 'gpc-pmo-not-owned-flash';
+        badge.setAttribute('aria-hidden', 'true');
+        badge.textContent = '✕';
+        swatchEl.appendChild(badge);
+        setTimeout(() => { if (badge.parentElement) badge.remove(); }, 1000);
+    }
+
     // General Painting Menu Overhaul bugfix, per explicit user feedback:
     // tapping a template color the player doesn't actually own used to still
     // silently try to select it as the active native paint color -- there's
@@ -855,13 +895,15 @@
     // anything went wrong. Guards soloColor/toggleColor's own selection step
     // with this instead, using the same showAlert(title, body) convention
     // already used elsewhere in this file (see handlePlacementCaptureStart's
-    // own comment). Callers still set the template's own enabled/disabled
-    // mask bit regardless of ownership, before this runs -- Ghost++
-    // tracking/progress for a not-yet-owned color is a legitimate, common
-    // case (the whole point of Enable > All/Owned, and of scan progress in
-    // general); only actually PAINTING with a color you don't own doesn't
-    // make sense.
-    function notifyOrSelectNativePaintColor(hex) {
+    // own comment), plus the brief flash above. Callers still set the
+    // template's own enabled/disabled mask bit regardless of ownership,
+    // before this runs -- Ghost++ tracking/progress for a not-yet-owned
+    // color is a legitimate, common case (the whole point of Enable >
+    // All/Owned, and of scan progress in general); only actually PAINTING
+    // with a color you don't own doesn't make sense. `swatchEl` is optional
+    // -- callers pass the specific swatch that was tapped so the flash lands
+    // on the right tile; omitted, the alert still fires, just without it.
+    function notifyOrSelectNativePaintColor(hex, swatchEl) {
         if (isTemplateColorOwned(hex)) {
             selectNativePaintColor(hex);
             updateHexDisplay(hex);
@@ -869,6 +911,7 @@
         }
         const win = pageWindow();
         if (win && typeof win.showAlert === 'function') win.showAlert('Error', "You don't own this color.");
+        flashSwatchNotOwned(swatchEl);
     }
 
     // Reads the SAME already-computed sort/filter result the real Ghost++
@@ -1908,12 +1951,15 @@
             // a tap that didn't actually select anything.
             if (owned && liveState) { liveState.selectedHex = hex; liveState.soloMode = true; }
             const swatches = grid.children;
+            let targetSwatchEl = null;
             for (let i = 0; i < swatches.length; i++) {
                 const swatch = swatches[i];
                 const swatchIndex = Number(swatch.dataset.index);
-                setSwatchState(swatch, swatch.dataset.hex, swatchIndex === targetIndex);
+                const isTarget = swatchIndex === targetIndex;
+                if (isTarget) targetSwatchEl = swatch;
+                setSwatchState(swatch, swatch.dataset.hex, isTarget);
             }
-            notifyOrSelectNativePaintColor(hex);
+            notifyOrSelectNativePaintColor(hex, targetSwatchEl);
             gppState.persistTemplateState(template).catch((err) => {
                 console.error('[GeoPixelcons++] Painting Menu Overhaul: failed to persist template state', err);
             });
@@ -1949,13 +1995,15 @@
             // directly, has to be matched by its own dataset.index, same as
             // soloColor's own update loop does.
             const swatches = grid.children;
+            let targetSwatchEl = null;
             for (let i = 0; i < swatches.length; i++) {
                 if (Number(swatches[i].dataset.index) === targetIndex) {
+                    targetSwatchEl = swatches[i];
                     setSwatchState(swatches[i], hex, nowEnabled);
                     break;
                 }
             }
-            if (nowEnabled) notifyOrSelectNativePaintColor(hex);
+            if (nowEnabled) notifyOrSelectNativePaintColor(hex, targetSwatchEl);
             gppState.persistTemplateState(template).catch((err) => {
                 console.error('[GeoPixelcons++] Painting Menu Overhaul: failed to persist template state', err);
             });
@@ -2829,7 +2877,7 @@
     //      performFilterSort() directly -- neither reaches subscribers.
     //      Polling is the only reliable way to catch either without patching
     //      more of Ghost++'s own code than the one renderState hook above.
-    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, manualPalette, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
+    let liveState = null; // { bottomControls, savedNativeContainer, wrap, grid, templateId, orderKey, paletteViewMode, manualPalette, manualPaletteKey, scanSummaryRef, selectedHex, soloMode, enableSelectedMode, highlightNearest, highlightRequestId, pendingHighlightTemplateId, pendingHighlightPaletteIndex, syncEnableSelectedModeUi }
 
     // Shown in .gpc-pmo-palette-wrap's usual spot whenever no Ghost++
     // template is focused -- most notably the very first time a mobile
@@ -2921,6 +2969,7 @@
                 liveState.orderKey = null;
                 liveState.paletteViewMode = null;
                 liveState.manualPalette = null;
+                liveState.manualPaletteKey = null;
                 liveState.selectedHex = null;
                 liveState.soloMode = true;
             }
@@ -2957,7 +3006,22 @@
         // template/order change must not silently stay on the fast path
         // below forever.
         const wantsManualPalette = !!_settings.mobilePaintingManualPalette;
-        const sameEverything = liveState.grid && liveState.templateId === template.id && liveState.orderKey === orderKey && liveState.paletteViewMode === paletteViewMode && liveState.scanSummaryRef === scanSummaryRef && liveState.manualPalette === wantsManualPalette;
+        // Per explicit user feedback: the manual palette must always stay in
+        // sync with the player's native activeColors selection -- toggling
+        // colors from the profile page's own toggleColor(index)/
+        // toggleAllActiveColors() controls has no event this file can
+        // subscribe to (same class of gap the 1s poll fallback documented
+        // above already exists for -- see this function's own opening
+        // comment), so a lightweight fingerprint of the current native
+        // order is computed on every tick while in this mode and folded
+        // into sameEverything, forcing a rebuild the moment it actually
+        // changes. Only computed in manual mode -- nothing to compare in
+        // template mode, no reason to pay for the extra bridge round-trip
+        // when it's not needed.
+        const manualPaletteKey = wantsManualPalette && typeof gppReadActiveColorOrder === 'function'
+            ? gppReadActiveColorOrder().join(',')
+            : null;
+        const sameEverything = liveState.grid && liveState.templateId === template.id && liveState.orderKey === orderKey && liveState.paletteViewMode === paletteViewMode && liveState.scanSummaryRef === scanSummaryRef && liveState.manualPalette === wantsManualPalette && liveState.manualPaletteKey === manualPaletteKey;
 
         if (sameEverything) {
             // The reconciliation loop below reads template.mask by palette
@@ -2966,7 +3030,8 @@
             // buildManualPaletteSwatches) and have no enabled/disabled
             // concept to reconcile in the first place. Nothing to do here in
             // that mode; the grid only ever changes via a full rebuild
-            // (toggling the checkbox itself already forces one, above).
+            // (the manualPaletteKey check above already forces one the
+            // moment the native selection actually changes).
             if (!wantsManualPalette) {
                 const core = gppCreateCore();
                 const swatches = liveState.grid.children;
@@ -2991,6 +3056,7 @@
         liveState.paletteViewMode = paletteViewMode;
         liveState.scanSummaryRef = scanSummaryRef;
         liveState.manualPalette = wantsManualPalette;
+        liveState.manualPaletteKey = manualPaletteKey;
         retryPendingSelectedNearestHighlight(template);
         dbgPush('Painting Menu Overhaul: (re)built palette grid for template "' + template.id + '" (' + order.length + '/' + template.palette.length + ' colors visible).', { uiComponent: 'Painting Menu Overhaul' });
     }
@@ -3058,7 +3124,7 @@
         liveState = {
             bottomControls, savedNativeContainer: nativeContainer,
             wrap: null, grid: null, templateId: null, orderKey: null,
-            paletteViewMode: null, manualPalette: null, scanSummaryRef: null, selectedHex: null,
+            paletteViewMode: null, manualPalette: null, manualPaletteKey: null, scanSummaryRef: null, selectedHex: null,
             soloMode: true, enableSelectedMode: false, highlightNearest: false,
             highlightRequestId: 0, pendingHighlightTemplateId: null,
             pendingHighlightPaletteIndex: null, syncEnableSelectedModeUi: null,
