@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.8.1 - readable release bundle */
+/* GeoPixelcons Library v2.9.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.9.0'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.9.0';
+    const VERSION = '2.9.1';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1310,6 +1310,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.9.1',
+            date: '2026-08-20',
+            items: [
+                { type: 'fixed', text: 'Painting Menu Overhaul: restored the "or load from a URL" option in the template upload panel, which was accidentally hidden along with the desktop-only instructions' },
+            ]
+        },
         {
             version: '2.9.0',
             date: '2026-08-19',
@@ -33754,31 +33761,35 @@ if (_settings.profileColorsCollapse) {
     // placeholder 3 per explicit product decision, directly under the drop
     // zone rather than below the Place/Preview/Lock/Group-noise block.
     //
-    // The zone's own real heading/format-list/"load from a URL" text is
-    // written for desktop (mentions drag/drop and paste, plus a URL-upload
-    // flow); per explicit product decision touch painters only ever tap
-    // to pick a file, so those three real elements (#gpp-drop-zone-heading/
-    // -hint ids added in gpp-init.js's ensureShellBuilt specifically for
-    // this, #gpp-url-upload-btn already had one) are hidden in place --
-    // never removed -- in favor of one short line of our own, inserted as
-    // a plain child rather than borrowed (nothing here reads or writes any
-    // real Ghost++ state, so there's nothing to keep in sync). This runs
-    // on every rebuild (including live-sync ticks), which is fine --
+    // The zone's own real heading/format-list text is written for desktop
+    // (mentions drag/drop and paste), so those two real elements
+    // (#gpp-drop-zone-heading/-hint ids added in gpp-init.js's
+    // ensureShellBuilt specifically for this) are hidden in place -- never
+    // removed -- in favor of one short line of our own, inserted as a plain
+    // child rather than borrowed (nothing here reads or writes any real
+    // Ghost++ state, so there's nothing to keep in sync). #gpp-url-upload-btn
+    // is deliberately NOT hidden alongside them, per explicit user feedback
+    // (it was originally lumped in with the desktop-only text, which
+    // silently dropped a real capability -- loading a template from a URL
+    // -- rather than just shortening description text); it's real, already-
+    // wired Ghost++ markup, and #gpc-pmo-placeholder-group's own injected
+    // style already carries a tc()-themed rule for it (grouped with
+    // .gpp-muted), so no further styling was needed to show it here. This
+    // runs on every rebuild (including live-sync ticks), which is fine --
     // adding an already-present class / reusing an already-created element
     // is a no-op each time. restoreDropZoneForDesktop() (called from
     // toggleNativeControlsForPlaceholders' native-switch branch, the one
-    // point this column genuinely stops coming back) undoes this, so the
-    // real Ghost++ modal never shows the shortened mobile copy.
+    // point this column genuinely stops coming back) undoes the
+    // heading/hint hiding, so the real Ghost++ modal never shows the
+    // shortened mobile copy.
     function buildPlaceholder2Content(container) {
         const dropZone = document.getElementById('gpp-drop-zone');
         if (!dropZone) return;
 
         const heading = document.getElementById('gpp-drop-zone-heading');
         const hint = document.getElementById('gpp-drop-zone-hint');
-        const urlBtn = document.getElementById('gpp-url-upload-btn');
         if (heading) heading.classList.add('gpc-hidden');
         if (hint) hint.classList.add('gpc-hidden');
-        if (urlBtn) urlBtn.classList.add('gpc-hidden');
 
         let mobileHint = document.getElementById('gpc-pmo-drop-zone-hint');
         if (!mobileHint) {
@@ -33824,15 +33835,15 @@ if (_settings.profileColorsCollapse) {
     // real drop zone -- called right before it's actually sent home (see
     // toggleNativeControlsForPlaceholders), not on every live-sync
     // mid-cycle churn (rebuildPlaceholderColumns re-simplifies immediately
-    // after those anyway, so there's nothing to undo there).
+    // after those anyway, so there's nothing to undo there). Only
+    // heading/hint ever get hidden now (see buildPlaceholder2Content's own
+    // comment) -- #gpp-url-upload-btn has nothing to restore.
     function restoreDropZoneForDesktop() {
         const heading = document.getElementById('gpp-drop-zone-heading');
         const hint = document.getElementById('gpp-drop-zone-hint');
-        const urlBtn = document.getElementById('gpp-url-upload-btn');
         const mobileHint = document.getElementById('gpc-pmo-drop-zone-hint');
         if (heading) heading.classList.remove('gpc-hidden');
         if (hint) hint.classList.remove('gpc-hidden');
-        if (urlBtn) urlBtn.classList.remove('gpc-hidden');
         if (mobileHint) mobileHint.remove();
     }
 
