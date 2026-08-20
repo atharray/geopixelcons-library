@@ -100,6 +100,29 @@
         return raw || [];
     }
 
+    // Returns the exact ordered list of hex values the native
+    // .control-container-colors palette actually renders -- activeColors
+    // mapped through Colors, in the SAME order js/index151.js's SetColors()
+    // itself iterates (the player's own sort/arrangement, e.g. via
+    // sortAndSetColors() or manual reordering), not gppReadGamePalette's own
+    // Colors-catalog-index order. Used by mobile-painting.js's Painting Menu
+    // Overhaul to mirror the player's manually-curated palette faithfully
+    // when "Use manual palette" is on, rather than approximating it by
+    // filtering gppReadGamePalette()'s rows (which would drop the player's
+    // own ordering).
+    function gppReadActiveColorOrder() {
+        const raw = gppEvalPageExpr(
+            '(function(){' +
+            'if (typeof Colors === "undefined" || !Array.isArray(Colors)) return null;' +
+            'var active = (typeof activeColors !== "undefined" && Array.isArray(activeColors)) ? activeColors : [];' +
+            'var out = [];' +
+            'for (var i = 0; i < active.length; i++) { var c = Colors[active[i]]; if (c !== undefined) out.push(c); }' +
+            'return out;' +
+            '})()'
+        );
+        return Array.isArray(raw) ? raw : [];
+    }
+
     // One bulk read of every "gridX,gridY" key currently reserved in the
     // native queue (`queuedPixels`, a page-realm `Map` — same realm-mismatch
     // reasoning as the rest of this file: a bare `let` binding, never a
