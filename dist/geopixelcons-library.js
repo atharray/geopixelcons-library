@@ -1316,6 +1316,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             items: [
                 { type: 'added', text: 'Painting Menu Overhaul: new "Use manual palette" checkbox (under the template preview\'s upload panel) shows your own color palette instead of the focused Ghost++ template\'s colors, and always stays in sync with your profile page\'s color toggles' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: tapping a template color you don\'t own now shows a brief red X over it and an alert instead of silently failing to select it, and no longer marks it as selected' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: the Filter dropdown no longer closes after picking one option, so multiple filters can be selected in one open' },
+                { type: 'changed', text: 'Painting Menu Overhaul: restyled the top control bar (color readout, eyedropper/brush/shift-lock, Paint, saved brushes, charge timer, energy) to match the rest of this feature\'s own look' },
             ]
         },
         {
@@ -32970,6 +32972,76 @@ if (_settings.profileColorsCollapse) {
                 margin-left: 18px; padding-left: 2px; font-size: 11px;
             }
             .gpc-ctrl-menu-option[hidden] { display: none; }
+            /* Per explicit user feedback: #gpc-native-top-bar's own buttons/
+               elements (hexDisplay, the mobile-only eyedropper/brush/
+               shift-lock circular buttons, the Paint button, the saved-
+               brushes toggle, the charge timer and energy readout, the
+               Inspect-mode close button) still carry the base site's own
+               Tailwind classes verbatim (bg-gray-100, bg-blue-500, etc.) --
+               several with no dark: variant of their own at all -- restyled
+               here to read as part of THIS feature's own tc()-themed UI
+               instead, same reasoning as .gpc-pmo-controls-row's own
+               comment above (tc(), not t2(): the host wrapper's own
+               background stays unconditionally white regardless of
+               body.dark/OS scheme, so a dark-mode signal alone would leave
+               these readable against the wrong assumption). !important
+               throughout -- these override real Tailwind utility classes
+               already applied via class="" on the native markup, not our
+               own rules, so a plain selector alone wouldn't reliably win.
+               Selectors scoped under #gpc-native-top-bar (an id THIS file
+               itself assigns -- see mount()) so nothing here can leak onto
+               the same ids/classes anywhere else on the page. Shape/size/
+               layout (rounded-full, w-10 h-10, flex-grow, etc.) is left
+               alone -- only color/border/shadow change, so nothing here
+               fights the native responsive layout this row still relies
+               on. #sortBtn isn't listed -- mount() already force-hides it
+               (redundant with this row's own Sort control), nothing to
+               style. */
+            #gpc-native-top-bar #hexDisplay {
+                background: ${tc('#ffffff', '#1e1e2e')} !important;
+                color: ${tc('#111827', '#f5f5f5')} !important;
+                border: 1px solid ${tc('#d1d5db', '#45475a')} !important;
+            }
+            #gpc-native-top-bar #toggleEyedropper_Bottom,
+            #gpc-native-top-bar #toggleBrushModeBtn_Bottom,
+            #gpc-native-top-bar #shiftLockBtn_Bottom,
+            #gpc-native-top-bar #gpc-paint-close,
+            #gpc-native-top-bar #brush-swap-toggle {
+                background: ${tc('#ffffff', '#1e1e2e')} !important;
+                color: ${tc('#111827', '#f5f5f5')} !important;
+                border: 1px solid ${tc('#d1d5db', '#45475a')} !important;
+                box-shadow: none !important;
+            }
+            #gpc-native-top-bar #toggleEyedropper_Bottom:hover,
+            #gpc-native-top-bar #toggleBrushModeBtn_Bottom:hover,
+            #gpc-native-top-bar #shiftLockBtn_Bottom:hover,
+            #gpc-native-top-bar #gpc-paint-close:hover,
+            #gpc-native-top-bar #brush-swap-toggle:hover {
+                background: ${tc('#f3f4f6', '#313244')} !important;
+            }
+            /* Paint (commitBtn) keeps a blue accent -- it's this row's one
+               primary action -- but the SAME tc()'d blue pair
+               .gpc-pmo-view-toggle-row's own active state above already
+               established, not a new color invented for just this button.
+               Its disabled state is deliberately left untouched (native
+               disabled:bg-gray-400/disabled:text-gray-200 classes keep
+               applying via :not(:disabled) below) -- that's an
+               intentionally muted, different state this restyle shouldn't
+               fight. Hover uses a brightness filter rather than a second
+               hardcoded hex, so it works against either theme's blue
+               without needing its own tc() pair. */
+            #gpc-native-top-bar #commitBtn:not(:disabled) {
+                background: ${tc('#2563eb', '#89b4fa')} !important;
+                color: ${tc('#ffffff', '#1e1e2e')} !important;
+                box-shadow: none !important;
+            }
+            #gpc-native-top-bar #commitBtn:not(:disabled):hover {
+                filter: brightness(0.92);
+            }
+            #gpc-native-top-bar #maxChargeTimer,
+            #gpc-native-top-bar #currentEnergyDisplay {
+                color: ${tc('#64748b', '#a6adc8')} !important;
+            }
         `;
         if (isNew) document.head.appendChild(style);
     }
@@ -34816,7 +34888,20 @@ if (_settings.profileColorsCollapse) {
             menu.classList.toggle('gpc-open');
         });
         menu.addEventListener('click', (event) => event.stopPropagation());
-        document.addEventListener('click', closeMenu);
+        // Closes on a genuine outside click/tap only -- checked by DOM
+        // containment (dropdown.contains(event.target)) rather than relying
+        // solely on menu's own stopPropagation above to keep the event from
+        // reaching document at all. Per explicit user feedback: a checkbox
+        // inside a <label> (buildFilterControl's own filter options, the
+        // same shape used elsewhere) can trigger the browser's own
+        // synthetic "activate associated control" click straight on the
+        // <input>, which isn't guaranteed to be caught by an ancestor's
+        // stopPropagation on every mobile browser -- an explicit
+        // containment check here is the standard, more robust idiom for
+        // this exact class of bug regardless of the precise mechanism.
+        document.addEventListener('click', (event) => {
+            if (!dropdown.contains(event.target)) closeMenu();
+        });
 
         dropdown.append(button, menu);
         return { el: dropdown, menu, setLabel: (text) => { buttonText.textContent = text; } };
@@ -34972,7 +35057,14 @@ if (_settings.profileColorsCollapse) {
             menu.classList.toggle('gpc-open');
         });
         menu.addEventListener('click', (event) => event.stopPropagation());
-        document.addEventListener('click', closeMenu);
+        // Per explicit user feedback: selecting a filter checkbox must not
+        // close this menu (a user should be able to pick several filters in
+        // one open) -- see buildDropdownButton's own identical fix and
+        // comment just above for why an explicit containment check, not
+        // stopPropagation alone, is what actually guarantees that.
+        document.addEventListener('click', (event) => {
+            if (!dropdown.contains(event.target)) closeMenu();
+        });
 
         dropdown.append(button, menu);
         return dropdown;

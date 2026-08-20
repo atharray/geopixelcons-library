@@ -1304,6 +1304,8 @@
             items: [
                 { type: 'added', text: 'Painting Menu Overhaul: new "Use manual palette" checkbox (under the template preview\'s upload panel) shows your own color palette instead of the focused Ghost++ template\'s colors, and always stays in sync with your profile page\'s color toggles' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: tapping a template color you don\'t own now shows a brief red X over it and an alert instead of silently failing to select it, and no longer marks it as selected' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: the Filter dropdown no longer closes after picking one option, so multiple filters can be selected in one open' },
+                { type: 'changed', text: 'Painting Menu Overhaul: restyled the top control bar (color readout, eyedropper/brush/shift-lock, Paint, saved brushes, charge timer, energy) to match the rest of this feature\'s own look' },
             ]
         },
         {
