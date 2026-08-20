@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.0](https://github.com/atharray/geopixelcons-library/compare/v2.8.1...v2.9.0) (2026-08-20)
+
+
+### Features
+
+* **mobile-painting:** add manual palette opt-out for bottom controls ([#38](https://github.com/atharray/geopixelcons-library/issues/38)) ([1788ded](https://github.com/atharray/geopixelcons-library/commit/1788ded950baf1cb4ec826f3815281b60ceaa52a))
+
 ## [2.8.1](https://github.com/atharray/geopixelcons-library/compare/v2.8.0...v2.8.1) (2026-08-19)
 
 
