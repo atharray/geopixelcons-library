@@ -1315,7 +1315,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             date: '2026-08-19',
             items: [
                 { type: 'added', text: 'Painting Menu Overhaul: new "Use manual palette" checkbox (under the template preview\'s upload panel) shows your own color palette instead of the focused Ghost++ template\'s colors' },
-                { type: 'fixed', text: 'Painting Menu Overhaul: tapping a template color you don\'t own now shows an alert instead of silently failing to select it' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: tapping a template color you don\'t own now shows an alert instead of silently failing to select it, and no longer marks it as selected' },
             ]
         },
         {
@@ -34083,6 +34083,15 @@ if (_settings.profileColorsCollapse) {
 
         function soloColor(targetIndex, hex) {
             const isNewSelection = !liveState || liveState.selectedHex !== hex;
+            // Per explicit user feedback: tapping a color you don't own must
+            // not visually mark it as selected (the ring, via setSwatchState
+            // below reading liveState.selectedHex) -- notifyOrSelectNative
+            // PaintColor shows an alert instead of actually selecting it as
+            // the active native paint color, so nothing about which color is
+            // truly selected changed, and the swatch shouldn't claim
+            // otherwise. Checked once, up front, so both the selectedHex
+            // assignment below and the alert-vs-select branch later agree.
+            const owned = isTemplateColorOwned(hex);
             for (let index = 0; index < template.palette.length; index++) {
                 core.maskSet(template.mask, index, index === targetIndex);
             }
@@ -34091,8 +34100,11 @@ if (_settings.profileColorsCollapse) {
             // whatever was selected before this click. soloMode is set true
             // here too -- a solo click always re-establishes solo mode, even
             // if an Enable All/Owned/Filtered bulk action had switched to
-            // multi-select mode moments earlier.
-            if (liveState) { liveState.selectedHex = hex; liveState.soloMode = true; }
+            // multi-select mode moments earlier. Skipped entirely when the
+            // color isn't owned -- leaves whichever color WAS actually last
+            // selected (if any) still ringed, rather than moving the ring to
+            // a tap that didn't actually select anything.
+            if (owned && liveState) { liveState.selectedHex = hex; liveState.soloMode = true; }
             const swatches = grid.children;
             for (let i = 0; i < swatches.length; i++) {
                 const swatch = swatches[i];

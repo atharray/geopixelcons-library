@@ -1303,7 +1303,7 @@
             date: '2026-08-19',
             items: [
                 { type: 'added', text: 'Painting Menu Overhaul: new "Use manual palette" checkbox (under the template preview\'s upload panel) shows your own color palette instead of the focused Ghost++ template\'s colors' },
-                { type: 'fixed', text: 'Painting Menu Overhaul: tapping a template color you don\'t own now shows an alert instead of silently failing to select it' },
+                { type: 'fixed', text: 'Painting Menu Overhaul: tapping a template color you don\'t own now shows an alert instead of silently failing to select it, and no longer marks it as selected' },
             ]
         },
         {
