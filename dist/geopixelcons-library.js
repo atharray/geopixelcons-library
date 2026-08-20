@@ -1317,7 +1317,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Painting Menu Overhaul: new "Use manual palette" checkbox (under the template preview\'s upload panel) shows your own color palette instead of the focused Ghost++ template\'s colors, and always stays in sync with your profile page\'s color toggles' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: tapping a template color you don\'t own now shows a brief red X over it and an alert instead of silently failing to select it, and no longer marks it as selected' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: the Filter dropdown no longer closes after picking one option, so multiple filters can be selected in one open' },
-                { type: 'changed', text: 'Painting Menu Overhaul: restyled the top control bar (color readout, eyedropper/brush/shift-lock, Paint, saved brushes, charge timer, energy) to match the rest of this feature\'s own look' },
+                { type: 'changed', text: 'Painting Menu Overhaul: restyled the top control bar (color readout, eyedropper/brush/shift-lock, Paint, saved brushes, charge timer, energy) to match the rest of this feature\'s own look, including matching font sizes and button padding' },
             ]
         },
         {
@@ -32977,30 +32977,42 @@ if (_settings.profileColorsCollapse) {
                shift-lock circular buttons, the Paint button, the saved-
                brushes toggle, the charge timer and energy readout, the
                Inspect-mode close button) still carry the base site's own
-               Tailwind classes verbatim (bg-gray-100, bg-blue-500, etc.) --
-               several with no dark: variant of their own at all -- restyled
-               here to read as part of THIS feature's own tc()-themed UI
-               instead, same reasoning as .gpc-pmo-controls-row's own
-               comment above (tc(), not t2(): the host wrapper's own
-               background stays unconditionally white regardless of
-               body.dark/OS scheme, so a dark-mode signal alone would leave
-               these readable against the wrong assumption). !important
-               throughout -- these override real Tailwind utility classes
-               already applied via class="" on the native markup, not our
-               own rules, so a plain selector alone wouldn't reliably win.
-               Selectors scoped under #gpc-native-top-bar (an id THIS file
-               itself assigns -- see mount()) so nothing here can leak onto
-               the same ids/classes anywhere else on the page. Shape/size/
-               layout (rounded-full, w-10 h-10, flex-grow, etc.) is left
-               alone -- only color/border/shadow change, so nothing here
-               fights the native responsive layout this row still relies
-               on. #sortBtn isn't listed -- mount() already force-hides it
-               (redundant with this row's own Sort control), nothing to
-               style. */
+               Tailwind classes verbatim (bg-gray-100, bg-blue-500,
+               text-sm, px-4 py-2, etc.) -- several with no dark: variant of
+               their own at all -- restyled here to read as part of THIS
+               feature's own tc()-themed UI instead, same reasoning as
+               .gpc-pmo-controls-row's own comment above (tc(), not t2():
+               the host wrapper's own background stays unconditionally white
+               regardless of body.dark/OS scheme, so a dark-mode signal
+               alone would leave these readable against the wrong
+               assumption). !important throughout -- these override real
+               Tailwind utility classes already applied via class="" on the
+               native markup, not our own rules, so a plain selector alone
+               wouldn't reliably win. Selectors scoped under
+               #gpc-native-top-bar (an id THIS file itself assigns -- see
+               mount()) so nothing here can leak onto the same ids/classes
+               anywhere else on the page. Per explicit follow-up feedback,
+               font-size/padding/border-radius now match .gcc-ctrl-btn's own
+               scale too (11px/600 weight, 5px 8px, 6px radius) -- the first
+               pass only touched color/border/shadow, which left hexDisplay
+               and the Paint button visibly larger-text and bulkier than
+               every other button in this feature's own rows. The circular
+               icon buttons (w-10 h-10 rounded-full) and the row's own
+               flex-grow/responsive layout are still left alone -- those are
+               real touch-target sizing and native layout, not a font/
+               padding mismatch. #sortBtn isn't listed -- mount() already
+               force-hides it (redundant with this row's own Sort control),
+               nothing to style. */
             #gpc-native-top-bar #hexDisplay {
                 background: ${tc('#ffffff', '#1e1e2e')} !important;
                 color: ${tc('#111827', '#f5f5f5')} !important;
                 border: 1px solid ${tc('#d1d5db', '#45475a')} !important;
+                font-size: 11px !important;
+                font-weight: 600 !important;
+                padding: 5px 8px !important;
+                border-radius: 6px !important;
+                width: auto !important;
+                min-width: 0 !important;
             }
             #gpc-native-top-bar #toggleEyedropper_Bottom,
             #gpc-native-top-bar #toggleBrushModeBtn_Bottom,
@@ -33029,11 +33041,21 @@ if (_settings.profileColorsCollapse) {
                intentionally muted, different state this restyle shouldn't
                fight. Hover uses a brightness filter rather than a second
                hardcoded hex, so it works against either theme's blue
-               without needing its own tc() pair. */
+               without needing its own tc() pair. Padding/font-size/radius
+               brought down to .gcc-ctrl-btn's own scale (was px-4 py-2 +
+               default 16px text, visibly taller/bulkier than every other
+               button here) -- flex-grow/width is left alone, since this is
+               still the row's one primary, deliberately wider action. */
             #gpc-native-top-bar #commitBtn:not(:disabled) {
                 background: ${tc('#2563eb', '#89b4fa')} !important;
                 color: ${tc('#ffffff', '#1e1e2e')} !important;
                 box-shadow: none !important;
+            }
+            #gpc-native-top-bar #commitBtn {
+                font-size: 11px !important;
+                font-weight: 600 !important;
+                padding: 5px 8px !important;
+                border-radius: 6px !important;
             }
             #gpc-native-top-bar #commitBtn:not(:disabled):hover {
                 filter: brightness(0.92);
@@ -33041,6 +33063,7 @@ if (_settings.profileColorsCollapse) {
             #gpc-native-top-bar #maxChargeTimer,
             #gpc-native-top-bar #currentEnergyDisplay {
                 color: ${tc('#64748b', '#a6adc8')} !important;
+                font-size: 11px !important;
             }
         `;
         if (isNew) document.head.appendChild(style);
