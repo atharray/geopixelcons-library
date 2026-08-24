@@ -195,7 +195,7 @@ test('tracks snapshot-observed guild activity and marks inactive players yellow'
 test('filters canvas tiles through the blocked user list at the layer boundary', () => {
     assert.match(artifact, /EXTENSION: Blocked User List \[extBlockedUsers\]/);
     assert.match(artifact, /if \(_settings\.extBlockedUsers\)/);
-    assert.match(artifact, /name: 'Blocked User List', icon: '🚫'/);
+    assert.match(artifact, /name: 'Blocked User List', icon: '🚷'/);
 
     // The whole feature depends on hooking the single texture-upload choke
     // point rather than the render loop, so that tileImageCache stays
@@ -214,6 +214,35 @@ test('filters canvas tiles through the blocked user list at the layer boundary',
 
     assert.match(artifact, /state\.mode === 'highlight'/);
     assert.match(artifact, /window\.__gpcBlockedUsers = \{/);
-    assert.match(artifact, /gpc-blocked-users-btn/);
     assert.match(artifact, /\/GetUserProfile/);
+
+    // Entry points: GeoPixelcons++ dropdown, and a queue button seated next to
+    // the native Report flag inside the pixel info panel.
+    assert.match(artifact, /makeSubBtn\('🚷', 'Blocked Users'/);
+    assert.match(artifact, /let _blockedUsers = null;/);
+    assert.match(artifact, /_blockedUsers = \{ openModal \};/);
+    assert.match(artifact, /report\.parentElement\.insertBefore\(btn, report\)/);
+    assert.doesNotMatch(artifact, /gpc-blocked-users-btn/);
+});
+
+test('gives every Blocked User List element a gpp- prefixed id', () => {
+    const source = readFileSync(new URL('../src/legacy/features/ext-blocked-users.js', import.meta.url), 'utf8');
+
+    // Current standard: elements created by GeoPixelcons++ must carry a gpp- id.
+    const assignedIds = [...source.matchAll(/\.id = ['"`]([^'"`$]*)/g)]
+        .map((m) => m[1])
+        .filter(Boolean);
+    assert.ok(assignedIds.length > 0, 'expected the feature to assign element ids');
+    for (const id of assignedIds) {
+        assert.ok(id.startsWith('gpp-'), `element id "${id}" must start with gpp-`);
+    }
+
+    // Template-literal ids (per-row controls) must follow the same rule.
+    const templateIds = [...source.matchAll(/\.id = `([^`]*)`/g)].map((m) => m[1]);
+    for (const id of templateIds) {
+        assert.ok(id.startsWith('gpp-'), `templated element id "${id}" must start with gpp-`);
+    }
+
+    assert.match(source, /const MODAL_ID\s*=\s*'gpp-blocked-users-modal'/);
+    assert.match(source, /const HOVER_BTN_ID\s*=\s*'gpp-blocked-users-hover-btn'/);
 });

@@ -27,7 +27,7 @@
         { key: 'extPillHoverLabels', name: 'Hover Labels', icon: '💊', desc: 'Adds the expanding pill-style hover animation with text labels to all submenu buttons under controls-left.', features: ['Expanding pill animation on hover', 'Shows button title/name as a label', 'Applies to all native dropdown submenu buttons', 'Respects dark mode colors', 'MutationObserver-based — detects dynamically added buttons'] },
         { key: 'extJanitorView', name: 'Janitor View', icon: '🛡️', desc: 'Reveals the hidden moderation button for janitors/moderators.', features: ['Removes the hidden class from the moderation group button', 'Makes the 🛡️ Moderation button visible in the controls'] },
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
-        { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚫', desc: 'Hides or highlights canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚫 button in the right controls opens the blocked-user manager', 'Hide mode makes their pixels transparent; Highlight mode tints them red instead', 'Click any pixel on the map, then block that user in one click', 'Add users directly by numeric ID; names resolve automatically', 'Blocks persist across reloads', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
+        { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Hides or highlights canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Hide mode makes their pixels transparent; Highlight mode tints them red instead', 'Add users directly by numeric ID; names resolve automatically', 'Blocks persist across reloads', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
@@ -221,6 +221,7 @@
     let _regionScreenshot = null; // Populated by region screenshot module
     let _regionsHighscore = null; // Populated by regions highscore module
     let _mapMarkers = null; // Populated by map markers module
+    let _blockedUsers = null; // Populated by blocked user list module
 
     // ─── Shared coord cache for screenshot/highscore flyouts ────────
     const COORD_CACHE_KEY = 'gpc_cachedCoords';
@@ -479,7 +480,7 @@
                     flashEl(document.getElementById('gpc-map-movement-lock-btn'));
                 },
                 extBlockedUsers: () => {
-                    flashEl(document.getElementById('gpc-blocked-users-btn'));
+                    if (_blockedUsers) _blockedUsers.openModal();
                 },
                 extGuildSearch: () => {
                     flashEl(document.getElementById('gpc-guild-search-btn'));
@@ -1306,9 +1307,9 @@
             version: '2.10.0',
             date: '2026-08-23',
             items: [
-                { type: 'added', text: 'Blocked User List: new 🚫 button in the right-hand controls lets you hide pixels placed by specific players, so griefed areas stop showing on your screen' },
+                { type: 'added', text: 'Blocked User List: new 🚷 Blocked Users entry in the GeoPixelcons++ menu lets you hide pixels placed by specific players, so griefed areas stop showing on your screen' },
                 { type: 'added', text: 'Blocked User List: Highlight mode tints a blocked user\'s pixels red instead of hiding them, which is usually more useful for spotting and reporting griefing' },
-                { type: 'added', text: 'Blocked User List: click any pixel on the map to see who placed it, then block that player in one click — or add them directly by user ID' },
+                { type: 'added', text: 'Blocked User List: click any pixel, then hit the 🚷 button next to Report in the pixel info panel to queue that player in the block list, ready to confirm — or add them directly by user ID' },
             ]
         },
         {
@@ -2843,6 +2844,13 @@
         if (_settings.mapMarkers) {
             dropdown.appendChild(makeSubBtn('📌', 'Map Markers', () => {
                 if (_mapMarkers) _mapMarkers.openModal();
+            }));
+        }
+
+        // Blocked User List button (only if enabled)
+        if (_settings.extBlockedUsers) {
+            dropdown.appendChild(makeSubBtn('🚷', 'Blocked Users', () => {
+                if (_blockedUsers) _blockedUsers.openModal();
             }));
         }
 

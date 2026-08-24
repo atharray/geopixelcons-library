@@ -39,7 +39,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'extPillHoverLabels', name: 'Hover Labels', icon: '💊', desc: 'Adds the expanding pill-style hover animation with text labels to all submenu buttons under controls-left.', features: ['Expanding pill animation on hover', 'Shows button title/name as a label', 'Applies to all native dropdown submenu buttons', 'Respects dark mode colors', 'MutationObserver-based — detects dynamically added buttons'] },
         { key: 'extJanitorView', name: 'Janitor View', icon: '🛡️', desc: 'Reveals the hidden moderation button for janitors/moderators.', features: ['Removes the hidden class from the moderation group button', 'Makes the 🛡️ Moderation button visible in the controls'] },
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
-        { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚫', desc: 'Hides or highlights canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚫 button in the right controls opens the blocked-user manager', 'Hide mode makes their pixels transparent; Highlight mode tints them red instead', 'Click any pixel on the map, then block that user in one click', 'Add users directly by numeric ID; names resolve automatically', 'Blocks persist across reloads', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
+        { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Hides or highlights canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Hide mode makes their pixels transparent; Highlight mode tints them red instead', 'Add users directly by numeric ID; names resolve automatically', 'Blocks persist across reloads', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
@@ -233,6 +233,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     let _regionScreenshot = null; // Populated by region screenshot module
     let _regionsHighscore = null; // Populated by regions highscore module
     let _mapMarkers = null; // Populated by map markers module
+    let _blockedUsers = null; // Populated by blocked user list module
 
     // ─── Shared coord cache for screenshot/highscore flyouts ────────
     const COORD_CACHE_KEY = 'gpc_cachedCoords';
@@ -491,7 +492,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                     flashEl(document.getElementById('gpc-map-movement-lock-btn'));
                 },
                 extBlockedUsers: () => {
-                    flashEl(document.getElementById('gpc-blocked-users-btn'));
+                    if (_blockedUsers) _blockedUsers.openModal();
                 },
                 extGuildSearch: () => {
                     flashEl(document.getElementById('gpc-guild-search-btn'));
@@ -1318,9 +1319,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             version: '2.10.0',
             date: '2026-08-23',
             items: [
-                { type: 'added', text: 'Blocked User List: new 🚫 button in the right-hand controls lets you hide pixels placed by specific players, so griefed areas stop showing on your screen' },
+                { type: 'added', text: 'Blocked User List: new 🚷 Blocked Users entry in the GeoPixelcons++ menu lets you hide pixels placed by specific players, so griefed areas stop showing on your screen' },
                 { type: 'added', text: 'Blocked User List: Highlight mode tints a blocked user\'s pixels red instead of hiding them, which is usually more useful for spotting and reporting griefing' },
-                { type: 'added', text: 'Blocked User List: click any pixel on the map to see who placed it, then block that player in one click — or add them directly by user ID' },
+                { type: 'added', text: 'Blocked User List: click any pixel, then hit the 🚷 button next to Report in the pixel info panel to queue that player in the block list, ready to confirm — or add them directly by user ID' },
             ]
         },
         {
@@ -2855,6 +2856,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         if (_settings.mapMarkers) {
             dropdown.appendChild(makeSubBtn('📌', 'Map Markers', () => {
                 if (_mapMarkers) _mapMarkers.openModal();
+            }));
+        }
+
+        // Blocked User List button (only if enabled)
+        if (_settings.extBlockedUsers) {
+            dropdown.appendChild(makeSubBtn('🚷', 'Blocked Users', () => {
+                if (_blockedUsers) _blockedUsers.openModal();
             }));
         }
 
@@ -30189,13 +30197,15 @@ applyLockState();
     //  because "tint theirs red" is usually more useful than erasing it --
     //  hiding a griefer removes the evidence you would want to report.
     //
+    //  Element ids in this feature all use the gpp- prefix (current standard).
+    //
     if (_settings.extBlockedUsers) {
         try {
             (function _ext_blockedUsers() {
 
     const STORE_KEY   = 'gpc-blocked-users-v1';
-    const BUTTON_ID   = 'gpc-blocked-users-btn';
-    const MODAL_ID    = 'gpc-blocked-users-modal';
+    const MODAL_ID    = 'gpp-blocked-users-modal';
+    const HOVER_BTN_ID = 'gpp-blocked-users-hover-btn';
     const BRIDGE_FLAG = '__gpcBlockedUsersBridge';
 
     const _pw = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
@@ -30254,8 +30264,10 @@ var cCanvas = null, cCtx = null, uCanvas = null, uCtx = null;
 function scratch(w, h) {
     if (!cCanvas) {
         cCanvas = document.createElement('canvas');
+        cCanvas.id = 'gpp-blocked-users-scratch-color';
         cCtx = cCanvas.getContext('2d', { willReadFrequently: true });
         uCanvas = document.createElement('canvas');
+        uCanvas.id = 'gpp-blocked-users-scratch-user';
         uCtx = uCanvas.getContext('2d', { willReadFrequently: true });
     }
     if (cCanvas.width !== w || cCanvas.height !== h) {
@@ -30369,25 +30381,29 @@ function refresh() {
     } catch (e) { /* a failed refresh must never break painting */ }
 }
 
-// Capture whoever the native pixel inspector last resolved, so the modal can
-// offer a one-click block without us re-implementing click->grid projection.
+// Capture whoever the native pixel inspector last resolved, so the pixel-info
+// panel can queue that user without us re-implementing click->grid projection.
+// Fires on every inspect, including empty pixels (detail.id === null), so the
+// panel button can hide itself when there is nobody to block.
 if (typeof showPixelUser === 'function' && !showPixelUser.__gpcBlockedUsersHooked) {
     var origShow = showPixelUser;
     window.showPixelUser = function (userData, key) {
         try {
+            var id = null, nm = '';
             if (userData) {
-                var id = userData.id !== undefined ? userData.id
-                       : userData.ID !== undefined ? userData.ID
-                       : userData.Id;
-                var nm = userData.username || userData.Username
-                      || userData.name || userData.Name || '';
-                if (id !== undefined && id !== null && Number.isFinite(Number(id))) {
-                    state.lastInspected = { id: Number(id), name: String(nm) };
-                    document.dispatchEvent(new CustomEvent('gpc:pixelUserInspected', {
-                        detail: { id: Number(id), name: String(nm) }
-                    }));
+                var raw = userData.id !== undefined ? userData.id
+                        : userData.ID !== undefined ? userData.ID
+                        : userData.Id;
+                nm = userData.username || userData.Username
+                  || userData.name || userData.Name || '';
+                if (raw !== undefined && raw !== null && Number.isFinite(Number(raw))) {
+                    id = Number(raw);
                 }
             }
+            state.lastInspected = (id === null) ? null : { id: id, name: String(nm) };
+            document.dispatchEvent(new CustomEvent('gpp:pixelUserInspected', {
+                detail: { id: id, name: String(nm) }
+            }));
         } catch (e) { /* never block the native panel */ }
         return origShow.apply(this, arguments);
     };
@@ -30509,6 +30525,7 @@ if (!patchLayer()) {
 
         if (store.users.length === 0) {
             const empty = document.createElement('div');
+            empty.id = 'gpp-blocked-users-empty';
             empty.textContent = 'No blocked users yet.';
             Object.assign(empty.style, {
                 padding: '18px 12px', textAlign: 'center', color: c.muted, fontSize: '13px',
@@ -30519,16 +30536,19 @@ if (!patchLayer()) {
 
         store.users.forEach((u) => {
             const row = document.createElement('div');
+            row.id = `gpp-blocked-users-row-${u.id}`;
             Object.assign(row.style, {
                 display: 'flex', alignItems: 'center', gap: '10px',
                 padding: '8px 10px', borderBottom: `1px solid ${c.border}`,
             });
 
             const label = document.createElement('div');
+            label.id = `gpp-blocked-users-label-${u.id}`;
             label.style.flex = '1';
             label.style.minWidth = '0';
 
             const nameLine = document.createElement('div');
+            nameLine.id = `gpp-blocked-users-name-${u.id}`;
             nameLine.textContent = u.name || '(unknown name)';
             Object.assign(nameLine.style, {
                 color: c.text, fontSize: '13px', fontWeight: '600',
@@ -30536,6 +30556,7 @@ if (!patchLayer()) {
             });
 
             const idLine = document.createElement('div');
+            idLine.id = `gpp-blocked-users-id-${u.id}`;
             idLine.textContent = `ID ${u.id}`;
             Object.assign(idLine.style, { color: c.muted, fontSize: '11px', fontFamily: 'monospace' });
 
@@ -30543,6 +30564,7 @@ if (!patchLayer()) {
             label.appendChild(idLine);
 
             const rm = document.createElement('button');
+            rm.id = `gpp-blocked-users-remove-${u.id}`;
             rm.type = 'button';
             rm.textContent = 'Remove';
             Object.assign(rm.style, {
@@ -30557,9 +30579,19 @@ if (!patchLayer()) {
         });
     }
 
-    function openModal() {
+    // prefillId: queue a user in the ID field without blocking them yet.
+    function openModal(prefillId) {
         const existing = document.getElementById(MODAL_ID);
-        if (existing) { existing.remove(); return; }
+        if (existing) {
+            // Re-opening with a queued user should load it, not toggle shut.
+            if (Number.isInteger(prefillId)) {
+                const field = document.getElementById('gpp-blocked-users-id-input');
+                if (field) { field.value = String(prefillId); field.focus(); field.select(); }
+                return;
+            }
+            existing.remove();
+            return;
+        }
 
         const c = themeColors();
 
@@ -30574,6 +30606,7 @@ if (!patchLayer()) {
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
         const panel = document.createElement('div');
+        panel.id = 'gpp-blocked-users-panel';
         Object.assign(panel.style, {
             width: 'min(460px, 92vw)', maxHeight: '82vh', display: 'flex', flexDirection: 'column',
             background: c.panel, borderRadius: '12px',
@@ -30582,14 +30615,17 @@ if (!patchLayer()) {
 
         // header
         const header = document.createElement('div');
+        header.id = 'gpp-blocked-users-header';
         Object.assign(header.style, {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '12px 16px', background: c.header, borderBottom: `1px solid ${c.border}`,
         });
         const title = document.createElement('div');
-        title.textContent = '🚫 Blocked User List';
+        title.id = 'gpp-blocked-users-title';
+        title.textContent = '🚷 Blocked User List';
         Object.assign(title.style, { color: c.text, fontWeight: '700', fontSize: '14px' });
         const close = document.createElement('button');
+        close.id = 'gpp-blocked-users-close';
         close.type = 'button';
         close.textContent = '✕';
         Object.assign(close.style, {
@@ -30602,19 +30638,23 @@ if (!patchLayer()) {
 
         // body
         const body = document.createElement('div');
+        body.id = 'gpp-blocked-users-body';
         Object.assign(body.style, { padding: '14px 16px', overflowY: 'auto' });
 
         const blurb = document.createElement('div');
+        blurb.id = 'gpp-blocked-users-blurb';
         blurb.textContent = 'Pixels last placed by these users are hidden or highlighted on your screen only. '
             + 'This changes nothing for anyone else and does not stop them painting.';
         Object.assign(blurb.style, { color: c.muted, fontSize: '12px', lineHeight: '1.5', marginBottom: '12px' });
 
         // mode toggle
         const modeWrap = document.createElement('div');
+        modeWrap.id = 'gpp-blocked-users-mode';
         Object.assign(modeWrap.style, { display: 'flex', gap: '8px', marginBottom: '14px' });
         const modeBtns = {};
         [['hide', 'Hide their pixels'], ['highlight', 'Highlight in red']].forEach(([key, text]) => {
             const b = document.createElement('button');
+            b.id = `gpp-blocked-users-mode-${key}`;
             b.type = 'button';
             b.textContent = text;
             Object.assign(b.style, {
@@ -30642,9 +30682,11 @@ if (!patchLayer()) {
 
         // add-by-id row
         const addWrap = document.createElement('div');
-        Object.assign(addWrap.style, { display: 'flex', gap: '8px', marginBottom: '10px' });
+        addWrap.id = 'gpp-blocked-users-add';
+        Object.assign(addWrap.style, { display: 'flex', gap: '8px', marginBottom: '14px' });
 
         const input = document.createElement('input');
+        input.id = 'gpp-blocked-users-id-input';
         input.type = 'text';
         input.placeholder = 'User ID';
         input.inputMode = 'numeric';
@@ -30655,6 +30697,7 @@ if (!patchLayer()) {
         });
 
         const addBtn = document.createElement('button');
+        addBtn.id = 'gpp-blocked-users-add-btn';
         addBtn.type = 'button';
         addBtn.textContent = 'Block';
         Object.assign(addBtn.style, {
@@ -30679,48 +30722,9 @@ if (!patchLayer()) {
         addWrap.appendChild(input);
         addWrap.appendChild(addBtn);
 
-        // block-last-inspected shortcut
-        const pickBtn = document.createElement('button');
-        pickBtn.type = 'button';
-        Object.assign(pickBtn.style, {
-            width: '100%', background: c.secondaryBg, color: c.secondaryFg, border: 'none',
-            borderRadius: '8px', padding: '8px 10px', fontSize: '12px',
-            cursor: 'pointer', marginBottom: '14px',
-        });
-        function paintPickButton() {
-            let last = null;
-            try {
-                const api = _pw.__gpcBlockedUsers;
-                if (api && typeof api.lastInspected === 'function') last = api.lastInspected();
-            } catch {}
-            if (last) {
-                pickBtn.disabled = false;
-                pickBtn.style.opacity = '1';
-                pickBtn.style.cursor = 'pointer';
-                pickBtn.textContent = `Block last inspected: ${last.name || 'ID ' + last.id}`;
-                pickBtn.dataset.gpcId = String(last.id);
-                pickBtn.dataset.gpcName = last.name || '';
-            } else {
-                pickBtn.disabled = true;
-                pickBtn.style.opacity = '0.55';
-                pickBtn.style.cursor = 'default';
-                pickBtn.textContent = 'Click a pixel on the map to pick a user';
-                delete pickBtn.dataset.gpcId;
-            }
-        }
-        pickBtn.addEventListener('click', () => {
-            const id = Number(pickBtn.dataset.gpcId);
-            if (!Number.isInteger(id)) return;
-            addUser(id, pickBtn.dataset.gpcName || '');
-            renderList();
-            paintPickButton();
-        });
-        paintPickButton();
-        const onInspect = () => paintPickButton();
-        document.addEventListener('gpc:pixelUserInspected', onInspect);
-
         // list
         listEl = document.createElement('div');
+        listEl.id = 'gpp-blocked-users-list';
         Object.assign(listEl.style, {
             border: `1px solid ${c.border}`, borderRadius: '8px', overflow: 'hidden',
         });
@@ -30728,7 +30732,6 @@ if (!patchLayer()) {
         body.appendChild(blurb);
         body.appendChild(modeWrap);
         body.appendChild(addWrap);
-        body.appendChild(pickBtn);
         body.appendChild(listEl);
 
         panel.appendChild(header);
@@ -30738,9 +30741,14 @@ if (!patchLayer()) {
 
         renderList();
 
+        if (Number.isInteger(prefillId)) {
+            input.value = String(prefillId);
+            input.focus();
+            input.select();
+        }
+
         const cleanup = new MutationObserver(() => {
             if (!document.body.contains(overlay)) {
-                document.removeEventListener('gpc:pixelUserInspected', onInspect);
                 listEl = null;
                 cleanup.disconnect();
             }
@@ -30748,36 +30756,63 @@ if (!patchLayer()) {
         cleanup.observe(document.body, { childList: true });
     }
 
-    // ── controls-right button ────────────────────────────────────
-    function createButton(controlsRight) {
-        if (document.getElementById(BUTTON_ID)) return;
-        const btn = document.createElement('button');
-        btn.id = BUTTON_ID;
-        btn.type = 'button';
-        btn.title = 'Blocked User List';
-        btn.className = 'w-10 h-10 bg-white dark:bg-gray-700 shadow rounded-full flex items-center '
-            + 'justify-center hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer '
-            + 'text-gray-700 dark:text-gray-200 border-0';
-        btn.textContent = '🚫';
-        btn.addEventListener('click', openModal);
+    // ── pixel-info panel button ──────────────────────────────────
+    // Sits immediately left of the native Report flag, inside the same
+    // justify-self-end wrapper so the panel's grid-cols-3 layout is untouched.
+    // Queues the inspected user into the modal's ID field rather than blocking
+    // outright -- a misclick on someone's artwork should not be destructive.
+    let hoverBtnUserId = null;
 
-        const zoomIn = document.getElementById('zoomIn');
-        if (zoomIn && zoomIn.parentElement === controlsRight) controlsRight.insertBefore(btn, zoomIn);
-        else controlsRight.prepend(btn);
+    function createHoverButton() {
+        if (document.getElementById(HOVER_BTN_ID)) return true;
+        const report = document.getElementById('buttonReport');
+        if (!report || !report.parentElement) return false;
+
+        const btn = document.createElement('button');
+        btn.id = HOVER_BTN_ID;
+        btn.type = 'button';
+        btn.title = 'Block this user';
+        btn.textContent = '🚷';
+        // hoverInfo is a light-only native panel, but dark: variants are
+        // included so this stays correct if the site ever themes it.
+        btn.className = 'text-gray-400 hover:text-red-500 dark:text-gray-500 '
+            + 'dark:hover:text-red-400 cursor-pointer text-2xl mr-1';
+        btn.style.display = 'none';
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!Number.isInteger(hoverBtnUserId)) return;
+            openModal(hoverBtnUserId);
+        });
+
+        report.parentElement.insertBefore(btn, report);
+        return true;
+    }
+
+    function updateHoverButton(detail) {
+        const btn = document.getElementById(HOVER_BTN_ID);
+        if (!btn) return;
+        const id = detail && Number.isInteger(detail.id) ? detail.id : null;
+        hoverBtnUserId = id;
+        if (id === null) {
+            btn.style.display = 'none';
+            return;
+        }
+        btn.style.display = '';
+        btn.title = isBlocked(id)
+            ? `Already blocked: ${detail.name || 'ID ' + id}`
+            : `Block ${detail.name || 'ID ' + id}`;
+        btn.style.opacity = isBlocked(id) ? '0.45' : '1';
     }
 
     function init() {
         installBridge();
         pushToBridge();
 
-        const controlsRight = document.getElementById('controls-right');
-        if (controlsRight) { createButton(controlsRight); return; }
+        document.addEventListener('gpp:pixelUserInspected', (e) => updateHoverButton(e.detail));
 
+        if (createHoverButton()) return;
         const observer = new MutationObserver(() => {
-            const container = document.getElementById('controls-right');
-            if (!container) return;
-            observer.disconnect();
-            createButton(container);
+            if (createHoverButton()) observer.disconnect();
         });
         observer.observe(document.body, { childList: true, subtree: true });
         setTimeout(() => observer.disconnect(), 15000);
@@ -30788,6 +30823,9 @@ if (!patchLayer()) {
     } else {
         init();
     }
+
+    // Consumed by core.js for the GeoPixelcons++ dropdown entry.
+    _blockedUsers = { openModal };
 
             })();
             _featureStatus.extBlockedUsers = 'ok';

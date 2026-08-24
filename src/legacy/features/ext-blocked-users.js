@@ -29,13 +29,15 @@
     //  because "tint theirs red" is usually more useful than erasing it --
     //  hiding a griefer removes the evidence you would want to report.
     //
+    //  Element ids in this feature all use the gpp- prefix (current standard).
+    //
     if (_settings.extBlockedUsers) {
         try {
             (function _ext_blockedUsers() {
 
     const STORE_KEY   = 'gpc-blocked-users-v1';
-    const BUTTON_ID   = 'gpc-blocked-users-btn';
-    const MODAL_ID    = 'gpc-blocked-users-modal';
+    const MODAL_ID    = 'gpp-blocked-users-modal';
+    const HOVER_BTN_ID = 'gpp-blocked-users-hover-btn';
     const BRIDGE_FLAG = '__gpcBlockedUsersBridge';
 
     const _pw = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
@@ -94,8 +96,10 @@ var cCanvas = null, cCtx = null, uCanvas = null, uCtx = null;
 function scratch(w, h) {
     if (!cCanvas) {
         cCanvas = document.createElement('canvas');
+        cCanvas.id = 'gpp-blocked-users-scratch-color';
         cCtx = cCanvas.getContext('2d', { willReadFrequently: true });
         uCanvas = document.createElement('canvas');
+        uCanvas.id = 'gpp-blocked-users-scratch-user';
         uCtx = uCanvas.getContext('2d', { willReadFrequently: true });
     }
     if (cCanvas.width !== w || cCanvas.height !== h) {
@@ -209,25 +213,29 @@ function refresh() {
     } catch (e) { /* a failed refresh must never break painting */ }
 }
 
-// Capture whoever the native pixel inspector last resolved, so the modal can
-// offer a one-click block without us re-implementing click->grid projection.
+// Capture whoever the native pixel inspector last resolved, so the pixel-info
+// panel can queue that user without us re-implementing click->grid projection.
+// Fires on every inspect, including empty pixels (detail.id === null), so the
+// panel button can hide itself when there is nobody to block.
 if (typeof showPixelUser === 'function' && !showPixelUser.__gpcBlockedUsersHooked) {
     var origShow = showPixelUser;
     window.showPixelUser = function (userData, key) {
         try {
+            var id = null, nm = '';
             if (userData) {
-                var id = userData.id !== undefined ? userData.id
-                       : userData.ID !== undefined ? userData.ID
-                       : userData.Id;
-                var nm = userData.username || userData.Username
-                      || userData.name || userData.Name || '';
-                if (id !== undefined && id !== null && Number.isFinite(Number(id))) {
-                    state.lastInspected = { id: Number(id), name: String(nm) };
-                    document.dispatchEvent(new CustomEvent('gpc:pixelUserInspected', {
-                        detail: { id: Number(id), name: String(nm) }
-                    }));
+                var raw = userData.id !== undefined ? userData.id
+                        : userData.ID !== undefined ? userData.ID
+                        : userData.Id;
+                nm = userData.username || userData.Username
+                  || userData.name || userData.Name || '';
+                if (raw !== undefined && raw !== null && Number.isFinite(Number(raw))) {
+                    id = Number(raw);
                 }
             }
+            state.lastInspected = (id === null) ? null : { id: id, name: String(nm) };
+            document.dispatchEvent(new CustomEvent('gpp:pixelUserInspected', {
+                detail: { id: id, name: String(nm) }
+            }));
         } catch (e) { /* never block the native panel */ }
         return origShow.apply(this, arguments);
     };
@@ -349,6 +357,7 @@ if (!patchLayer()) {
 
         if (store.users.length === 0) {
             const empty = document.createElement('div');
+            empty.id = 'gpp-blocked-users-empty';
             empty.textContent = 'No blocked users yet.';
             Object.assign(empty.style, {
                 padding: '18px 12px', textAlign: 'center', color: c.muted, fontSize: '13px',
@@ -359,16 +368,19 @@ if (!patchLayer()) {
 
         store.users.forEach((u) => {
             const row = document.createElement('div');
+            row.id = `gpp-blocked-users-row-${u.id}`;
             Object.assign(row.style, {
                 display: 'flex', alignItems: 'center', gap: '10px',
                 padding: '8px 10px', borderBottom: `1px solid ${c.border}`,
             });
 
             const label = document.createElement('div');
+            label.id = `gpp-blocked-users-label-${u.id}`;
             label.style.flex = '1';
             label.style.minWidth = '0';
 
             const nameLine = document.createElement('div');
+            nameLine.id = `gpp-blocked-users-name-${u.id}`;
             nameLine.textContent = u.name || '(unknown name)';
             Object.assign(nameLine.style, {
                 color: c.text, fontSize: '13px', fontWeight: '600',
@@ -376,6 +388,7 @@ if (!patchLayer()) {
             });
 
             const idLine = document.createElement('div');
+            idLine.id = `gpp-blocked-users-id-${u.id}`;
             idLine.textContent = `ID ${u.id}`;
             Object.assign(idLine.style, { color: c.muted, fontSize: '11px', fontFamily: 'monospace' });
 
@@ -383,6 +396,7 @@ if (!patchLayer()) {
             label.appendChild(idLine);
 
             const rm = document.createElement('button');
+            rm.id = `gpp-blocked-users-remove-${u.id}`;
             rm.type = 'button';
             rm.textContent = 'Remove';
             Object.assign(rm.style, {
@@ -397,9 +411,19 @@ if (!patchLayer()) {
         });
     }
 
-    function openModal() {
+    // prefillId: queue a user in the ID field without blocking them yet.
+    function openModal(prefillId) {
         const existing = document.getElementById(MODAL_ID);
-        if (existing) { existing.remove(); return; }
+        if (existing) {
+            // Re-opening with a queued user should load it, not toggle shut.
+            if (Number.isInteger(prefillId)) {
+                const field = document.getElementById('gpp-blocked-users-id-input');
+                if (field) { field.value = String(prefillId); field.focus(); field.select(); }
+                return;
+            }
+            existing.remove();
+            return;
+        }
 
         const c = themeColors();
 
@@ -414,6 +438,7 @@ if (!patchLayer()) {
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
         const panel = document.createElement('div');
+        panel.id = 'gpp-blocked-users-panel';
         Object.assign(panel.style, {
             width: 'min(460px, 92vw)', maxHeight: '82vh', display: 'flex', flexDirection: 'column',
             background: c.panel, borderRadius: '12px',
@@ -422,14 +447,17 @@ if (!patchLayer()) {
 
         // header
         const header = document.createElement('div');
+        header.id = 'gpp-blocked-users-header';
         Object.assign(header.style, {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '12px 16px', background: c.header, borderBottom: `1px solid ${c.border}`,
         });
         const title = document.createElement('div');
-        title.textContent = '🚫 Blocked User List';
+        title.id = 'gpp-blocked-users-title';
+        title.textContent = '🚷 Blocked User List';
         Object.assign(title.style, { color: c.text, fontWeight: '700', fontSize: '14px' });
         const close = document.createElement('button');
+        close.id = 'gpp-blocked-users-close';
         close.type = 'button';
         close.textContent = '✕';
         Object.assign(close.style, {
@@ -442,19 +470,23 @@ if (!patchLayer()) {
 
         // body
         const body = document.createElement('div');
+        body.id = 'gpp-blocked-users-body';
         Object.assign(body.style, { padding: '14px 16px', overflowY: 'auto' });
 
         const blurb = document.createElement('div');
+        blurb.id = 'gpp-blocked-users-blurb';
         blurb.textContent = 'Pixels last placed by these users are hidden or highlighted on your screen only. '
             + 'This changes nothing for anyone else and does not stop them painting.';
         Object.assign(blurb.style, { color: c.muted, fontSize: '12px', lineHeight: '1.5', marginBottom: '12px' });
 
         // mode toggle
         const modeWrap = document.createElement('div');
+        modeWrap.id = 'gpp-blocked-users-mode';
         Object.assign(modeWrap.style, { display: 'flex', gap: '8px', marginBottom: '14px' });
         const modeBtns = {};
         [['hide', 'Hide their pixels'], ['highlight', 'Highlight in red']].forEach(([key, text]) => {
             const b = document.createElement('button');
+            b.id = `gpp-blocked-users-mode-${key}`;
             b.type = 'button';
             b.textContent = text;
             Object.assign(b.style, {
@@ -482,9 +514,11 @@ if (!patchLayer()) {
 
         // add-by-id row
         const addWrap = document.createElement('div');
-        Object.assign(addWrap.style, { display: 'flex', gap: '8px', marginBottom: '10px' });
+        addWrap.id = 'gpp-blocked-users-add';
+        Object.assign(addWrap.style, { display: 'flex', gap: '8px', marginBottom: '14px' });
 
         const input = document.createElement('input');
+        input.id = 'gpp-blocked-users-id-input';
         input.type = 'text';
         input.placeholder = 'User ID';
         input.inputMode = 'numeric';
@@ -495,6 +529,7 @@ if (!patchLayer()) {
         });
 
         const addBtn = document.createElement('button');
+        addBtn.id = 'gpp-blocked-users-add-btn';
         addBtn.type = 'button';
         addBtn.textContent = 'Block';
         Object.assign(addBtn.style, {
@@ -519,48 +554,9 @@ if (!patchLayer()) {
         addWrap.appendChild(input);
         addWrap.appendChild(addBtn);
 
-        // block-last-inspected shortcut
-        const pickBtn = document.createElement('button');
-        pickBtn.type = 'button';
-        Object.assign(pickBtn.style, {
-            width: '100%', background: c.secondaryBg, color: c.secondaryFg, border: 'none',
-            borderRadius: '8px', padding: '8px 10px', fontSize: '12px',
-            cursor: 'pointer', marginBottom: '14px',
-        });
-        function paintPickButton() {
-            let last = null;
-            try {
-                const api = _pw.__gpcBlockedUsers;
-                if (api && typeof api.lastInspected === 'function') last = api.lastInspected();
-            } catch {}
-            if (last) {
-                pickBtn.disabled = false;
-                pickBtn.style.opacity = '1';
-                pickBtn.style.cursor = 'pointer';
-                pickBtn.textContent = `Block last inspected: ${last.name || 'ID ' + last.id}`;
-                pickBtn.dataset.gpcId = String(last.id);
-                pickBtn.dataset.gpcName = last.name || '';
-            } else {
-                pickBtn.disabled = true;
-                pickBtn.style.opacity = '0.55';
-                pickBtn.style.cursor = 'default';
-                pickBtn.textContent = 'Click a pixel on the map to pick a user';
-                delete pickBtn.dataset.gpcId;
-            }
-        }
-        pickBtn.addEventListener('click', () => {
-            const id = Number(pickBtn.dataset.gpcId);
-            if (!Number.isInteger(id)) return;
-            addUser(id, pickBtn.dataset.gpcName || '');
-            renderList();
-            paintPickButton();
-        });
-        paintPickButton();
-        const onInspect = () => paintPickButton();
-        document.addEventListener('gpc:pixelUserInspected', onInspect);
-
         // list
         listEl = document.createElement('div');
+        listEl.id = 'gpp-blocked-users-list';
         Object.assign(listEl.style, {
             border: `1px solid ${c.border}`, borderRadius: '8px', overflow: 'hidden',
         });
@@ -568,7 +564,6 @@ if (!patchLayer()) {
         body.appendChild(blurb);
         body.appendChild(modeWrap);
         body.appendChild(addWrap);
-        body.appendChild(pickBtn);
         body.appendChild(listEl);
 
         panel.appendChild(header);
@@ -578,9 +573,14 @@ if (!patchLayer()) {
 
         renderList();
 
+        if (Number.isInteger(prefillId)) {
+            input.value = String(prefillId);
+            input.focus();
+            input.select();
+        }
+
         const cleanup = new MutationObserver(() => {
             if (!document.body.contains(overlay)) {
-                document.removeEventListener('gpc:pixelUserInspected', onInspect);
                 listEl = null;
                 cleanup.disconnect();
             }
@@ -588,36 +588,63 @@ if (!patchLayer()) {
         cleanup.observe(document.body, { childList: true });
     }
 
-    // ── controls-right button ────────────────────────────────────
-    function createButton(controlsRight) {
-        if (document.getElementById(BUTTON_ID)) return;
-        const btn = document.createElement('button');
-        btn.id = BUTTON_ID;
-        btn.type = 'button';
-        btn.title = 'Blocked User List';
-        btn.className = 'w-10 h-10 bg-white dark:bg-gray-700 shadow rounded-full flex items-center '
-            + 'justify-center hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer '
-            + 'text-gray-700 dark:text-gray-200 border-0';
-        btn.textContent = '🚫';
-        btn.addEventListener('click', openModal);
+    // ── pixel-info panel button ──────────────────────────────────
+    // Sits immediately left of the native Report flag, inside the same
+    // justify-self-end wrapper so the panel's grid-cols-3 layout is untouched.
+    // Queues the inspected user into the modal's ID field rather than blocking
+    // outright -- a misclick on someone's artwork should not be destructive.
+    let hoverBtnUserId = null;
 
-        const zoomIn = document.getElementById('zoomIn');
-        if (zoomIn && zoomIn.parentElement === controlsRight) controlsRight.insertBefore(btn, zoomIn);
-        else controlsRight.prepend(btn);
+    function createHoverButton() {
+        if (document.getElementById(HOVER_BTN_ID)) return true;
+        const report = document.getElementById('buttonReport');
+        if (!report || !report.parentElement) return false;
+
+        const btn = document.createElement('button');
+        btn.id = HOVER_BTN_ID;
+        btn.type = 'button';
+        btn.title = 'Block this user';
+        btn.textContent = '🚷';
+        // hoverInfo is a light-only native panel, but dark: variants are
+        // included so this stays correct if the site ever themes it.
+        btn.className = 'text-gray-400 hover:text-red-500 dark:text-gray-500 '
+            + 'dark:hover:text-red-400 cursor-pointer text-2xl mr-1';
+        btn.style.display = 'none';
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!Number.isInteger(hoverBtnUserId)) return;
+            openModal(hoverBtnUserId);
+        });
+
+        report.parentElement.insertBefore(btn, report);
+        return true;
+    }
+
+    function updateHoverButton(detail) {
+        const btn = document.getElementById(HOVER_BTN_ID);
+        if (!btn) return;
+        const id = detail && Number.isInteger(detail.id) ? detail.id : null;
+        hoverBtnUserId = id;
+        if (id === null) {
+            btn.style.display = 'none';
+            return;
+        }
+        btn.style.display = '';
+        btn.title = isBlocked(id)
+            ? `Already blocked: ${detail.name || 'ID ' + id}`
+            : `Block ${detail.name || 'ID ' + id}`;
+        btn.style.opacity = isBlocked(id) ? '0.45' : '1';
     }
 
     function init() {
         installBridge();
         pushToBridge();
 
-        const controlsRight = document.getElementById('controls-right');
-        if (controlsRight) { createButton(controlsRight); return; }
+        document.addEventListener('gpp:pixelUserInspected', (e) => updateHoverButton(e.detail));
 
+        if (createHoverButton()) return;
         const observer = new MutationObserver(() => {
-            const container = document.getElementById('controls-right');
-            if (!container) return;
-            observer.disconnect();
-            createButton(container);
+            if (createHoverButton()) observer.disconnect();
         });
         observer.observe(document.body, { childList: true, subtree: true });
         setTimeout(() => observer.disconnect(), 15000);
@@ -628,6 +655,9 @@ if (!patchLayer()) {
     } else {
         init();
     }
+
+    // Consumed by core.js for the GeoPixelcons++ dropdown entry.
+    _blockedUsers = { openModal };
 
             })();
             _featureStatus.extBlockedUsers = 'ok';
