@@ -1310,6 +1310,12 @@
                 { type: 'added', text: 'Blocked User List: new 🚷 Blocked Users entry in the GeoPixelcons++ menu lets you hide pixels placed by specific players, so griefed areas stop showing on your screen' },
                 { type: 'added', text: 'Blocked User List: Highlight mode tints a blocked user\'s pixels red instead of hiding them, which is usually more useful for spotting and reporting griefing' },
                 { type: 'added', text: 'Blocked User List: click any pixel, then hit the 🚷 button next to Report in the pixel info panel to queue that player in the block list, ready to confirm — or add them directly by user ID' },
+                { type: 'added', text: 'Blocked User List: paste in as many IDs as you like at once, separated by commas, spaces, or new lines, with a live preview of exactly who will be blocked before you commit' },
+                { type: 'added', text: 'Blocked User List: each entry has an eye toggle to show or hide that player\'s pixels individually, plus a master switch that reveals everyone again without losing your list' },
+                { type: 'added', text: 'Blocked User List: tick entries to unblock several at once, with Select all for clearing the whole list' },
+                { type: 'added', text: 'Blocked User List: add a private note to any entry to record why you blocked them' },
+                { type: 'added', text: 'Blocked User List: Import / Export screen copies or downloads your list as JSON, imports from pasted text or a file, and can leave your private notes out of the export' },
+                { type: 'changed', text: 'Blocked User List: restyled to match Ghost++ so the two biggest GeoPixelcons++ panels look like one product' },
             ]
         },
         {

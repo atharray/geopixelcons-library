@@ -225,6 +225,62 @@ test('filters canvas tiles through the blocked user list at the layer boundary',
     assert.doesNotMatch(artifact, /gpc-blocked-users-btn/);
 });
 
+test('gives the Blocked User List per-user visibility, notes and bulk editing', () => {
+    // Master switch is an override, not a bulk write: flipping it off and back
+    // on must not lose which individual eyes the user had already turned off.
+    assert.match(artifact, /function activeIds\(\)/);
+    assert.match(artifact, /if \(!store\.enabled\) return \[\];/);
+    assert.match(artifact, /store\.users\.filter\(\(u\) => u\.enabled\)\.map\(\(u\) => u\.id\)/);
+    assert.match(artifact, /gpp-blocked-users-master-toggle/);
+    assert.match(artifact, /gpp-blocked-users-eye-/);
+
+    // Bulk add: commas, whitespace and semicolons in any combination.
+    assert.match(artifact, /function parseIds\(text\)/);
+    assert.match(artifact, /split\(\/\[\\s,;\]\+\/\)/);
+    assert.match(artifact, /gpp-blocked-users-preview/);
+
+    // Bulk remove by checkbox.
+    assert.match(artifact, /gpp-blocked-users-bulk-unblock/);
+    assert.match(artifact, /gpp-blocked-users-select-all/);
+
+    // Private per-user note.
+    assert.match(artifact, /gpp-blocked-users-note-/);
+    assert.match(artifact, /Add a private note/);
+
+    // The old always-on explainer paragraph was removed on request.
+    assert.doesNotMatch(artifact, /Pixels last placed by these users are hidden or highlighted/);
+});
+
+test('round-trips the Blocked User List through JSON import and export', () => {
+    assert.match(artifact, /function exportObject\(\)/);
+    assert.match(artifact, /function importJson\(text\)/);
+    assert.match(artifact, /gpp-blocked-users-io-btn/);
+    assert.match(artifact, /gpp-blocked-users-io-copy/);
+    assert.match(artifact, /gpp-blocked-users-io-download/);
+    assert.match(artifact, /gpp-blocked-users-io-file/);
+    assert.match(artifact, /geopixels-blocklist\.json/);
+
+    // Notes are opt-out on export, and the choice persists.
+    assert.match(artifact, /gpp-blocked-users-io-exclude-notes/);
+    assert.match(artifact, /if \(!store\.excludeNotes && u\.note\) out\.note = u\.note;/);
+
+    // Import merges rather than replaces -- it must never wipe an existing list.
+    assert.match(artifact, /if \(isBlocked\(u\.id\)\) \{ skipped\+\+; return; \}/);
+});
+
+test('styles the Blocked User List on the Ghost++ palette', () => {
+    const source = readFileSync(new URL('../src/legacy/features/ext-blocked-users.js', import.meta.url), 'utf8');
+    // Same t() helper Ghost++ uses via t2(), so a live theme switch tracks.
+    assert.match(source, /function injectStyle\(\)/);
+    assert.match(source, /\$\{t\('#ffffff', '#1e1e2e'\)\}/);   // panel, cf. gpp-lib-fullview
+    assert.match(source, /\$\{t\('#d1d5db', '#45475a'\)\}/);   // border, cf. gpp-lib-btn
+    assert.match(source, /\$\{t\('#2563eb', '#89b4fa'\)\}/);   // accent, cf. gpp-lib-card:hover
+    assert.match(source, /\$\{t\('#64748b', '#a6adc8'\)\}/);   // muted, cf. gpp-lib-count
+    // Restyled on every open so a live dark/light toggle is not frozen.
+    assert.match(source, /injectStyle\(\);/);
+    assert.doesNotMatch(source, /function themeColors\(\)/);
+});
+
 test('gives every Blocked User List element a gpp- prefixed id', () => {
     const source = readFileSync(new URL('../src/legacy/features/ext-blocked-users.js', import.meta.url), 'utf8');
 
