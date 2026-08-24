@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.11.0](https://github.com/atharray/geopixelcons-library/compare/v2.10.1...v2.11.0) (2026-08-24)
+
+
+### Features
+
+* **paint-menu:** restore disabled-color indicator, add gray toggle ([#44](https://github.com/atharray/geopixelcons-library/issues/44)) ([fb5be5a](https://github.com/atharray/geopixelcons-library/commit/fb5be5ae3af28ed2bf5ed013bf87a46daa78ee34))
+
 ## [2.10.1](https://github.com/atharray/geopixelcons-library/compare/v2.10.0...v2.10.1) (2026-08-24)
 
 
