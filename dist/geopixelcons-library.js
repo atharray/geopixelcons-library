@@ -30795,7 +30795,7 @@ if (!patchLayer()) {
                 width: 30px; text-align: right; flex-shrink: 0;
             }
             .gpp-bu-global {
-                margin-top: 8px; padding: 7px 8px; border-radius: 6px;
+                margin-bottom: 10px; padding: 7px 8px; border-radius: 6px;
                 background: ${t('#f1f5f9', '#292a3a')};
                 border: 1px solid ${t('#e5e7eb', '#313244')};
             }
@@ -30896,7 +30896,6 @@ if (!patchLayer()) {
     let listEl = null;
     let selected = new Set();
     let renderMain = null;
-    let repaintGlobal = null;
 
     function renderList() {
         if (!listEl) return;
@@ -31112,33 +31111,6 @@ if (!patchLayer()) {
             toolrow.appendChild(master);
             toolrow.appendChild(count);
             toolbar.appendChild(toolrow);
-
-            // global fade
-            const globalBox = document.createElement('div');
-            globalBox.id = 'gpp-blocked-users-global';
-            globalBox.className = 'gpp-bu-global';
-
-            const globalLabel = document.createElement('span');
-            globalLabel.id = 'gpp-blocked-users-global-label';
-            globalLabel.className = 'gpp-bu-label';
-            globalLabel.textContent = 'Show every blocked user at least this much';
-
-            const globalFade = buildFade(
-                'gpp-blocked-users-global',
-                () => store.globalOpacity,
-                (v) => {
-                    store.globalOpacity = clamp01(v);
-                    commit();
-                    const c = document.getElementById('gpp-blocked-users-count');
-                    if (c) c.textContent = `${store.users.length} blocked · ${activeUsers().length} faded`;
-                },
-                { disabled: !store.enabled },
-            );
-            repaintGlobal = globalFade.paint;
-
-            globalBox.appendChild(globalLabel);
-            globalBox.appendChild(globalFade.wrap);
-            toolbar.appendChild(globalBox);
             body.appendChild(toolbar);
 
             // add section
@@ -31221,6 +31193,33 @@ if (!patchLayer()) {
             addSection.appendChild(addBtnRow);
             body.appendChild(addSection);
 
+            // Global fade sits below the add box and above the list: it applies
+            // to every row beneath it, so reading order matches what it affects.
+            const globalBox = document.createElement('div');
+            globalBox.id = 'gpp-blocked-users-global';
+            globalBox.className = 'gpp-bu-global';
+
+            const globalLabel = document.createElement('span');
+            globalLabel.id = 'gpp-blocked-users-global-label';
+            globalLabel.className = 'gpp-bu-label';
+            globalLabel.textContent = 'Global blocklist opacity';
+
+            const globalFade = buildFade(
+                'gpp-blocked-users-global',
+                () => store.globalOpacity,
+                (v) => {
+                    store.globalOpacity = clamp01(v);
+                    commit();
+                    const c = document.getElementById('gpp-blocked-users-count');
+                    if (c) c.textContent = `${store.users.length} blocked · ${activeUsers().length} faded`;
+                },
+                { disabled: !store.enabled },
+            );
+
+            globalBox.appendChild(globalLabel);
+            globalBox.appendChild(globalFade.wrap);
+            body.appendChild(globalBox);
+
             listEl = document.createElement('div');
             listEl.id = 'gpp-blocked-users-list';
             listEl.className = 'gpp-bu-list';
@@ -31264,7 +31263,6 @@ if (!patchLayer()) {
             footer.innerHTML = '';
             listEl = null;
             bulkBarEl = null;
-            repaintGlobal = null;
             title.textContent = '🚷 Import / Export';
 
             const status = document.createElement('div');
@@ -31434,7 +31432,6 @@ if (!patchLayer()) {
                 listEl = null;
                 bulkBarEl = null;
                 renderMain = null;
-                repaintGlobal = null;
                 cleanup.disconnect();
             }
         });
