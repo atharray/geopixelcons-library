@@ -60,6 +60,325 @@
         return exportCanvas;
     }
 
+    // ==================== SAVE LOCATION PREFERENCES ====================
+    // Three modes, same localStorage-preference pattern as the background
+    // color above:
+    //   'default'   -- unchanged original behavior, a plain <a download>
+    //                  link. Whatever the browser's own Downloads setting is.
+    //   'subfolder' -- GM_download with a one-level subfolder in its `name`,
+    //                  silent (no per-file prompt), works in both Chrome and
+    //                  Firefox. Requires the @grant GM_download line in the
+    //                  userscript header (geopixelcons-plusplus's
+    //                  header.template.js) -- if that grant is missing (an
+    //                  old cached install, or a non-Tampermonkey manager
+    //                  without GM_download), trySaveViaGmDownload's caller
+    //                  falls back to 'default' automatically.
+    //   'directory' -- File System Access API (showDirectoryPicker), lets
+    //                  the user pick a REAL arbitrary folder once. Chrome/
+    //                  Edge only -- no Firefox support as of this writing,
+    //                  which matters here specifically since Smooth Zoom
+    //                  Buttons' own Firefox bug (see that file) confirms
+    //                  this codebase has a real Firefox userbase. Falls back
+    //                  to 'subfolder' (if configured) then 'default' on any
+    //                  failure -- permission revoked, handle missing,
+    //                  unsupported browser -- never blocks a screenshot.
+    const SAVE_LOCATION_PREF_KEY = 'gpc-region-screenshot-save-location';
+    const FS_DB_NAME = 'gpc-region-screenshot-fs';
+    const FS_STORE_NAME = 'handles';
+    const FS_HANDLE_KEY = 'saveDirectory';
+
+    // Strips characters invalid in a path segment on some OS (Windows is the
+    // strictest: \/:*?"<>|), and collapses to a single flat segment -- '/'
+    // is stripped too, on purpose, so a subfolder name can never turn into
+    // an accidental multi-level path or a '..' escape out of the Downloads
+    // root GM_download scopes `name` to. Leading/trailing dots and
+    // whitespace are trimmed for the same reason (a bare ".." after
+    // stripping slashes would still be a suspicious/hidden-looking segment).
+    function sanitizeSubfolderName(name) {
+        return String(name || '')
+            .replace(/[\\/:*?"<>|]/g, '')
+            .replace(/^[.\s]+|[.\s]+$/g, '')
+            .slice(0, 80);
+    }
+
+    function loadSaveLocationPreference() {
+        try {
+            const pref = JSON.parse(localStorage.getItem(SAVE_LOCATION_PREF_KEY) || 'null');
+            const mode = pref && (pref.mode === 'subfolder' || pref.mode === 'directory') ? pref.mode : 'default';
+            const subfolder = pref && typeof pref.subfolder === 'string' ? sanitizeSubfolderName(pref.subfolder) : '';
+            return { mode, subfolder };
+        } catch (_) {
+            return { mode: 'default', subfolder: '' };
+        }
+    }
+
+    function saveSaveLocationPreference(mode, subfolder) {
+        try {
+            localStorage.setItem(SAVE_LOCATION_PREF_KEY, JSON.stringify({
+                mode: (mode === 'subfolder' || mode === 'directory') ? mode : 'default',
+                subfolder: sanitizeSubfolderName(subfolder),
+            }));
+        } catch (_) {}
+    }
+
+    // ---- IndexedDB: the only place a FileSystemDirectoryHandle can persist
+    // across page loads (it isn't JSON-serializable, so it can't live in the
+    // same localStorage preference object above -- structured-clone storage
+    // via IndexedDB is the standard way every app using this API persists a
+    // handle). One fixed key -- this feature only ever remembers one save
+    // directory at a time, not a history of them.
+    function openHandleDb() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(FS_DB_NAME, 1);
+            req.onupgradeneeded = () => { req.result.createObjectStore(FS_STORE_NAME); };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async function idbGetDirectoryHandle() {
+        try {
+            const db = await openHandleDb();
+            return await new Promise((resolve, reject) => {
+                const tx = db.transaction(FS_STORE_NAME, 'readonly');
+                const req = tx.objectStore(FS_STORE_NAME).get(FS_HANDLE_KEY);
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error);
+            });
+        } catch (_) {
+            return null;
+        }
+    }
+
+    async function idbSetDirectoryHandle(handle) {
+        try {
+            const db = await openHandleDb();
+            await new Promise((resolve, reject) => {
+                const tx = db.transaction(FS_STORE_NAME, 'readwrite');
+                tx.objectStore(FS_STORE_NAME).put(handle, FS_HANDLE_KEY);
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+            });
+        } catch (_) {}
+    }
+
+    // requestIfNeeded must only be true from a real, synchronous-ish user
+    // gesture (a click handler) -- requestPermission() prompts and requires
+    // transient user activation to do so; queryPermission() (the silent
+    // check) never needs one. The silent auto-save-on-paint path always
+    // passes false: it can benefit from a permission Chrome already granted
+    // and persisted from an earlier real click, but it must never itself
+    // try to prompt from a paint event.
+    async function verifyDirectoryPermission(handle, requestIfNeeded) {
+        if (!handle) return false;
+        try {
+            const opts = { mode: 'readwrite' };
+            if ((await handle.queryPermission(opts)) === 'granted') return true;
+            if (!requestIfNeeded) return false;
+            return (await handle.requestPermission(opts)) === 'granted';
+        } catch (_) {
+            return false;
+        }
+    }
+
+    async function trySaveToDirectory(canvas, filename, isUserGesture) {
+        try {
+            const handle = await idbGetDirectoryHandle();
+            if (!handle) return false;
+            const granted = await verifyDirectoryPermission(handle, isUserGesture);
+            if (!granted) {
+                if (isUserGesture) showNotification('Folder access needs to be re-granted — reopen Screenshot save settings and choose the folder again.');
+                return false;
+            }
+            const fileHandle = await handle.getFileHandle(filename, { create: true });
+            const writable = await fileHandle.createWritable();
+            const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+            await writable.write(blob);
+            await writable.close();
+            return true;
+        } catch (err) {
+            console.error('[Region Screenshot] Directory save failed:', err);
+            return false;
+        }
+    }
+
+    function trySaveViaGmDownload(canvas, filename, subfolder) {
+        return new Promise((resolve) => {
+            if (typeof GM_download !== 'function') { resolve(false); return; }
+            try {
+                GM_download({
+                    url: canvas.toDataURL('image/png'),
+                    name: subfolder ? `${subfolder}/${filename}` : filename,
+                    saveAs: false,
+                    onload: () => resolve(true),
+                    onerror: (err) => { console.error('[Region Screenshot] GM_download failed:', err); resolve(false); },
+                    ontimeout: () => { console.error('[Region Screenshot] GM_download timed out.'); resolve(false); },
+                });
+            } catch (err) {
+                console.error('[Region Screenshot] GM_download threw:', err);
+                resolve(false);
+            }
+        });
+    }
+
+    function saveViaPlainLink(canvas, filename) {
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    }
+
+    // Single entry point both the manual Download button and silentDownload
+    // funnel through -- dispatches by the saved preference, falling through
+    // to the next-safest option on any failure, always ending at the
+    // original plain-link behavior so a screenshot NEVER silently fails to
+    // save just because a fancier save mode broke.
+    async function saveExportedPng(canvas, filename, isUserGesture) {
+        const pref = loadSaveLocationPreference();
+
+        if (pref.mode === 'directory' && await trySaveToDirectory(canvas, filename, isUserGesture)) return;
+        if (pref.mode !== 'default' && pref.subfolder && await trySaveViaGmDownload(canvas, filename, pref.subfolder)) return;
+        saveViaPlainLink(canvas, filename);
+    }
+
+    function buildScreenshotFilename() {
+        const ts = (() => {
+            try {
+                const d = new Date();
+                return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}-${String(d.getMinutes()).padStart(2,'0')}-${String(d.getSeconds()).padStart(2,'0')}`;
+            } catch (_) {
+                return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            }
+        })();
+        return `geopixels-screenshot-${ts}.png`;
+    }
+
+    // ---- Settings modal: same overlay/box/header pattern as showAdjustModal
+    // below, reused here rather than factored out since each modal's body is
+    // different enough that a shared wrapper would need almost as many
+    // parameters as it'd save lines.
+    function openSaveLocationSettings() {
+        const existing = document.querySelector('.rsc-save-location-overlay');
+        if (existing) existing.remove();
+
+        const pref = loadSaveLocationPreference();
+        const directoryPickerSupported = typeof window.showDirectoryPicker === 'function';
+        let pendingHandle = null; // set only if the user picks a NEW folder in this modal session
+
+        const overlay = document.createElement('div');
+        overlay.className = 'rsc-save-location-overlay';
+        overlay.style.cssText = `
+            position: fixed; inset: 0; z-index: 10001;
+            background: rgba(0,0,0,0.55);
+            display: flex; align-items: center; justify-content: center;
+            font-family: system-ui, sans-serif;
+        `;
+
+        const box = document.createElement('div');
+        box.style.cssText = `
+            background: #1e1e2e; color: #cdd6f4; border-radius: 12px;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+            padding: 24px; min-width: 320px; max-width: 380px;
+            display: flex; flex-direction: column; gap: 12px;
+        `;
+
+        const escHex = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+        box.innerHTML = `
+            <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #cba6f7;">📁 Screenshot Save Location</h3>
+            <p style="margin: 0; font-size: 12px; color: #a6adc8; line-height: 1.5;">Applies to both the Download button and Auto-save on paint.</p>
+            <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; cursor:pointer;">
+                <input id="rsc-mode-default" type="radio" name="rsc-save-mode" value="default" style="margin-top:3px;">
+                <span>Default Downloads folder<br><span style="font-size:11px;color:#6c7086;">Whatever your browser already saves downloads to.</span></span>
+            </label>
+            <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; cursor:pointer;">
+                <input id="rsc-mode-subfolder" type="radio" name="rsc-save-mode" value="subfolder" style="margin-top:3px;">
+                <span style="flex:1;">Subfolder inside Downloads
+                    <input id="rsc-subfolder-input" type="text" placeholder="GeoPixels Screenshots" value="${escHex(pref.subfolder)}"
+                        style="margin-top:4px; width:100%; box-sizing:border-box; padding:6px 8px; border-radius:6px; border:1px solid #45475a; background:#313244; color:#cdd6f4; font-size:12px;">
+                </span>
+            </label>
+            <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; ${directoryPickerSupported ? 'cursor:pointer;' : 'opacity:0.5;'}">
+                <input id="rsc-mode-directory" type="radio" name="rsc-save-mode" value="directory" ${directoryPickerSupported ? '' : 'disabled'} style="margin-top:3px;">
+                <span style="flex:1;">Choose an exact folder
+                    <br><span style="font-size:11px;color:#6c7086;">${directoryPickerSupported ? 'Chrome/Edge only. Saves there silently once approved.' : 'Needs Chrome or Edge — not supported in this browser.'}</span>
+                    ${directoryPickerSupported ? `
+                    <button id="rsc-choose-dir-btn" type="button" style="margin-top:6px; display:block; padding:5px 10px; border-radius:6px; border:1px solid #45475a; background:#313244; color:#cdd6f4; font-size:12px; cursor:pointer;">Choose folder…</button>
+                    <span id="rsc-chosen-dir-name" style="font-size:11px;color:#a6adc8;display:block;margin-top:4px;"></span>` : ''}
+                </span>
+            </label>
+            <div id="rsc-save-location-error" style="font-size: 12px; color: #f38ba8; display: none;"></div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px;">
+                <button id="rsc-save-location-cancel" style="padding: 8px 16px; border-radius: 8px; border: 1px solid #45475a; background: #313244; color: #a6adc8; cursor: pointer; font-size: 13px;">Cancel</button>
+                <button id="rsc-save-location-save" style="padding: 8px 16px; border-radius: 8px; border: none; background: #cba6f7; color: #1e1e2e; cursor: pointer; font-size: 13px; font-weight: 600;">Save</button>
+            </div>
+        `;
+
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        box.querySelector('#rsc-mode-' + pref.mode).checked = true;
+
+        const chosenNameEl = box.querySelector('#rsc-chosen-dir-name');
+        if (directoryPickerSupported && pref.mode === 'directory') {
+            idbGetDirectoryHandle().then((handle) => {
+                if (handle && chosenNameEl) chosenNameEl.textContent = 'Currently: ' + handle.name;
+            });
+        }
+
+        const chooseDirBtn = box.querySelector('#rsc-choose-dir-btn');
+        if (chooseDirBtn) {
+            chooseDirBtn.onclick = async () => {
+                try {
+                    const handle = await window.showDirectoryPicker({ id: 'gpc-region-screenshot', mode: 'readwrite' });
+                    const granted = await verifyDirectoryPermission(handle, true);
+                    if (!granted) { showNotification('Folder access wasn\'t granted.'); return; }
+                    pendingHandle = handle;
+                    box.querySelector('#rsc-mode-directory').checked = true;
+                    if (chosenNameEl) chosenNameEl.textContent = 'Selected: ' + handle.name;
+                } catch (err) {
+                    if (err && err.name !== 'AbortError') console.error('[Region Screenshot] Folder picker error:', err);
+                }
+            };
+        }
+
+        const close = () => overlay.remove();
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        box.querySelector('#rsc-save-location-cancel').onclick = close;
+
+        box.querySelector('#rsc-save-location-save').onclick = async () => {
+            const mode = box.querySelector('input[name="rsc-save-mode"]:checked')?.value || 'default';
+            const errEl = box.querySelector('#rsc-save-location-error');
+            const subfolderInput = box.querySelector('#rsc-subfolder-input');
+            const subfolder = sanitizeSubfolderName(subfolderInput ? subfolderInput.value : '');
+
+            if (mode === 'subfolder' && !subfolder) {
+                errEl.textContent = 'Enter a subfolder name, or pick a different option.';
+                errEl.style.display = 'block';
+                return;
+            }
+            if (mode === 'directory') {
+                if (pendingHandle) {
+                    await idbSetDirectoryHandle(pendingHandle);
+                } else {
+                    const existingHandle = await idbGetDirectoryHandle();
+                    if (!existingHandle) {
+                        errEl.textContent = 'Choose a folder first.';
+                        errEl.style.display = 'block';
+                        return;
+                    }
+                }
+            }
+
+            saveSaveLocationPreference(mode, subfolder);
+            showNotification('Screenshot save location updated.');
+            close();
+        };
+
+        const escHandler = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escHandler); } };
+        document.addEventListener('keydown', escHandler);
+    }
+
     // ==================== MAP ACCESS ====================
     function _getMap() {
         if (_map) return _map;
@@ -950,11 +1269,9 @@
         downloadBtn.onmouseover = () => { downloadBtn.style.opacity = '0.85'; };
         downloadBtn.onmouseout  = () => { downloadBtn.style.opacity = '1'; };
         downloadBtn.onclick = () => {
-            const link = document.createElement('a');
-            const ts = (() => { try { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}-${String(d.getMinutes()).padStart(2,'0')}-${String(d.getSeconds()).padStart(2,'0')}`; } catch(_) { return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19); } })();
-            link.download = `geopixels-screenshot-${ts}.png`;
-            link.href = getExportCanvas().toDataURL('image/png');
-            link.click();
+            // isUserGesture=true -- this IS a real click, so directory mode
+            // may prompt for permission if it hasn't been granted yet.
+            saveExportedPng(getExportCanvas(), buildScreenshotFilename(), true);
         };
 
         // Copy button
@@ -1181,11 +1498,11 @@
             const canvas = await renderRegionToCanvas(bounds, () => {});
             const backgroundPref = loadBackgroundPreference();
             const exportCanvas = composeCanvasWithBackground(canvas, backgroundPref.mode, backgroundPref.color);
-            const link = document.createElement('a');
-            const ts = (() => { try { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}-${String(d.getMinutes()).padStart(2,'0')}-${String(d.getSeconds()).padStart(2,'0')}`; } catch(_) { return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19); } })();
-            link.download = `geopixels-screenshot-${ts}.png`;
-            link.href = exportCanvas.toDataURL('image/png');
-            link.click();
+            // isUserGesture=false -- triggered by a paint event, not a
+            // click. Directory mode only writes silently here if permission
+            // was already granted (and persisted by the browser) from an
+            // earlier real "Choose folder…" click; it never prompts.
+            await saveExportedPng(exportCanvas, buildScreenshotFilename(), false);
         } catch (err) {
             console.error('[Region Screenshot] Silent download error:', err);
         }
@@ -1195,7 +1512,7 @@
     init();
 
     // Expose API for flyout
-    _regionScreenshot = { processWithBounds, toggleSelectionMode, silentDownload };
+    _regionScreenshot = { processWithBounds, toggleSelectionMode, silentDownload, openSaveLocationSettings };
             })();
             _featureStatus.regionScreenshot = 'ok';
             console.log('[GeoPixelcons++] \u2705 Region Screenshot loaded');
