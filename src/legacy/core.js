@@ -1308,6 +1308,13 @@
     // ============================================================
     const CHANGELOG = [
         {
+            version: '2.10.1',
+            date: '2026-08-23',
+            items: [
+                { type: 'fixed', text: 'Smooth Zoom Buttons: fixed the +/- buttons, slider, and live zoom value being completely unresponsive on Firefox' },
+            ]
+        },
+        {
             version: '2.10.0',
             date: '2026-08-23',
             items: [
