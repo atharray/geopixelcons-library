@@ -40,6 +40,8 @@ const LEGACY_SOURCE_ORDER = [
     'src/legacy/features/ext-pill-hover-labels.js',
     'src/legacy/features/ext-janitor-view.js',
     'src/legacy/features/ext-map-movement-lock.js',
+    'src/legacy/features/ext-blocked-users.js',
+    'src/legacy/features/ext-canvas-toggle.js',
     'src/legacy/features/ext-guild-search.js',
     'src/legacy/features/ext-log-out-button.js',
     'src/legacy/features/theme-editor.js',

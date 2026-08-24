@@ -30,7 +30,7 @@ test('publishes the library bridge when @require wraps the source', () => {
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Ghost Template Manager/);
-    assert.match(artifact, /const VERSION = '2\.9\.1';/);
+    assert.match(artifact, /const VERSION = '2\.10\.0';/);
     const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const versionPattern = new RegExp(`const LIBRARY_VERSION = '${escapedVersion}'; // x-release-please-version`);
     assert.match(artifact, versionPattern);
@@ -40,7 +40,7 @@ test('organizes settings into the requested visual extension categories', () => 
     assert.match(artifact, /const EXTENSION_CATEGORIES = \[/);
     assert.match(artifact, /name: 'Painting', keys: \['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'\]/);
     assert.match(artifact, /name: 'Ghost Template', keys: \['ghostPlusPlus', 'showSyncGhostBtn'\]/);
-    assert.match(artifact, /name: 'Map', keys: \['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView'\]/);
+    assert.match(artifact, /name: 'Map', keys: \['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers', 'extCanvasToggle'\]/);
     assert.match(artifact, /name: 'Menuing', keys: \['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'\]/);
     assert.match(artifact, /name: 'Misc', keys: \['extGoToLastLocation'\]/);
     assert.match(artifact, /name: 'Deprecated', keys: \['ghostPaletteSearch', 'ghostTemplateManager'\]/);
@@ -190,4 +190,176 @@ test('tracks snapshot-observed guild activity and marks inactive players yellow'
     assert.match(artifact, /Unknown members belong in Inactive/);
     assert.match(artifact, /c\.type === 'left' \|\| !lastSeenAt \|\| isMemberInactive\(lastSeenAt\) \|\| c\.diff <= 0/);
     assert.match(artifact, /isMemberInactive\(lastSeenAt\)/);
+});
+
+test('filters canvas tiles through the blocked user list at the layer boundary', () => {
+    assert.match(artifact, /EXTENSION: Blocked User List \[extBlockedUsers\]/);
+    assert.match(artifact, /if \(_settings\.extBlockedUsers\)/);
+    assert.match(artifact, /name: 'Blocked User List', icon: '🚷'/);
+
+    // The whole feature depends on hooking the single texture-upload choke
+    // point rather than the render loop, so that tileImageCache stays
+    // untouched ground truth for Ghost++ and the native pixel inspector.
+    assert.match(artifact, /pixelTileLayer\.setTile = function \(tileKey, source, corners\)/);
+    assert.match(artifact, /__gpcBlockedUsersOriginal/);
+
+    // Attribution decode must key on alpha, never on the id value: user id 0
+    // is a real account, which is why index.js itself tests a > 0.
+    assert.match(artifact, /if \(d\[i \+ 3\] === 0\) continue;/);
+    assert.match(artifact, /\(d\[i\] << 16\) \| \(d\[i \+ 1\] << 8\) \| d\[i \+ 2\]/);
+
+    // Per-tile id index keyed on bitmap identity, not tile key -- index.js
+    // rebuilds cache entries with a spread that would carry a stale index.
+    assert.match(artifact, /if \(!idx \|\| idx\.bmp !== ub\)/);
+
+    assert.match(artifact, /window\.__gpcBlockedUsers = \{/);
+    assert.match(artifact, /\/GetUserProfile/);
+
+    // Entry points: GeoPixelcons++ dropdown, and a queue button seated next to
+    // the native Report flag inside the pixel info panel.
+    assert.match(artifact, /makeSubBtn\('🚷', 'Blocked Users'/);
+    assert.match(artifact, /let _blockedUsers = null;/);
+    assert.match(artifact, /_blockedUsers = \{ openModal \};/);
+    assert.match(artifact, /report\.parentElement\.insertBefore\(btn, report\)/);
+    assert.doesNotMatch(artifact, /gpc-blocked-users-btn/);
+});
+
+test('gives the Blocked User List per-user visibility, notes and bulk editing', () => {
+    // Master switch is an override, not a bulk write: flipping it off and back
+    // on must not lose which individual eyes the user had already turned off.
+    assert.match(artifact, /function activeUsers\(\)/);
+    assert.match(artifact, /if \(!store\.enabled\) return 1;/);
+    assert.match(artifact, /gpp-blocked-users-master-toggle/);
+
+    // Bulk add: commas, whitespace and semicolons in any combination.
+    assert.match(artifact, /function parseIds\(text\)/);
+    assert.match(artifact, /split\(\/\[\\s,;\]\+\/\)/);
+    assert.match(artifact, /gpp-blocked-users-preview/);
+
+    // Bulk remove by checkbox.
+    assert.match(artifact, /gpp-blocked-users-bulk-unblock/);
+    assert.match(artifact, /gpp-blocked-users-select-all/);
+
+    // Private per-user note.
+    assert.match(artifact, /gpp-blocked-users-note-/);
+    assert.match(artifact, /Add a private note/);
+
+    // The old always-on explainer paragraph was removed on request.
+    assert.doesNotMatch(artifact, /Pixels last placed by these users are hidden or highlighted/);
+});
+
+test('round-trips the Blocked User List through JSON import and export', () => {
+    assert.match(artifact, /function exportObject\(\)/);
+    assert.match(artifact, /function importJson\(text\)/);
+    assert.match(artifact, /gpp-blocked-users-io-btn/);
+    assert.match(artifact, /gpp-blocked-users-io-copy/);
+    assert.match(artifact, /gpp-blocked-users-io-download/);
+    assert.match(artifact, /gpp-blocked-users-io-file/);
+    assert.match(artifact, /geopixels-blocklist\.json/);
+
+    // Notes are opt-out on export, and the choice persists.
+    assert.match(artifact, /gpp-blocked-users-io-exclude-notes/);
+    assert.match(artifact, /if \(!store\.excludeNotes && u\.note\) out\.note = u\.note;/);
+
+    // Import merges rather than replaces -- it must never wipe an existing list.
+    assert.match(artifact, /if \(isBlocked\(u\.id\)\) \{ skipped\+\+; return; \}/);
+});
+
+test('fades blocked users by opacity rather than colour', () => {
+    // Colour highlighting was removed outright, along with the hide/highlight
+    // mode split it belonged to.
+    assert.doesNotMatch(artifact, /DEFAULT_HL/);
+    assert.doesNotMatch(artifact, /gpp-blocked-users-color-/);
+    assert.doesNotMatch(artifact, /gpp-blocked-users-mode-/);
+
+    // Alpha scaling only. getImageData is unpremultiplied and the layer
+    // premultiplies on upload, so touching RGB here would double-apply.
+    assert.match(artifact, /c\[i \+ 3\] = \(c\[i \+ 3\] \* a\) \| 0;/);
+    assert.match(artifact, /var a = state\.users\.get\(id\);/);
+    assert.match(artifact, /setUsers: function \(arr\)/);
+
+    // Fully visible users never enter the map, so their tiles skip the rebuild.
+    assert.match(artifact, /if \(a >= 1\) return;/);
+    assert.match(artifact, /\.filter\(\(u\) => u\.alpha < 1\)/);
+
+    // Global and per-user sliders compose; neither overwrites the other, and
+    // the global one still works from the default state where every per-user
+    // value is 0 (a plain multiply would be inert there).
+    assert.match(artifact, /function effectiveOpacity\(u\)/);
+    assert.match(artifact, /1 - \(1 - clamp01\(u\.opacity\)\) \* \(1 - clamp01\(store\.globalOpacity\)\)/);
+
+    // Dedicated full-hide / full-show ends on every slider.
+    assert.match(artifact, /function buildFade\(idBase, getValue, setValue, opts\)/);
+    assert.match(artifact, /gpp-blocked-users-global-slider|\$\{idBase\}-slider/);
+
+    // v2 booleans migrate to the new scale without changing what a row did.
+    assert.match(artifact, /opacity = \(u && u\.enabled === false\) \? 1 : 0;/);
+});
+
+test('toggles the whole canvas through the tile layer opacity uniform', () => {
+    assert.match(artifact, /EXTENSION: Canvas Visibility Toggle \[extCanvasToggle\]/);
+    assert.match(artifact, /if \(_settings\.extCanvasToggle\)/);
+    assert.match(artifact, /name: 'Canvas Visibility Toggle'/);
+    assert.match(artifact, /gpp-canvas-toggle-btn/);
+    assert.match(artifact, /imageGroupDropdown/);
+
+    // The whole point: one uniform write, never a per-texel rebuild. If this
+    // ever starts routing through the blocked-users filter it has regressed
+    // into the most expensive possible way to clear the screen.
+    assert.match(artifact, /pixelTileLayer\.opacity = v;/);
+    assert.doesNotMatch(artifact, /__gpcCanvasToggle[\s\S]{0,400}getImageData/);
+
+    // Clicking opens a slider popover; the old alt-click step cycle is gone.
+    assert.doesNotMatch(artifact, /const STEPS = \[1, 0, 0\.5, 0\.25\];/);
+    assert.match(artifact, /gpp-canvas-toggle-popover/);
+    assert.match(artifact, /gpp-canvas-toggle-slider/);
+    assert.match(artifact, /gpp-canvas-toggle-hide/);
+    assert.match(artifact, /gpp-canvas-toggle-show/);
+    assert.doesNotMatch(artifact, /gpp-canvas-toggle[\w-]*['"]\s*\)?\s*;?\s*[\s\S]{0,200}localStorage/);
+});
+
+test('styles the Blocked User List on the Ghost++ palette', () => {
+    const source = readFileSync(new URL('../src/legacy/features/ext-blocked-users.js', import.meta.url), 'utf8');
+    // Same t() helper Ghost++ uses via t2(), so a live theme switch tracks.
+    assert.match(source, /function injectStyle\(\)/);
+    assert.match(source, /\$\{t\('#ffffff', '#1e1e2e'\)\}/);   // panel, cf. gpp-lib-fullview
+    assert.match(source, /\$\{t\('#d1d5db', '#45475a'\)\}/);   // border, cf. gpp-lib-btn
+    assert.match(source, /\$\{t\('#2563eb', '#89b4fa'\)\}/);   // accent, cf. gpp-lib-card:hover
+    assert.match(source, /\$\{t\('#64748b', '#a6adc8'\)\}/);   // muted, cf. gpp-lib-count
+    // Restyled on every open so a live dark/light toggle is not frozen.
+    assert.match(source, /injectStyle\(\);/);
+    assert.doesNotMatch(source, /function themeColors\(\)/);
+});
+
+test('gives every Blocked User List element a gpp- prefixed id', () => {
+    const source = readFileSync(new URL('../src/legacy/features/ext-blocked-users.js', import.meta.url), 'utf8');
+
+    // Current standard: elements created by GeoPixelcons++ must carry a gpp- id.
+    const assignedIds = [...source.matchAll(/\.id = ['"`]([^'"`$]*)/g)]
+        .map((m) => m[1])
+        .filter(Boolean);
+    assert.ok(assignedIds.length > 0, 'expected the feature to assign element ids');
+    for (const id of assignedIds) {
+        assert.ok(id.startsWith('gpp-'), `element id "${id}" must start with gpp-`);
+    }
+
+    // Template-literal ids (per-row controls) must follow the same rule. Ones
+    // built from an ${idBase} parameter are checked at their call sites below
+    // instead, since the prefix lives there rather than in the template.
+    const templateIds = [...source.matchAll(/\.id = `([^`]*)`/g)].map((m) => m[1]);
+    for (const id of templateIds) {
+        if (id.startsWith('${idBase}')) continue;
+        assert.ok(id.startsWith('gpp-'), `templated element id "${id}" must start with gpp-`);
+    }
+
+    // Every buildFade() caller must hand it a gpp- prefixed id base, which is
+    // what makes the ${idBase}-slider / -hide / -show ids compliant.
+    const fadeBases = [...source.matchAll(/buildFade\(\s*[`'"]([^`'"]*)/g)].map((m) => m[1]);
+    assert.ok(fadeBases.length > 0, 'expected at least one buildFade call site');
+    for (const base of fadeBases) {
+        assert.ok(base.startsWith('gpp-'), `buildFade id base "${base}" must start with gpp-`);
+    }
+
+    assert.match(source, /const MODAL_ID\s*=\s*'gpp-blocked-users-modal'/);
+    assert.match(source, /const HOVER_BTN_ID\s*=\s*'gpp-blocked-users-hover-btn'/);
 });
