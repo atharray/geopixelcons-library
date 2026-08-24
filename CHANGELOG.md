@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.1](https://github.com/atharray/geopixelcons-library/compare/v2.9.0...v2.9.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **mobile-painting:** stop hiding the URL-upload button in the mobile upload panel ([#40](https://github.com/atharray/geopixelcons-library/issues/40)) ([200d0c0](https://github.com/atharray/geopixelcons-library/commit/200d0c04469100d58e942d1e7693f6fd3e9928a7))
+
 ## [2.9.0](https://github.com/atharray/geopixelcons-library/compare/v2.8.1...v2.9.0) (2026-08-20)
 
 
