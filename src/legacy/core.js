@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.11.0';
+    const VERSION = '2.12.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1308,6 +1308,13 @@
     // ============================================================
     const CHANGELOG = [
         {
+            version: '2.12.0',
+            date: '2026-08-24',
+            items: [
+                { type: 'added', text: 'Region Screenshot: new "⚙️ Save location…" option next to Auto-save on paint — save to a named subfolder inside Downloads, or (Chrome/Edge) pick an exact folder and save there silently' },
+            ]
+        },
+        {
             version: '2.11.0',
             date: '2026-08-23',
             items: [
@@ -2560,6 +2567,27 @@
                     _gpcNotify(nowOn ? 'Auto-screenshot ON' : 'Auto-screenshot OFF');
                 });
                 flyout.appendChild(autoBtn);
+
+                // Small settings entry point for WHERE a screenshot's PNG
+                // actually gets written -- default Downloads, a named
+                // subfolder, or (Chrome/Edge) an exact chosen folder. Lives
+                // here, next to Auto-save on paint, rather than only inside
+                // the manual-capture preview modal -- auto-save never shows
+                // that modal at all, so this is the only surface a user
+                // configuring auto-save's destination would ever reach
+                // without first taking a screenshot manually.
+                const saveLocationBtn = document.createElement('button');
+                saveLocationBtn.id = 'gpc-screenshot-save-location-btn';
+                saveLocationBtn.style.cssText = flyBtnStyle + ';margin-top:2px;';
+                saveLocationBtn.innerHTML = '⚙️ Save location…';
+                saveLocationBtn.title = 'Choose where screenshots (manual and auto-save) get saved.';
+                saveLocationBtn.addEventListener('mouseenter', () => { saveLocationBtn.style.background = C.flyHover; });
+                saveLocationBtn.addEventListener('mouseleave', () => { saveLocationBtn.style.background = C.flyBg; });
+                saveLocationBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (_regionScreenshot) _regionScreenshot.openSaveLocationSettings();
+                });
+                flyout.appendChild(saveLocationBtn);
             }
 
             _flyoutClosers.push(closeFly);
