@@ -22,8 +22,6 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - id: check
         name: Require the one-time stable baseline tag
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
         shell: bash
         run: |
           # Gate release-please on whether the one-time manual bootstrap has
@@ -32,7 +30,11 @@ jobs:
           # is bumped by the release-please PR itself before the matching tag
           # is created, so checking the current version here would re-block
           # every release after the first one forever.
-          if gh api --paginate "repos/${GITHUB_REPOSITORY}/git/refs/tags" --jq '.[].ref' | grep -Eq '^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'; then
+          # Read the authenticated checkout's remote refs directly. The
+          # GitHub refs API can return only the first page in this workflow,
+          # which made the gate miss existing stable tags after enough preview
+          # tags accumulated and silently skip Release Please.
+          if git ls-remote --tags origin | grep -Eq 'refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
