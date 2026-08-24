@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.10.0';
+    const VERSION = '2.12.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1308,10 +1308,25 @@
     // ============================================================
     const CHANGELOG = [
         {
+            version: '2.12.0',
+            date: '2026-08-24',
+            items: [
+                { type: 'added', text: 'Region Screenshot: new "⚙️ Save location…" option next to Auto-save on paint — save to a named subfolder inside Downloads, or (Chrome/Edge) pick an exact folder and save there silently' },
+            ]
+        },
+        {
             version: '2.11.0',
             date: '2026-08-23',
             items: [
-                { type: 'added', text: 'Region Screenshot: new "⚙️ Save location…" option next to Auto-save on paint — save to a named subfolder inside Downloads, or (Chrome/Edge) pick an exact folder and save there silently' },
+                { type: 'changed', text: 'Painting Menu Overhaul: disabled colors are grayed out and get a diagonal slash again, matching the Ghost++ manager\'s own grid (this had been intentionally suppressed since Aug 11, but read as broken rather than as a feature -- reverted after user reports)' },
+                { type: 'added', text: 'Painting Menu Overhaul: new "Gray unselected color boxes" checkbox next to the scan progress controls -- controls the exact same setting as the Ghost++ manager\'s own View Settings checkbox of that name' },
+            ]
+        },
+        {
+            version: '2.10.1',
+            date: '2026-08-23',
+            items: [
+                { type: 'fixed', text: 'Smooth Zoom Buttons: fixed the +/- buttons, slider, and live zoom value being completely unresponsive on Firefox' },
             ]
         },
         {

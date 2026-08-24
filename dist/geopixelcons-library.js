@@ -1,7 +1,7 @@
-/* GeoPixelcons Library v2.10.0 - readable release bundle */
+/* GeoPixelcons Library v2.11.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
-    const LIBRARY_VERSION = '2.10.0'; // x-release-please-version
+    const LIBRARY_VERSION = '2.11.0'; // x-release-please-version
     let runtime = null;
     let booting = false;
 
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.10.0';
+    const VERSION = '2.12.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1320,10 +1320,25 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // ============================================================
     const CHANGELOG = [
         {
+            version: '2.12.0',
+            date: '2026-08-24',
+            items: [
+                { type: 'added', text: 'Region Screenshot: new "⚙️ Save location…" option next to Auto-save on paint — save to a named subfolder inside Downloads, or (Chrome/Edge) pick an exact folder and save there silently' },
+            ]
+        },
+        {
             version: '2.11.0',
             date: '2026-08-23',
             items: [
-                { type: 'added', text: 'Region Screenshot: new "⚙️ Save location…" option next to Auto-save on paint — save to a named subfolder inside Downloads, or (Chrome/Edge) pick an exact folder and save there silently' },
+                { type: 'changed', text: 'Painting Menu Overhaul: disabled colors are grayed out and get a diagonal slash again, matching the Ghost++ manager\'s own grid (this had been intentionally suppressed since Aug 11, but read as broken rather than as a feature -- reverted after user reports)' },
+                { type: 'added', text: 'Painting Menu Overhaul: new "Gray unselected color boxes" checkbox next to the scan progress controls -- controls the exact same setting as the Ghost++ manager\'s own View Settings checkbox of that name' },
+            ]
+        },
+        {
+            version: '2.10.1',
+            date: '2026-08-23',
+            items: [
+                { type: 'fixed', text: 'Smooth Zoom Buttons: fixed the +/- buttons, slider, and live zoom value being completely unresponsive on Firefox' },
             ]
         },
         {
@@ -18934,13 +18949,56 @@ patch();
                 wrapper.appendChild(valueBox);
                 controlsRight.insertBefore(wrapper, zoomInBtn);
 
-                // Wait for map instance then wire up events
+                // Resolves the live MapLibre `map` global. Plain `_pw2.map`
+                // property access (_pw2 = unsafeWindow) is what this used to
+                // do exclusively, and it silently never resolves on
+                // Firefox's Tampermonkey sandbox for some page globals
+                // (Xray-wrapper behavior) -- the interval below would spin
+                // for the full 20s and then give up for good, wiring up
+                // NONE of this widget's interactivity (every listener is
+                // attached inside the callback this feeds), which is
+                // exactly what "buttons and slider do nothing, no zoom
+                // value shown" in Firefox looks like. Region Screenshot's
+                // _getMap() (region-screenshot.js) already solved this
+                // identical problem with an eval('map') fallback chain --
+                // eval runs in the page's own scope chain rather than doing
+                // a property lookup, so it finds `map` regardless of how
+                // the sandbox exposes (or fails to expose) it as a `window`
+                // property. Mirrored here verbatim, with the original
+                // direct-property check kept as a last resort (zero
+                // behavior change for browsers where it already worked).
+                function _sz_resolveMap() {
+                    try { const m = (0, eval)('map'); if (m && typeof m.getZoom === 'function') return m; } catch (_) {}
+                    if (typeof unsafeWindow !== 'undefined') {
+                        try { const m = unsafeWindow.eval('map'); if (m && typeof m.getZoom === 'function') return m; } catch (_) {}
+                    }
+                    return (_pw2.map && typeof _pw2.map.getZoom === 'function') ? _pw2.map : null;
+                }
+
+                // Wait for map instance then wire up events. Unlike Region
+                // Screenshot's own waitForGeoPixels, this still gives up
+                // after 20s (matching the original timeout) rather than
+                // retrying forever -- map is the ONLY condition this widget
+                // waits on, so 20s of failed eval-based resolution is
+                // already a strong signal something's actually wrong, not
+                // just slow to load. The one change on timeout is that it
+                // now says so instead of failing silently -- see the
+                // _sz_resolveMap comment above for why this went unnoticed.
                 function _sz_waitForMap(cb) {
-                    if (_pw2.map && typeof _pw2.map.getZoom === 'function') { cb(_pw2.map); return; }
+                    const immediate = _sz_resolveMap();
+                    if (immediate) { cb(immediate); return; }
+                    const startedAt = Date.now();
                     const t = setInterval(() => {
-                        if (_pw2.map && typeof _pw2.map.getZoom === 'function') { clearInterval(t); cb(_pw2.map); }
+                        const m = _sz_resolveMap();
+                        if (m) { clearInterval(t); cb(m); }
                     }, 200);
-                    setTimeout(() => clearInterval(t), 20000);
+                    setTimeout(() => {
+                        clearInterval(t);
+                        if (_sz_resolveMap()) return; // resolved right at the boundary, between the last tick and this timeout
+                        const msg = 'Smooth Zoom Buttons: map instance never resolved after ' + (Date.now() - startedAt) + 'ms -- buttons/slider will stay inert.';
+                        dbgPush(msg, { uiComponent: 'Smooth Zoom Buttons' });
+                        console.error('[GeoPixelcons++] ' + msg);
+                    }, 20000);
                 }
 
                 _sz_waitForMap((map) => {
@@ -34831,28 +34889,35 @@ if (_settings.profileColorsCollapse) {
                 box-shadow: 0 3px 8px ${t2('rgba(0,0,0,.35)', 'rgba(0,0,0,.6)')};
                 z-index: 2;
             }
-            /* Per explicit product decision, disabled colors in THIS grid get
-               NO visual indicator at all -- no grayscale (see the removed-
-               filter history in the changelog), no diagonal slash either.
-               The underlying mask (template.mask via core.maskSet) is
-               unchanged -- other colors are still genuinely disabled in the
-               Ghost++ overlay, exactly as soloColor() always did; only the
-               visual off-state styling is suppressed here. Ghost++'s own
-               grid keeps its usual grayscale + slash treatment, untouched.
-               #gpc-pmo-palette-grid-scoped override below, not just an
-               absence of a rule here -- Ghost++'s own #gpp-palette-style
-               tag (gpp-palette.js's gppInjectPaletteStyle(), which our own
-               ensurePaletteControllerReady() calls can trigger) defines an
-               UNGATED .gpp-swatch.gpp-swatch-off::after slash rule that
-               would otherwise apply to every matching element on the page
-               regardless of which grid it's actually in or which stylesheet
-               "owns" it -- CSS selectors aren't scoped by which script wrote
-               them. The higher-specificity ID-scoped override is what
-               actually guarantees it never shows here, independent of
-               style-tag injection order. */
-            #gpc-pmo-palette-grid .gpp-swatch.gpp-swatch-off::after {
-                content: none;
-            }
+            /* Disabled-color indicator: per renewed explicit product
+               decision, this grid matches Ghost++'s own real grid exactly
+               again. An EARLIER explicit decision (see the "never gray
+               out" / "never show the slash" changelog entries, commits
+               304d255/d6f4b80) had suppressed both, on the reasoning that
+               the mobile grid should never dim disabled colors at all --
+               that read as a bug rather than a feature to players used to
+               Ghost++'s own grid (see ironheart364's report, 8/19: "the
+               disabled colors get greyed out and crossed out in the
+               ghost++ menu but not the new paint menu"), so it's reverted.
+               Nothing is needed here for the slash: removing the old
+               #gpc-pmo-palette-grid ...::after { content: none; } override
+               that used to defeat it means this grid naturally inherits
+               Ghost++'s own ungated .gpp-swatch.gpp-swatch-off::after rule
+               (gpp-palette.js's gppInjectPaletteStyle()) the same way
+               every other piece of borrowed styling in this file already
+               relies on shared, unscoped Ghost++ CSS. The grayscale/
+               opacity half is gated behind the SAME .gpp-palette-gray-
+               disabled ancestor class Ghost++'s own grid uses (also an
+               unscoped, shared rule) -- toggled onto THIS grid in lockstep
+               with gppSettings.grayDisabledSwatches by buildTemplate
+               PaletteGrid (initial render) and resync() (live updates),
+               mirroring gpp-palette.js's own performFilterSort exactly.
+               The control that actually flips that setting from the
+               mobile view isn't near this stylesheet at all -- see
+               buildPlaceholder1Content's "Gray unselected color boxes"
+               checkbox, which writes the exact same
+               gppSettings.grayDisabledSwatches Ghost++'s real View
+               Settings checkbox does. */
             /* Manual-palette mode (buildManualPaletteSwatches) -- per
                explicit user feedback, its swatches should read as part of
                the SAME visual family as .gpc-ctrl-btn/.gpc-pmo-placeholder
@@ -35788,6 +35853,45 @@ if (_settings.profileColorsCollapse) {
         buttonsGrid.className = 'gpc-pmo-p-btn-grid';
         [scanBtn, showErrBtn, showMissBtn, nearestBtn].forEach((btn) => { if (btn) borrowNode(btn, buttonsGrid); });
         container.appendChild(buttonsGrid);
+
+        // "Gray unselected color boxes" -- a synced control, not a borrowed
+        // node like everything above it. gpp-view-settings.js's own
+        // #gpp-vs-gray-disabled-swatches checkbox is torn down and rebuilt
+        // from scratch on every View Settings re-render (gppRenderView
+        // Settings does container.innerHTML = '' unconditionally, "after
+        // every onChange()" per its own comment), which makes it a moving
+        // target -- borrowNode's move-then-restore-to-recorded-parent/
+        // sibling contract (see that function's own comment) assumes a
+        // stable origin, and would silently strand this checkbox in a
+        // detached, already-replaced <div> the next time that section
+        // re-renders for any unrelated reason. A second, independent
+        // checkbox that reads/writes the exact same
+        // gppSettings.grayDisabledSwatches Ghost++'s own one does gets the
+        // identical practical effect (same setting, same persistence, same
+        // grids react) without that fragility. Distinct id from the real
+        // one on purpose -- two elements sharing
+        // #gpp-vs-gray-disabled-swatches would make every
+        // getElementById('gpp-vs-gray-disabled-swatches') lookup elsewhere
+        // in Ghost++'s own code ambiguous. Same visual family as "Use
+        // manual palette" below (.gpc-pmo-manual-palette-option, this
+        // file's own convention for own-content checkboxes), and same
+        // native-.title-not-gppAttachTooltip choice that one already made.
+        const grayOption = document.createElement('label');
+        grayOption.className = 'gpc-pmo-manual-palette-option';
+        const grayOptionInput = document.createElement('input');
+        grayOptionInput.type = 'checkbox';
+        grayOptionInput.id = 'gpc-pmo-gray-disabled-swatches';
+        grayOptionInput.checked = gppSettings.grayDisabledSwatches !== false;
+        const grayOptionText = document.createElement('span');
+        grayOptionText.textContent = 'Gray unselected color boxes';
+        grayOption.title = 'When enabled, disabled color tiles in this grid appear grayed out (the same setting as the Ghost++ manager\'s own View Settings checkbox of this name).';
+        grayOption.append(grayOptionInput, grayOptionText);
+        grayOptionInput.addEventListener('change', () => {
+            gppSettings.grayDisabledSwatches = grayOptionInput.checked;
+            gppState.saveSettings();
+            resync();
+        });
+        container.appendChild(grayOption);
     }
 
     // Placeholder 2: the real #gpp-drop-zone, wholesale (drag/drop/paste/
@@ -36289,6 +36393,14 @@ if (_settings.profileColorsCollapse) {
         grid.className = 'gpp-palette-grid';
         grid.classList.toggle('gpp-palette-list-mode', listMode);
         grid.classList.toggle('gpc-pmo-manual-mode', wantsManualPalette);
+        // Same gate gpp-palette.js's own performFilterSort applies to its
+        // real grid (see that file's CSS comment on this exact class) --
+        // read fresh at rebuild time here, and again in resync() below for
+        // an already-open grid, so toggling "Gray unselected color boxes"
+        // (either the real Ghost++ checkbox or buildPlaceholder1Content's
+        // own synced one, see that function) takes effect immediately
+        // either way.
+        grid.classList.toggle('gpp-palette-gray-disabled', gppSettings.grayDisabledSwatches !== false);
         // Overrides the class rule's own hardcoded max-height:60px (inline
         // beats class, no !important needed) with the user's own "Visible
         // rows" preference -- see ensureVisibleRowsControl/
@@ -37323,6 +37435,14 @@ if (_settings.profileColorsCollapse) {
         // this matches that same behavior instead of gating the refresh on
         // an unrelated "did the grid's own content change" check.
         injectStyle();
+        // Same "read fresh on every idle tick, not just on rebuild" reason
+        // injectStyle() itself is called unconditionally up here (see this
+        // function's own comment on that) -- toggling "Gray unselected
+        // color boxes" while this grid is already open and no template
+        // switch happens must still take effect right away. See the
+        // matching gpp-palette-gray-disabled toggle in
+        // buildTemplatePaletteGrid for the initial-render half of this.
+        if (liveState.grid) liveState.grid.classList.toggle('gpp-palette-gray-disabled', gppSettings.grayDisabledSwatches !== false);
         retintBorrowedScanButtons();
         // Grid/placeholder rebuilds can add or remove rows. Re-measure on the
         // next frame so the unscaled surface tracks the scaled content height

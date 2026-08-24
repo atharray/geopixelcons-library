@@ -32,7 +32,9 @@ jobs:
           # is bumped by the release-please PR itself before the matching tag
           # is created, so checking the current version here would re-block
           # every release after the first one forever.
-          if gh api --paginate "repos/${GITHUB_REPOSITORY}/git/refs/tags" --jq '.[].ref' | grep -Eq '^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'; then
+          # Check published stable releases directly. This avoids depending
+          # on checkout tag-fetch/auth behavior and ignores preview releases.
+          if gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isPrerelease,isDraft --jq '.[] | select(.isPrerelease == false and .isDraft == false) | .tagName' | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
