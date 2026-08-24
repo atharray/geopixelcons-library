@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.11.0 - readable release bundle */
+/* GeoPixelcons Library v2.12.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.12.0'; // x-release-please-version
