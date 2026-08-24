@@ -1,7 +1,7 @@
-/* GeoPixelcons Library v2.10.0 - readable release bundle */
+/* GeoPixelcons Library v2.10.1 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
-    const LIBRARY_VERSION = '2.10.0'; // x-release-please-version
+    const LIBRARY_VERSION = '2.10.1'; // x-release-please-version
     let runtime = null;
     let booting = false;
 
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.10.0';
+    const VERSION = '2.11.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1325,6 +1325,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             items: [
                 { type: 'changed', text: 'Painting Menu Overhaul: disabled colors are grayed out and get a diagonal slash again, matching the Ghost++ manager\'s own grid (this had been intentionally suppressed since Aug 11, but read as broken rather than as a feature -- reverted after user reports)' },
                 { type: 'added', text: 'Painting Menu Overhaul: new "Gray unselected color boxes" checkbox next to the scan progress controls -- controls the exact same setting as the Ghost++ manager\'s own View Settings checkbox of that name' },
+            ]
+        },
+        {
+            version: '2.10.1',
+            date: '2026-08-23',
+            items: [
+                { type: 'fixed', text: 'Smooth Zoom Buttons: fixed the +/- buttons, slider, and live zoom value being completely unresponsive on Firefox' },
             ]
         },
         {
@@ -18914,13 +18921,56 @@ patch();
                 wrapper.appendChild(valueBox);
                 controlsRight.insertBefore(wrapper, zoomInBtn);
 
-                // Wait for map instance then wire up events
+                // Resolves the live MapLibre `map` global. Plain `_pw2.map`
+                // property access (_pw2 = unsafeWindow) is what this used to
+                // do exclusively, and it silently never resolves on
+                // Firefox's Tampermonkey sandbox for some page globals
+                // (Xray-wrapper behavior) -- the interval below would spin
+                // for the full 20s and then give up for good, wiring up
+                // NONE of this widget's interactivity (every listener is
+                // attached inside the callback this feeds), which is
+                // exactly what "buttons and slider do nothing, no zoom
+                // value shown" in Firefox looks like. Region Screenshot's
+                // _getMap() (region-screenshot.js) already solved this
+                // identical problem with an eval('map') fallback chain --
+                // eval runs in the page's own scope chain rather than doing
+                // a property lookup, so it finds `map` regardless of how
+                // the sandbox exposes (or fails to expose) it as a `window`
+                // property. Mirrored here verbatim, with the original
+                // direct-property check kept as a last resort (zero
+                // behavior change for browsers where it already worked).
+                function _sz_resolveMap() {
+                    try { const m = (0, eval)('map'); if (m && typeof m.getZoom === 'function') return m; } catch (_) {}
+                    if (typeof unsafeWindow !== 'undefined') {
+                        try { const m = unsafeWindow.eval('map'); if (m && typeof m.getZoom === 'function') return m; } catch (_) {}
+                    }
+                    return (_pw2.map && typeof _pw2.map.getZoom === 'function') ? _pw2.map : null;
+                }
+
+                // Wait for map instance then wire up events. Unlike Region
+                // Screenshot's own waitForGeoPixels, this still gives up
+                // after 20s (matching the original timeout) rather than
+                // retrying forever -- map is the ONLY condition this widget
+                // waits on, so 20s of failed eval-based resolution is
+                // already a strong signal something's actually wrong, not
+                // just slow to load. The one change on timeout is that it
+                // now says so instead of failing silently -- see the
+                // _sz_resolveMap comment above for why this went unnoticed.
                 function _sz_waitForMap(cb) {
-                    if (_pw2.map && typeof _pw2.map.getZoom === 'function') { cb(_pw2.map); return; }
+                    const immediate = _sz_resolveMap();
+                    if (immediate) { cb(immediate); return; }
+                    const startedAt = Date.now();
                     const t = setInterval(() => {
-                        if (_pw2.map && typeof _pw2.map.getZoom === 'function') { clearInterval(t); cb(_pw2.map); }
+                        const m = _sz_resolveMap();
+                        if (m) { clearInterval(t); cb(m); }
                     }, 200);
-                    setTimeout(() => clearInterval(t), 20000);
+                    setTimeout(() => {
+                        clearInterval(t);
+                        if (_sz_resolveMap()) return; // resolved right at the boundary, between the last tick and this timeout
+                        const msg = 'Smooth Zoom Buttons: map instance never resolved after ' + (Date.now() - startedAt) + 'ms -- buttons/slider will stay inert.';
+                        dbgPush(msg, { uiComponent: 'Smooth Zoom Buttons' });
+                        console.error('[GeoPixelcons++] ' + msg);
+                    }, 20000);
                 }
 
                 _sz_waitForMap((map) => {

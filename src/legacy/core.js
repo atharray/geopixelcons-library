@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.10.0';
+    const VERSION = '2.11.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1313,6 +1313,13 @@
             items: [
                 { type: 'changed', text: 'Painting Menu Overhaul: disabled colors are grayed out and get a diagonal slash again, matching the Ghost++ manager\'s own grid (this had been intentionally suppressed since Aug 11, but read as broken rather than as a feature -- reverted after user reports)' },
                 { type: 'added', text: 'Painting Menu Overhaul: new "Gray unselected color boxes" checkbox next to the scan progress controls -- controls the exact same setting as the Ghost++ manager\'s own View Settings checkbox of that name' },
+            ]
+        },
+        {
+            version: '2.10.1',
+            date: '2026-08-23',
+            items: [
+                { type: 'fixed', text: 'Smooth Zoom Buttons: fixed the +/- buttons, slider, and live zoom value being completely unresponsive on Firefox' },
             ]
         },
         {
