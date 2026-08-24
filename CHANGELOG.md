@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.10.1](https://github.com/atharray/geopixelcons-library/compare/v2.10.0...v2.10.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **ci:** detect stable tags in release gate ([#46](https://github.com/atharray/geopixelcons-library/issues/46)) ([5446817](https://github.com/atharray/geopixelcons-library/commit/544681796f46a20a681c2c7ed45c686235b757b3))
+* **smooth-zoom:** resolve the map instance via eval on Firefox ([#43](https://github.com/atharray/geopixelcons-library/issues/43)) ([d399e51](https://github.com/atharray/geopixelcons-library/commit/d399e51b1464e26a26089538ba52bd9502b49a96))
+
 ## [2.10.0](https://github.com/atharray/geopixelcons-library/compare/v2.9.0...v2.10.0) (2026-08-24)
 
 
