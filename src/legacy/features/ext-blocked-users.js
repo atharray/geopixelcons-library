@@ -1022,7 +1022,7 @@ if (!patchLayer()) {
             const globalLabel = document.createElement('span');
             globalLabel.id = 'gpp-blocked-users-global-label';
             globalLabel.className = 'gpp-bu-label';
-            globalLabel.textContent = 'Global blocklist opacity';
+            globalLabel.textContent = 'Global blocklist min. opacity';
 
             const globalFade = buildFade(
                 'gpp-blocked-users-global',
