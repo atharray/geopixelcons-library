@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.12.0';
+    const VERSION = '2.13.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1307,6 +1307,13 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.13.0',
+            date: '2026-08-24',
+            items: [
+                { type: 'changed', text: 'Region Screenshot: exported images now respect the Blocked User List, including each blocked user\'s effective opacity and the global fade setting' },
+            ]
+        },
         {
             version: '2.12.0',
             date: '2026-08-24',

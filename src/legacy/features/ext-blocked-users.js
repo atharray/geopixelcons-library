@@ -315,6 +315,15 @@ window.__gpcBlockedUsers = {
         patchLayer();
         refresh();
     },
+    // Region Screenshot uses the same already-composed alpha values for its
+    // exported pixels. Returning only the active fades keeps the screenshot
+    // path out of the sandbox's private storage and avoids duplicating the
+    // global-plus-per-user opacity formula there.
+    getOpacities: function () {
+        return Array.from(state.users.entries()).map(function (entry) {
+            return { id: entry[0], alpha: entry[1] };
+        });
+    },
     lastInspected: function () { return state.lastInspected; },
     stats: function () {
         return { patched: state.patched, faded: state.users.size, indexedTiles: idIndex.size };
