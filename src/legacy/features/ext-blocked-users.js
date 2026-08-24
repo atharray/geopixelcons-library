@@ -49,8 +49,28 @@
 
     const _pw = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
 
+    // The global highlight colour every new entry inherits (red-500). A user
+    // can override it per row; this stays the default so an untouched list
+    // looks exactly as it did before per-user colours existed.
+    const DEFAULT_HL = '#ef4444';
+
+    function normalizeHex(v) {
+        const s = String(v || '').trim();
+        return /^#[0-9a-fA-F]{6}$/.test(s) ? s.toLowerCase() : DEFAULT_HL;
+    }
+
+    function hexToRgb(hex) {
+        const h = normalizeHex(hex);
+        return [
+            parseInt(h.slice(1, 3), 16),
+            parseInt(h.slice(3, 5), 16),
+            parseInt(h.slice(5, 7), 16),
+        ];
+    }
+
     // ── persistence ──────────────────────────────────────────────
-    // v2: { version, enabled, mode, excludeNotes, users:[{id,name,note,enabled}] }
+    // v2: { version, enabled, mode, excludeNotes,
+    //       users:[{id,name,note,enabled,color}] }
     // v1 was { mode, users:[{id,name}] } -- migrated in place on load.
     function normalizeUser(u) {
         const id = Number(u && u.id);
@@ -60,6 +80,7 @@
             name: String((u && u.name) || ''),
             note: String((u && u.note) || ''),
             enabled: (u && u.enabled === false) ? false : true,
+            color: normalizeHex(u && u.color),
         };
     }
 
@@ -101,8 +122,10 @@
 if (window.${BRIDGE_FLAG}) return;
 window.${BRIDGE_FLAG} = true;
 
-var state = { ids: new Set(), mode: 'hide', patched: false, lastInspected: null };
-var HL = [239, 68, 68];            // red-500, used by highlight mode
+// users: Map<userId, [r,g,b]> -- the value is that user's own highlight
+// colour, so one lookup in the hot loop answers both "is this blocked?" and
+// "what colour?" instead of a Set test plus a second colour lookup.
+var state = { users: new Map(), mode: 'hide', patched: false, lastInspected: null };
 
 // tileKey -> { bmp, ids:Set }  keyed on the userBitmap OBJECT, never the tile
 // key: index.js rebuilds cache entries with {...currentEntry, colorBitmap},
@@ -146,7 +169,7 @@ function userIdsIn(ub, w, h) {
 }
 
 function filterTile(tileKey, source) {
-    if (state.ids.size === 0) return source;
+    if (state.users.size === 0) return source;
     if (typeof tileImageCache === 'undefined' || !tileImageCache) return source;
 
     var entry = tileImageCache.get(tileKey);
@@ -166,7 +189,7 @@ function filterTile(tileKey, source) {
 
     // Most tiles contain nobody blocked -- skip the rebuild entirely.
     var hit = false;
-    state.ids.forEach(function (id) { if (idx.ids.has(id)) hit = true; });
+    state.users.forEach(function (_rgb, id) { if (idx.ids.has(id)) hit = true; });
     if (!hit) return source;
 
     try {
@@ -181,9 +204,10 @@ function filterTile(tileKey, source) {
         for (var i = 0; i < u.length; i += 4) {
             if (u[i + 3] === 0) continue;
             var id = (u[i] << 16) | (u[i + 1] << 8) | u[i + 2];
-            if (!state.ids.has(id)) continue;
+            var col = state.users.get(id);
+            if (!col) continue;
             if (highlight) {
-                c[i] = HL[0]; c[i + 1] = HL[1]; c[i + 2] = HL[2]; c[i + 3] = 255;
+                c[i] = col[0]; c[i + 1] = col[1]; c[i + 2] = col[2]; c[i + 3] = 255;
             } else {
                 // Fully transparent. The layer uploads DOM sources with
                 // UNPACK_PREMULTIPLY_ALPHA_WEBGL, so zeroing all four
@@ -262,17 +286,24 @@ if (typeof showPixelUser === 'function' && !showPixelUser.__gpcBlockedUsersHooke
 }
 
 window.__gpcBlockedUsers = {
-    setIds: function (arr, mode) {
-        state.ids = new Set((arr || []).map(Number).filter(function (n) {
-            return Number.isInteger(n);
-        }));
+    // arr: [{ id:Number, rgb:[r,g,b] }] -- already resolved sandbox-side, so
+    // the page realm never has to parse colour strings in a hot path.
+    setUsers: function (arr, mode) {
+        var next = new Map();
+        (arr || []).forEach(function (u) {
+            var id = Number(u && u.id);
+            if (!Number.isInteger(id)) return;
+            var rgb = (u && u.rgb) || [];
+            next.set(id, [rgb[0] | 0, rgb[1] | 0, rgb[2] | 0]);
+        });
+        state.users = next;
         state.mode = mode === 'highlight' ? 'highlight' : 'hide';
         patchLayer();
         refresh();
     },
     lastInspected: function () { return state.lastInspected; },
     stats: function () {
-        return { patched: state.patched, blocked: state.ids.size, mode: state.mode,
+        return { patched: state.patched, blocked: state.users.size, mode: state.mode,
                  indexedTiles: idIndex.size };
     }
 };
@@ -290,16 +321,18 @@ if (!patchLayer()) {
     }
 
     // Only users whose own eye is on, and only while the master switch is on.
-    function activeIds() {
+    function activeUsers() {
         if (!store.enabled) return [];
-        return store.users.filter((u) => u.enabled).map((u) => u.id);
+        return store.users
+            .filter((u) => u.enabled)
+            .map((u) => ({ id: u.id, rgb: hexToRgb(u.color) }));
     }
 
     function pushToBridge() {
         try {
             const api = _pw.__gpcBlockedUsers;
-            if (api && typeof api.setIds === 'function') {
-                api.setIds(activeIds(), store.mode);
+            if (api && typeof api.setUsers === 'function') {
+                api.setUsers(activeUsers(), store.mode);
             }
         } catch (err) {
             dbgPush(`Blocked Users bridge push failed: ${err && err.message ? err.message : String(err)}`,
@@ -333,7 +366,7 @@ if (!patchLayer()) {
         const added = [];
         ids.forEach((id) => {
             if (!Number.isInteger(id) || id < 0 || isBlocked(id)) return;
-            store.users.push({ id, name: name || '', note: '', enabled: true });
+            store.users.push({ id, name: name || '', note: '', enabled: true, color: DEFAULT_HL });
             added.push(id);
         });
         if (!added.length) return [];
@@ -383,7 +416,7 @@ if (!patchLayer()) {
             version: 2,
             mode: store.mode,
             users: store.users.map((u) => {
-                const out = { id: u.id, name: u.name, enabled: u.enabled };
+                const out = { id: u.id, name: u.name, enabled: u.enabled, color: u.color };
                 if (!store.excludeNotes && u.note) out.note = u.note;
                 return out;
             }),
@@ -409,7 +442,9 @@ if (!patchLayer()) {
         rows.forEach((r) => {
             if (typeof r === 'number' || typeof r === 'string') {
                 const n = Number(r);
-                if (Number.isInteger(n) && n >= 0) incoming.push({ id: n, name: '', note: '', enabled: true });
+                if (Number.isInteger(n) && n >= 0) {
+                    incoming.push({ id: n, name: '', note: '', enabled: true, color: DEFAULT_HL });
+                }
                 return;
             }
             const u = normalizeUser(r);
@@ -546,6 +581,17 @@ if (!patchLayer()) {
                 outline: none; border-color: ${t('#2563eb', '#89b4fa')};
                 background: ${t('#ffffff', '#11111b')}; color: ${t('#111827', '#f5f5f5')};
             }
+            .gpp-bu-swatch {
+                width: 22px; height: 22px; padding: 0; flex-shrink: 0; margin-top: 1px;
+                background: none; cursor: pointer;
+                border: 1px solid ${t('#d1d5db', '#45475a')}; border-radius: 5px;
+                transition: opacity .12s;
+            }
+            .gpp-bu-swatch::-webkit-color-swatch-wrapper { padding: 2px; }
+            .gpp-bu-swatch::-webkit-color-swatch { border: none; border-radius: 3px; }
+            .gpp-bu-swatch::-moz-color-swatch { border: none; border-radius: 3px; }
+            .gpp-bu-swatch-idle { opacity: .4; }
+            .gpp-bu-swatch-idle:hover { opacity: 1; }
             .gpp-bu-empty {
                 padding: 16px 10px; text-align: center; font-size: 11px;
                 color: ${t('#64748b', '#a6adc8')};
@@ -662,6 +708,22 @@ if (!patchLayer()) {
             main.appendChild(idLine);
             main.appendChild(note);
 
+            // Per-user highlight colour. Only takes visible effect in Highlight
+            // mode, so it dims (but stays editable) while Hide is active rather
+            // than vanishing and making the row layout jump between modes.
+            const swatch = document.createElement('input');
+            swatch.id = `gpp-blocked-users-color-${u.id}`;
+            swatch.type = 'color';
+            swatch.className = 'gpp-bu-swatch' + (store.mode === 'highlight' ? '' : ' gpp-bu-swatch-idle');
+            swatch.value = normalizeHex(u.color);
+            swatch.title = store.mode === 'highlight'
+                ? `Highlight colour for ${u.name || 'ID ' + u.id}`
+                : 'Highlight colour — shows once you switch to Highlight mode';
+            swatch.addEventListener('input', () => {
+                u.color = normalizeHex(swatch.value);
+                commit();
+            });
+
             const rm = document.createElement('button');
             rm.id = `gpp-blocked-users-remove-${u.id}`;
             rm.type = 'button';
@@ -677,6 +739,7 @@ if (!patchLayer()) {
             row.appendChild(check);
             row.appendChild(eye);
             row.appendChild(main);
+            row.appendChild(swatch);
             row.appendChild(rm);
             listEl.appendChild(row);
         });
@@ -825,7 +888,7 @@ if (!patchLayer()) {
             const count = document.createElement('span');
             count.id = 'gpp-blocked-users-count';
             count.className = 'gpp-bu-count';
-            const active = activeIds().length;
+            const active = activeUsers().length;
             count.textContent = `${store.users.length} blocked · ${active} active`;
 
             toolbar.appendChild(leftBtns);

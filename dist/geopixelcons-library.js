@@ -40,6 +40,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'extJanitorView', name: 'Janitor View', icon: '🛡️', desc: 'Reveals the hidden moderation button for janitors/moderators.', features: ['Removes the hidden class from the moderation group button', 'Makes the 🛡️ Moderation button visible in the controls'] },
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
         { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Hides or highlights canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Hide mode makes their pixels transparent; Highlight mode tints them red instead', 'Add users directly by numeric ID; names resolve automatically', 'Blocks persist across reloads', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
+        { key: 'extCanvasToggle', name: 'Canvas Visibility Toggle', icon: '👁️', desc: 'Adds a button to the Image Tools (🖼️) dropdown that hides the entire pixel canvas, leaving the base map visible.', features: ['Click to hide or show every placed pixel at once', 'Alt-click cycles 50% and 25% fades for tracing over existing art', 'Costs nothing to toggle — it sets the tile layer\'s opacity rather than redrawing anything', 'Always starts visible after a reload so a hidden canvas can never be mistaken for a broken site'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
@@ -53,7 +54,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const EXTENSION_CATEGORIES = [
         { name: 'Painting', keys: ['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'] },
         { name: 'Ghost Template', keys: ['ghostPlusPlus', 'showSyncGhostBtn'] },
-        { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers'] },
+        { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers', 'extCanvasToggle'] },
         { name: 'Menuing', keys: ['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'] },
         { name: 'Misc', keys: ['extGoToLastLocation'] },
         { name: 'Deprecated', keys: ['ghostPaletteSearch', 'ghostTemplateManager'] },
@@ -493,6 +494,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 },
                 extBlockedUsers: () => {
                     if (_blockedUsers) _blockedUsers.openModal();
+                },
+                extCanvasToggle: () => {
+                    flashEl(document.getElementById('gpp-canvas-toggle-btn'));
                 },
                 extGuildSearch: () => {
                     flashEl(document.getElementById('gpc-guild-search-btn'));
@@ -1327,7 +1331,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Blocked User List: tick entries to unblock several at once, with Select all for clearing the whole list' },
                 { type: 'added', text: 'Blocked User List: add a private note to any entry to record why you blocked them' },
                 { type: 'added', text: 'Blocked User List: Import / Export screen copies or downloads your list as JSON, imports from pasted text or a file, and can leave your private notes out of the export' },
+                { type: 'added', text: 'Blocked User List: each entry gets its own highlight colour, so you can tell blocked players apart at a glance instead of seeing one wall of red' },
                 { type: 'changed', text: 'Blocked User List: restyled to match Ghost++ so the two biggest GeoPixelcons++ panels look like one product' },
+                { type: 'added', text: 'Canvas Visibility Toggle: new extension adding a button to the Image Tools (🖼️) dropdown that hides every placed pixel at once, leaving just the map — Alt-click fades to 50% or 25% for tracing over existing art' },
             ]
         },
         {
@@ -30223,8 +30229,28 @@ applyLockState();
 
     const _pw = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
 
+    // The global highlight colour every new entry inherits (red-500). A user
+    // can override it per row; this stays the default so an untouched list
+    // looks exactly as it did before per-user colours existed.
+    const DEFAULT_HL = '#ef4444';
+
+    function normalizeHex(v) {
+        const s = String(v || '').trim();
+        return /^#[0-9a-fA-F]{6}$/.test(s) ? s.toLowerCase() : DEFAULT_HL;
+    }
+
+    function hexToRgb(hex) {
+        const h = normalizeHex(hex);
+        return [
+            parseInt(h.slice(1, 3), 16),
+            parseInt(h.slice(3, 5), 16),
+            parseInt(h.slice(5, 7), 16),
+        ];
+    }
+
     // ── persistence ──────────────────────────────────────────────
-    // v2: { version, enabled, mode, excludeNotes, users:[{id,name,note,enabled}] }
+    // v2: { version, enabled, mode, excludeNotes,
+    //       users:[{id,name,note,enabled,color}] }
     // v1 was { mode, users:[{id,name}] } -- migrated in place on load.
     function normalizeUser(u) {
         const id = Number(u && u.id);
@@ -30234,6 +30260,7 @@ applyLockState();
             name: String((u && u.name) || ''),
             note: String((u && u.note) || ''),
             enabled: (u && u.enabled === false) ? false : true,
+            color: normalizeHex(u && u.color),
         };
     }
 
@@ -30275,8 +30302,10 @@ applyLockState();
 if (window.${BRIDGE_FLAG}) return;
 window.${BRIDGE_FLAG} = true;
 
-var state = { ids: new Set(), mode: 'hide', patched: false, lastInspected: null };
-var HL = [239, 68, 68];            // red-500, used by highlight mode
+// users: Map<userId, [r,g,b]> -- the value is that user's own highlight
+// colour, so one lookup in the hot loop answers both "is this blocked?" and
+// "what colour?" instead of a Set test plus a second colour lookup.
+var state = { users: new Map(), mode: 'hide', patched: false, lastInspected: null };
 
 // tileKey -> { bmp, ids:Set }  keyed on the userBitmap OBJECT, never the tile
 // key: index.js rebuilds cache entries with {...currentEntry, colorBitmap},
@@ -30320,7 +30349,7 @@ function userIdsIn(ub, w, h) {
 }
 
 function filterTile(tileKey, source) {
-    if (state.ids.size === 0) return source;
+    if (state.users.size === 0) return source;
     if (typeof tileImageCache === 'undefined' || !tileImageCache) return source;
 
     var entry = tileImageCache.get(tileKey);
@@ -30340,7 +30369,7 @@ function filterTile(tileKey, source) {
 
     // Most tiles contain nobody blocked -- skip the rebuild entirely.
     var hit = false;
-    state.ids.forEach(function (id) { if (idx.ids.has(id)) hit = true; });
+    state.users.forEach(function (_rgb, id) { if (idx.ids.has(id)) hit = true; });
     if (!hit) return source;
 
     try {
@@ -30355,9 +30384,10 @@ function filterTile(tileKey, source) {
         for (var i = 0; i < u.length; i += 4) {
             if (u[i + 3] === 0) continue;
             var id = (u[i] << 16) | (u[i + 1] << 8) | u[i + 2];
-            if (!state.ids.has(id)) continue;
+            var col = state.users.get(id);
+            if (!col) continue;
             if (highlight) {
-                c[i] = HL[0]; c[i + 1] = HL[1]; c[i + 2] = HL[2]; c[i + 3] = 255;
+                c[i] = col[0]; c[i + 1] = col[1]; c[i + 2] = col[2]; c[i + 3] = 255;
             } else {
                 // Fully transparent. The layer uploads DOM sources with
                 // UNPACK_PREMULTIPLY_ALPHA_WEBGL, so zeroing all four
@@ -30436,17 +30466,24 @@ if (typeof showPixelUser === 'function' && !showPixelUser.__gpcBlockedUsersHooke
 }
 
 window.__gpcBlockedUsers = {
-    setIds: function (arr, mode) {
-        state.ids = new Set((arr || []).map(Number).filter(function (n) {
-            return Number.isInteger(n);
-        }));
+    // arr: [{ id:Number, rgb:[r,g,b] }] -- already resolved sandbox-side, so
+    // the page realm never has to parse colour strings in a hot path.
+    setUsers: function (arr, mode) {
+        var next = new Map();
+        (arr || []).forEach(function (u) {
+            var id = Number(u && u.id);
+            if (!Number.isInteger(id)) return;
+            var rgb = (u && u.rgb) || [];
+            next.set(id, [rgb[0] | 0, rgb[1] | 0, rgb[2] | 0]);
+        });
+        state.users = next;
         state.mode = mode === 'highlight' ? 'highlight' : 'hide';
         patchLayer();
         refresh();
     },
     lastInspected: function () { return state.lastInspected; },
     stats: function () {
-        return { patched: state.patched, blocked: state.ids.size, mode: state.mode,
+        return { patched: state.patched, blocked: state.users.size, mode: state.mode,
                  indexedTiles: idIndex.size };
     }
 };
@@ -30464,16 +30501,18 @@ if (!patchLayer()) {
     }
 
     // Only users whose own eye is on, and only while the master switch is on.
-    function activeIds() {
+    function activeUsers() {
         if (!store.enabled) return [];
-        return store.users.filter((u) => u.enabled).map((u) => u.id);
+        return store.users
+            .filter((u) => u.enabled)
+            .map((u) => ({ id: u.id, rgb: hexToRgb(u.color) }));
     }
 
     function pushToBridge() {
         try {
             const api = _pw.__gpcBlockedUsers;
-            if (api && typeof api.setIds === 'function') {
-                api.setIds(activeIds(), store.mode);
+            if (api && typeof api.setUsers === 'function') {
+                api.setUsers(activeUsers(), store.mode);
             }
         } catch (err) {
             dbgPush(`Blocked Users bridge push failed: ${err && err.message ? err.message : String(err)}`,
@@ -30507,7 +30546,7 @@ if (!patchLayer()) {
         const added = [];
         ids.forEach((id) => {
             if (!Number.isInteger(id) || id < 0 || isBlocked(id)) return;
-            store.users.push({ id, name: name || '', note: '', enabled: true });
+            store.users.push({ id, name: name || '', note: '', enabled: true, color: DEFAULT_HL });
             added.push(id);
         });
         if (!added.length) return [];
@@ -30557,7 +30596,7 @@ if (!patchLayer()) {
             version: 2,
             mode: store.mode,
             users: store.users.map((u) => {
-                const out = { id: u.id, name: u.name, enabled: u.enabled };
+                const out = { id: u.id, name: u.name, enabled: u.enabled, color: u.color };
                 if (!store.excludeNotes && u.note) out.note = u.note;
                 return out;
             }),
@@ -30583,7 +30622,9 @@ if (!patchLayer()) {
         rows.forEach((r) => {
             if (typeof r === 'number' || typeof r === 'string') {
                 const n = Number(r);
-                if (Number.isInteger(n) && n >= 0) incoming.push({ id: n, name: '', note: '', enabled: true });
+                if (Number.isInteger(n) && n >= 0) {
+                    incoming.push({ id: n, name: '', note: '', enabled: true, color: DEFAULT_HL });
+                }
                 return;
             }
             const u = normalizeUser(r);
@@ -30720,6 +30761,17 @@ if (!patchLayer()) {
                 outline: none; border-color: ${t('#2563eb', '#89b4fa')};
                 background: ${t('#ffffff', '#11111b')}; color: ${t('#111827', '#f5f5f5')};
             }
+            .gpp-bu-swatch {
+                width: 22px; height: 22px; padding: 0; flex-shrink: 0; margin-top: 1px;
+                background: none; cursor: pointer;
+                border: 1px solid ${t('#d1d5db', '#45475a')}; border-radius: 5px;
+                transition: opacity .12s;
+            }
+            .gpp-bu-swatch::-webkit-color-swatch-wrapper { padding: 2px; }
+            .gpp-bu-swatch::-webkit-color-swatch { border: none; border-radius: 3px; }
+            .gpp-bu-swatch::-moz-color-swatch { border: none; border-radius: 3px; }
+            .gpp-bu-swatch-idle { opacity: .4; }
+            .gpp-bu-swatch-idle:hover { opacity: 1; }
             .gpp-bu-empty {
                 padding: 16px 10px; text-align: center; font-size: 11px;
                 color: ${t('#64748b', '#a6adc8')};
@@ -30836,6 +30888,22 @@ if (!patchLayer()) {
             main.appendChild(idLine);
             main.appendChild(note);
 
+            // Per-user highlight colour. Only takes visible effect in Highlight
+            // mode, so it dims (but stays editable) while Hide is active rather
+            // than vanishing and making the row layout jump between modes.
+            const swatch = document.createElement('input');
+            swatch.id = `gpp-blocked-users-color-${u.id}`;
+            swatch.type = 'color';
+            swatch.className = 'gpp-bu-swatch' + (store.mode === 'highlight' ? '' : ' gpp-bu-swatch-idle');
+            swatch.value = normalizeHex(u.color);
+            swatch.title = store.mode === 'highlight'
+                ? `Highlight colour for ${u.name || 'ID ' + u.id}`
+                : 'Highlight colour — shows once you switch to Highlight mode';
+            swatch.addEventListener('input', () => {
+                u.color = normalizeHex(swatch.value);
+                commit();
+            });
+
             const rm = document.createElement('button');
             rm.id = `gpp-blocked-users-remove-${u.id}`;
             rm.type = 'button';
@@ -30851,6 +30919,7 @@ if (!patchLayer()) {
             row.appendChild(check);
             row.appendChild(eye);
             row.appendChild(main);
+            row.appendChild(swatch);
             row.appendChild(rm);
             listEl.appendChild(row);
         });
@@ -30999,7 +31068,7 @@ if (!patchLayer()) {
             const count = document.createElement('span');
             count.id = 'gpp-blocked-users-count';
             count.className = 'gpp-bu-count';
-            const active = activeIds().length;
+            const active = activeUsers().length;
             count.textContent = `${store.users.length} blocked · ${active} active`;
 
             toolbar.appendChild(leftBtns);
@@ -31385,6 +31454,172 @@ if (!patchLayer()) {
             _featureStatus.extBlockedUsers = 'error';
             dbgPush(`Blocked User List init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Blocked User List' });
             console.error('[GeoPixelcons++] ❌ Blocked User List failed:', err);
+        }
+    }
+
+
+    // ============================================================
+    //  EXTENSION: Canvas Visibility Toggle [extCanvasToggle]
+    // ============================================================
+    //
+    //  Hides or shows the entire pixel canvas, leaving the base map visible.
+    //
+    //  Deliberately NOT built on the Blocked User List machinery, even though
+    //  "hide everyone" sounds like the same problem. That path decodes a
+    //  1000x1000 user-id bitmap and rebuilds every texel per tile; using it to
+    //  produce nothing but transparent tiles would be the most expensive
+    //  possible way to reach an empty screen.
+    //
+    //  PixelTileLayer already carries the answer: a `u_opacity` uniform,
+    //  applied once per tile per frame (js/pixel-tile-layer.js). Setting
+    //  pixelTileLayer.opacity = 0 and asking for a repaint costs one uniform
+    //  write and no per-pixel work at all, and it is instantly reversible
+    //  because no texture is ever modified.
+    //
+    //  Because it is a float rather than a flag, partial fades come free --
+    //  ALT-click cycles through 50% and 25% for tracing over existing art.
+    //
+    //  Not persisted across reloads on purpose: a canvas that is still hidden
+    //  after a refresh reads as "the site is broken", and the recovery is
+    //  non-obvious if you have forgotten the button exists.
+    //
+    if (_settings.extCanvasToggle) {
+        try {
+            (function _ext_canvasToggle() {
+
+    const BUTTON_ID   = 'gpp-canvas-toggle-btn';
+    const BRIDGE_FLAG = '__gpcCanvasToggleBridge';
+    const STEPS = [1, 0, 0.5, 0.25];   // click cycles 1<->0; alt-click walks all
+
+    const _pw = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
+
+    // ── page-realm bridge ────────────────────────────────────────
+    // pixelTileLayer is a top-level `let` in index.js, invisible to
+    // unsafeWindow property access, so this has to run as a classic <script>
+    // in the page's own lexical scope -- same technique as
+    // ext-map-movement-lock.js and the Blocked User List.
+    function installBridge() {
+        if (_pw[BRIDGE_FLAG]) return;
+        const script = document.createElement('script');
+        script.textContent = `
+(function(){
+if (window.${BRIDGE_FLAG}) return;
+window.${BRIDGE_FLAG} = true;
+
+window.__gpcCanvasToggle = {
+    set: function (value) {
+        try {
+            if (typeof pixelTileLayer === 'undefined' || !pixelTileLayer) return false;
+            var v = Number(value);
+            if (!(v >= 0 && v <= 1)) return false;
+            pixelTileLayer.opacity = v;
+            if (typeof map !== 'undefined' && map && typeof map.triggerRepaint === 'function') {
+                map.triggerRepaint();
+            }
+            return true;
+        } catch (e) { return false; }
+    },
+    get: function () {
+        try {
+            if (typeof pixelTileLayer === 'undefined' || !pixelTileLayer) return null;
+            return pixelTileLayer.opacity;
+        } catch (e) { return null; }
+    }
+};
+})();`;
+        (document.head || document.documentElement).appendChild(script);
+        script.remove();
+    }
+
+    let opacity = 1;
+
+    function apply() {
+        try {
+            const api = _pw.__gpcCanvasToggle;
+            if (api && typeof api.set === 'function') api.set(opacity);
+        } catch (err) {
+            dbgPush(`Canvas Toggle apply failed: ${err && err.message ? err.message : String(err)}`,
+                { error: err, uiComponent: 'Canvas Visibility Toggle' });
+        }
+        renderButton();
+    }
+
+    const EYE_OPEN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        + '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    const EYE_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        + '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 '
+        + '9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>'
+        + '<line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+    function renderButton() {
+        const btn = document.getElementById(BUTTON_ID);
+        if (!btn) return;
+        const hidden = opacity < 1;
+        btn.innerHTML = hidden ? EYE_OFF : EYE_OPEN;
+        btn.style.opacity = hidden ? '0.75' : '1';
+        btn.title = opacity === 1 ? 'Hide pixel canvas (Alt-click to fade)'
+            : opacity === 0 ? 'Show pixel canvas'
+            : `Canvas at ${Math.round(opacity * 100)}% — click to show, Alt-click to cycle`;
+    }
+
+    function createButton(dropdown) {
+        if (document.getElementById(BUTTON_ID)) return true;
+
+        const btn = document.createElement('button');
+        btn.id = BUTTON_ID;
+        btn.type = 'button';
+        // Matches the native Image Tools siblings exactly (toggleDitherer,
+        // loadGhostImageBtn) so it reads as part of that dropdown.
+        btn.className = 'w-10 h-10 bg-white dark:bg-gray-700 shadow rounded-full flex items-center '
+            + 'justify-center hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer '
+            + 'text-gray-700 dark:text-gray-200 border-0';
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (e.altKey) {
+                const i = STEPS.indexOf(opacity);
+                opacity = STEPS[(i < 0 ? 0 : i + 1) % STEPS.length];
+            } else {
+                opacity = opacity === 1 ? 0 : 1;
+            }
+            apply();
+        });
+
+        dropdown.appendChild(btn);
+        renderButton();
+        return true;
+    }
+
+    function init() {
+        installBridge();
+
+        const dropdown = document.getElementById('imageGroupDropdown');
+        if (dropdown) { createButton(dropdown); return; }
+
+        const observer = new MutationObserver(() => {
+            const d = document.getElementById('imageGroupDropdown');
+            if (!d) return;
+            observer.disconnect();
+            createButton(d);
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        setTimeout(() => observer.disconnect(), 30000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+            })();
+            _featureStatus.extCanvasToggle = 'ok';
+            console.log('[GeoPixelcons++] ✅ Canvas Visibility Toggle loaded');
+        } catch (err) {
+            _featureStatus.extCanvasToggle = 'error';
+            dbgPush(`Canvas Visibility Toggle init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Canvas Visibility Toggle' });
+            console.error('[GeoPixelcons++] ❌ Canvas Visibility Toggle failed:', err);
         }
     }
 

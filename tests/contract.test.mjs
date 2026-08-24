@@ -40,7 +40,7 @@ test('organizes settings into the requested visual extension categories', () => 
     assert.match(artifact, /const EXTENSION_CATEGORIES = \[/);
     assert.match(artifact, /name: 'Painting', keys: \['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'\]/);
     assert.match(artifact, /name: 'Ghost Template', keys: \['ghostPlusPlus', 'showSyncGhostBtn'\]/);
-    assert.match(artifact, /name: 'Map', keys: \['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers'\]/);
+    assert.match(artifact, /name: 'Map', keys: \['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers', 'extCanvasToggle'\]/);
     assert.match(artifact, /name: 'Menuing', keys: \['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'\]/);
     assert.match(artifact, /name: 'Misc', keys: \['extGoToLastLocation'\]/);
     assert.match(artifact, /name: 'Deprecated', keys: \['ghostPaletteSearch', 'ghostTemplateManager'\]/);
@@ -228,9 +228,9 @@ test('filters canvas tiles through the blocked user list at the layer boundary',
 test('gives the Blocked User List per-user visibility, notes and bulk editing', () => {
     // Master switch is an override, not a bulk write: flipping it off and back
     // on must not lose which individual eyes the user had already turned off.
-    assert.match(artifact, /function activeIds\(\)/);
+    assert.match(artifact, /function activeUsers\(\)/);
     assert.match(artifact, /if \(!store\.enabled\) return \[\];/);
-    assert.match(artifact, /store\.users\.filter\(\(u\) => u\.enabled\)\.map\(\(u\) => u\.id\)/);
+    assert.match(artifact, /\.filter\(\(u\) => u\.enabled\)/);
     assert.match(artifact, /gpp-blocked-users-master-toggle/);
     assert.match(artifact, /gpp-blocked-users-eye-/);
 
@@ -266,6 +266,41 @@ test('round-trips the Blocked User List through JSON import and export', () => {
 
     // Import merges rather than replaces -- it must never wipe an existing list.
     assert.match(artifact, /if \(isBlocked\(u\.id\)\) \{ skipped\+\+; return; \}/);
+});
+
+test('gives each blocked user their own highlight colour', () => {
+    assert.match(artifact, /const DEFAULT_HL = '#ef4444';/);
+    assert.match(artifact, /gpp-blocked-users-color-/);
+
+    // Colour is resolved to rgb sandbox-side; the page realm keeps a
+    // Map<id,[r,g,b]> so one lookup answers "blocked?" and "which colour?".
+    assert.match(artifact, /state\.users = new Map\(\)|users: new Map\(\)/);
+    assert.match(artifact, /var col = state\.users\.get\(id\);/);
+    assert.match(artifact, /c\[i\] = col\[0\]; c\[i \+ 1\] = col\[1\]; c\[i \+ 2\] = col\[2\]/);
+    assert.match(artifact, /setUsers: function \(arr, mode\)/);
+    assert.match(artifact, /rgb: hexToRgb\(u\.color\)/);
+
+    // Invalid or missing colours fall back to the global red rather than
+    // producing a black highlight from a failed parse.
+    assert.match(artifact, /\/\^#\[0-9a-fA-F\]\{6\}\$\/\.test\(s\) \? s\.toLowerCase\(\) : DEFAULT_HL/);
+});
+
+test('toggles the whole canvas through the tile layer opacity uniform', () => {
+    assert.match(artifact, /EXTENSION: Canvas Visibility Toggle \[extCanvasToggle\]/);
+    assert.match(artifact, /if \(_settings\.extCanvasToggle\)/);
+    assert.match(artifact, /name: 'Canvas Visibility Toggle'/);
+    assert.match(artifact, /gpp-canvas-toggle-btn/);
+    assert.match(artifact, /imageGroupDropdown/);
+
+    // The whole point: one uniform write, never a per-texel rebuild. If this
+    // ever starts routing through the blocked-users filter it has regressed
+    // into the most expensive possible way to clear the screen.
+    assert.match(artifact, /pixelTileLayer\.opacity = v;/);
+    assert.doesNotMatch(artifact, /__gpcCanvasToggle[\s\S]{0,400}getImageData/);
+
+    // Alt-click fades, and nothing is persisted across reloads.
+    assert.match(artifact, /const STEPS = \[1, 0, 0\.5, 0\.25\];/);
+    assert.doesNotMatch(artifact, /gpp-canvas-toggle[\w-]*['"]\s*\)?\s*;?\s*[\s\S]{0,200}localStorage/);
 });
 
 test('styles the Blocked User List on the Ghost++ palette', () => {

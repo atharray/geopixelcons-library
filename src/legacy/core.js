@@ -28,6 +28,7 @@
         { key: 'extJanitorView', name: 'Janitor View', icon: '🛡️', desc: 'Reveals the hidden moderation button for janitors/moderators.', features: ['Removes the hidden class from the moderation group button', 'Makes the 🛡️ Moderation button visible in the controls'] },
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
         { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Hides or highlights canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Hide mode makes their pixels transparent; Highlight mode tints them red instead', 'Add users directly by numeric ID; names resolve automatically', 'Blocks persist across reloads', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
+        { key: 'extCanvasToggle', name: 'Canvas Visibility Toggle', icon: '👁️', desc: 'Adds a button to the Image Tools (🖼️) dropdown that hides the entire pixel canvas, leaving the base map visible.', features: ['Click to hide or show every placed pixel at once', 'Alt-click cycles 50% and 25% fades for tracing over existing art', 'Costs nothing to toggle — it sets the tile layer\'s opacity rather than redrawing anything', 'Always starts visible after a reload so a hidden canvas can never be mistaken for a broken site'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
@@ -41,7 +42,7 @@
     const EXTENSION_CATEGORIES = [
         { name: 'Painting', keys: ['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'] },
         { name: 'Ghost Template', keys: ['ghostPlusPlus', 'showSyncGhostBtn'] },
-        { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers'] },
+        { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers', 'extCanvasToggle'] },
         { name: 'Menuing', keys: ['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'] },
         { name: 'Misc', keys: ['extGoToLastLocation'] },
         { name: 'Deprecated', keys: ['ghostPaletteSearch', 'ghostTemplateManager'] },
@@ -481,6 +482,9 @@
                 },
                 extBlockedUsers: () => {
                     if (_blockedUsers) _blockedUsers.openModal();
+                },
+                extCanvasToggle: () => {
+                    flashEl(document.getElementById('gpp-canvas-toggle-btn'));
                 },
                 extGuildSearch: () => {
                     flashEl(document.getElementById('gpc-guild-search-btn'));
@@ -1315,7 +1319,9 @@
                 { type: 'added', text: 'Blocked User List: tick entries to unblock several at once, with Select all for clearing the whole list' },
                 { type: 'added', text: 'Blocked User List: add a private note to any entry to record why you blocked them' },
                 { type: 'added', text: 'Blocked User List: Import / Export screen copies or downloads your list as JSON, imports from pasted text or a file, and can leave your private notes out of the export' },
+                { type: 'added', text: 'Blocked User List: each entry gets its own highlight colour, so you can tell blocked players apart at a glance instead of seeing one wall of red' },
                 { type: 'changed', text: 'Blocked User List: restyled to match Ghost++ so the two biggest GeoPixelcons++ panels look like one product' },
+                { type: 'added', text: 'Canvas Visibility Toggle: new extension adding a button to the Image Tools (🖼️) dropdown that hides every placed pixel at once, leaving just the map — Alt-click fades to 50% or 25% for tracing over existing art' },
             ]
         },
         {
