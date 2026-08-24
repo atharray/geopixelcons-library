@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.0](https://github.com/atharray/geopixelcons-library/compare/v2.11.0...v2.12.0) (2026-08-24)
+
+
+### Features
+
+* **region-screenshot:** add configurable save location ([#45](https://github.com/atharray/geopixelcons-library/issues/45)) ([2fbae3f](https://github.com/atharray/geopixelcons-library/commit/2fbae3f83e6e9b7e63b5ff8131622b1c580749d3))
+
 ## [2.11.0](https://github.com/atharray/geopixelcons-library/compare/v2.10.1...v2.11.0) (2026-08-24)
 
 
