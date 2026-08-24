@@ -212,7 +212,6 @@ test('filters canvas tiles through the blocked user list at the layer boundary',
     // rebuilds cache entries with a spread that would carry a stale index.
     assert.match(artifact, /if \(!idx \|\| idx\.bmp !== ub\)/);
 
-    assert.match(artifact, /state\.mode === 'highlight'/);
     assert.match(artifact, /window\.__gpcBlockedUsers = \{/);
     assert.match(artifact, /\/GetUserProfile/);
 
@@ -229,10 +228,8 @@ test('gives the Blocked User List per-user visibility, notes and bulk editing', 
     // Master switch is an override, not a bulk write: flipping it off and back
     // on must not lose which individual eyes the user had already turned off.
     assert.match(artifact, /function activeUsers\(\)/);
-    assert.match(artifact, /if \(!store\.enabled\) return \[\];/);
-    assert.match(artifact, /\.filter\(\(u\) => u\.enabled\)/);
+    assert.match(artifact, /if \(!store\.enabled\) return 1;/);
     assert.match(artifact, /gpp-blocked-users-master-toggle/);
-    assert.match(artifact, /gpp-blocked-users-eye-/);
 
     // Bulk add: commas, whitespace and semicolons in any combination.
     assert.match(artifact, /function parseIds\(text\)/);
@@ -268,21 +265,35 @@ test('round-trips the Blocked User List through JSON import and export', () => {
     assert.match(artifact, /if \(isBlocked\(u\.id\)\) \{ skipped\+\+; return; \}/);
 });
 
-test('gives each blocked user their own highlight colour', () => {
-    assert.match(artifact, /const DEFAULT_HL = '#ef4444';/);
-    assert.match(artifact, /gpp-blocked-users-color-/);
+test('fades blocked users by opacity rather than colour', () => {
+    // Colour highlighting was removed outright, along with the hide/highlight
+    // mode split it belonged to.
+    assert.doesNotMatch(artifact, /DEFAULT_HL/);
+    assert.doesNotMatch(artifact, /gpp-blocked-users-color-/);
+    assert.doesNotMatch(artifact, /gpp-blocked-users-mode-/);
 
-    // Colour is resolved to rgb sandbox-side; the page realm keeps a
-    // Map<id,[r,g,b]> so one lookup answers "blocked?" and "which colour?".
-    assert.match(artifact, /state\.users = new Map\(\)|users: new Map\(\)/);
-    assert.match(artifact, /var col = state\.users\.get\(id\);/);
-    assert.match(artifact, /c\[i\] = col\[0\]; c\[i \+ 1\] = col\[1\]; c\[i \+ 2\] = col\[2\]/);
-    assert.match(artifact, /setUsers: function \(arr, mode\)/);
-    assert.match(artifact, /rgb: hexToRgb\(u\.color\)/);
+    // Alpha scaling only. getImageData is unpremultiplied and the layer
+    // premultiplies on upload, so touching RGB here would double-apply.
+    assert.match(artifact, /c\[i \+ 3\] = \(c\[i \+ 3\] \* a\) \| 0;/);
+    assert.match(artifact, /var a = state\.users\.get\(id\);/);
+    assert.match(artifact, /setUsers: function \(arr\)/);
 
-    // Invalid or missing colours fall back to the global red rather than
-    // producing a black highlight from a failed parse.
-    assert.match(artifact, /\/\^#\[0-9a-fA-F\]\{6\}\$\/\.test\(s\) \? s\.toLowerCase\(\) : DEFAULT_HL/);
+    // Fully visible users never enter the map, so their tiles skip the rebuild.
+    assert.match(artifact, /if \(a >= 1\) return;/);
+    assert.match(artifact, /\.filter\(\(u\) => u\.alpha < 1\)/);
+
+    // Global and per-user sliders compose; neither overwrites the other, and
+    // the global one still works from the default state where every per-user
+    // value is 0 (a plain multiply would be inert there).
+    assert.match(artifact, /function effectiveOpacity\(u\)/);
+    assert.match(artifact, /1 - \(1 - clamp01\(u\.opacity\)\) \* \(1 - clamp01\(store\.globalOpacity\)\)/);
+
+    // Dedicated full-hide / full-show ends on every slider.
+    assert.match(artifact, /function buildFade\(idBase, getValue, setValue, opts\)/);
+    assert.match(artifact, /gpp-blocked-users-global-slider|\$\{idBase\}-slider/);
+
+    // v2 booleans migrate to the new scale without changing what a row did.
+    assert.match(artifact, /opacity = \(u && u\.enabled === false\) \? 1 : 0;/);
 });
 
 test('toggles the whole canvas through the tile layer opacity uniform', () => {
@@ -298,8 +309,12 @@ test('toggles the whole canvas through the tile layer opacity uniform', () => {
     assert.match(artifact, /pixelTileLayer\.opacity = v;/);
     assert.doesNotMatch(artifact, /__gpcCanvasToggle[\s\S]{0,400}getImageData/);
 
-    // Alt-click fades, and nothing is persisted across reloads.
-    assert.match(artifact, /const STEPS = \[1, 0, 0\.5, 0\.25\];/);
+    // Clicking opens a slider popover; the old alt-click step cycle is gone.
+    assert.doesNotMatch(artifact, /const STEPS = \[1, 0, 0\.5, 0\.25\];/);
+    assert.match(artifact, /gpp-canvas-toggle-popover/);
+    assert.match(artifact, /gpp-canvas-toggle-slider/);
+    assert.match(artifact, /gpp-canvas-toggle-hide/);
+    assert.match(artifact, /gpp-canvas-toggle-show/);
     assert.doesNotMatch(artifact, /gpp-canvas-toggle[\w-]*['"]\s*\)?\s*;?\s*[\s\S]{0,200}localStorage/);
 });
 
@@ -328,10 +343,21 @@ test('gives every Blocked User List element a gpp- prefixed id', () => {
         assert.ok(id.startsWith('gpp-'), `element id "${id}" must start with gpp-`);
     }
 
-    // Template-literal ids (per-row controls) must follow the same rule.
+    // Template-literal ids (per-row controls) must follow the same rule. Ones
+    // built from an ${idBase} parameter are checked at their call sites below
+    // instead, since the prefix lives there rather than in the template.
     const templateIds = [...source.matchAll(/\.id = `([^`]*)`/g)].map((m) => m[1]);
     for (const id of templateIds) {
+        if (id.startsWith('${idBase}')) continue;
         assert.ok(id.startsWith('gpp-'), `templated element id "${id}" must start with gpp-`);
+    }
+
+    // Every buildFade() caller must hand it a gpp- prefixed id base, which is
+    // what makes the ${idBase}-slider / -hide / -show ids compliant.
+    const fadeBases = [...source.matchAll(/buildFade\(\s*[`'"]([^`'"]*)/g)].map((m) => m[1]);
+    assert.ok(fadeBases.length > 0, 'expected at least one buildFade call site');
+    for (const base of fadeBases) {
+        assert.ok(base.startsWith('gpp-'), `buildFade id base "${base}" must start with gpp-`);
     }
 
     assert.match(source, /const MODAL_ID\s*=\s*'gpp-blocked-users-modal'/);

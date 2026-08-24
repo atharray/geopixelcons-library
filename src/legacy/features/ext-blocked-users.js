@@ -2,7 +2,7 @@
     //  EXTENSION: Blocked User List [extBlockedUsers]
     // ============================================================
     //
-    //  Hides (or highlights) canvas pixels according to WHO placed them.
+    //  Fades out canvas pixels according to WHO placed them.
     //
     //  How this is possible at all: /GetPixelsCached returns two parallel
     //  1000x1000 WebP images per tile -- ColorWebP (what you see) and
@@ -22,12 +22,14 @@
     //  tileImageCache, so colorBitmap/userBitmap stay pristine ground truth for
     //  Ghost++ scanning and the native pixel inspector.
     //
+    //  Visibility is a continuous 0..1 per user rather than a hide/show flag:
+    //  scaling a texel's alpha is the same one-byte write as clearing it, so
+    //  partial fades cost exactly what a full hide costs.
+    //
     //  Known limitation, by design: userBitmap records only the LAST toucher,
-    //  so a blocked pixel becomes transparent (bare map shows through) rather
-    //  than revealing whatever art was underneath. The client never received
-    //  the prior state, so there is nothing to restore. Highlight mode exists
-    //  because "tint theirs red" is usually more useful than erasing it --
-    //  hiding a griefer removes the evidence you would want to report.
+    //  so a fully hidden pixel shows bare map rather than whatever art was
+    //  underneath. The client never received the prior state, so there is
+    //  nothing to restore.
     //
     //  Styling deliberately mirrors Ghost++ (gpp-library.js): same t() theme
     //  helper from core.js, same palette, radii, and 11px control type, so the
@@ -49,51 +51,44 @@
 
     const _pw = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
 
-    // The global highlight colour every new entry inherits (red-500). A user
-    // can override it per row; this stays the default so an untouched list
-    // looks exactly as it did before per-user colours existed.
-    const DEFAULT_HL = '#ef4444';
-
-    function normalizeHex(v) {
-        const s = String(v || '').trim();
-        return /^#[0-9a-fA-F]{6}$/.test(s) ? s.toLowerCase() : DEFAULT_HL;
-    }
-
-    function hexToRgb(hex) {
-        const h = normalizeHex(hex);
-        return [
-            parseInt(h.slice(1, 3), 16),
-            parseInt(h.slice(3, 5), 16),
-            parseInt(h.slice(5, 7), 16),
-        ];
+    function clamp01(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return 0;
+        return n < 0 ? 0 : n > 1 ? 1 : n;
     }
 
     // ── persistence ──────────────────────────────────────────────
-    // v2: { version, enabled, mode, excludeNotes,
-    //       users:[{id,name,note,enabled,color}] }
-    // v1 was { mode, users:[{id,name}] } -- migrated in place on load.
+    // v3: { version, enabled, globalOpacity, excludeNotes,
+    //       users:[{id,name,note,opacity}] }
+    //
+    // opacity is how visible that user's pixels are: 0 = fully hidden (a
+    // plain block), 1 = fully shown. Migrating v2's boolean `enabled` maps
+    // true->0 and false->1, which preserves exactly what each row was doing.
+    // v2's per-user `color` and the old hide/highlight `mode` are dropped.
     function normalizeUser(u) {
         const id = Number(u && u.id);
         if (!Number.isInteger(id) || id < 0) return null;
+        let opacity;
+        if (u && u.opacity !== undefined) opacity = clamp01(u.opacity);
+        else opacity = (u && u.enabled === false) ? 1 : 0;
         return {
             id,
             name: String((u && u.name) || ''),
             note: String((u && u.note) || ''),
-            enabled: (u && u.enabled === false) ? false : true,
-            color: normalizeHex(u && u.color),
+            opacity,
         };
     }
 
     function loadStore() {
-        const fallback = { version: 2, enabled: true, mode: 'hide', excludeNotes: false, users: [] };
+        const fallback = { version: 3, enabled: true, globalOpacity: 0, excludeNotes: false, users: [] };
         try {
             const raw = localStorage.getItem(STORE_KEY);
             if (!raw) return fallback;
             const p = JSON.parse(raw);
             return {
-                version: 2,
+                version: 3,
                 enabled: p.enabled === false ? false : true,
-                mode: p.mode === 'highlight' ? 'highlight' : 'hide',
+                globalOpacity: p.globalOpacity === undefined ? 0 : clamp01(p.globalOpacity),
                 excludeNotes: p.excludeNotes === true,
                 users: Array.isArray(p.users) ? p.users.map(normalizeUser).filter(Boolean) : [],
             };
@@ -107,6 +102,22 @@
     }
 
     let store = loadStore();
+
+    // Global and per-user sliders COMPOSE rather than one overwriting the
+    // other -- dragging the global one must not silently destroy values the
+    // user set per row (the same reasoning that made the master switch an
+    // override rather than a bulk write).
+    //
+    //     effective = 1 - (1 - userOpacity) * (1 - globalOpacity)
+    //
+    // which is always >= max(user, global), so the global slider reads as
+    // "show every blocked user at least this much" and still works from the
+    // default state where every per-user value is 0. A plain multiply would
+    // have been inert there: anything x 0 is 0.
+    function effectiveOpacity(u) {
+        if (!store.enabled) return 1;
+        return 1 - (1 - clamp01(u.opacity)) * (1 - clamp01(store.globalOpacity));
+    }
 
     // ── page-realm bridge ────────────────────────────────────────
     // Runs as a classic <script>, so index.js's top-level `let` bindings
@@ -122,10 +133,10 @@
 if (window.${BRIDGE_FLAG}) return;
 window.${BRIDGE_FLAG} = true;
 
-// users: Map<userId, [r,g,b]> -- the value is that user's own highlight
-// colour, so one lookup in the hot loop answers both "is this blocked?" and
-// "what colour?" instead of a Set test plus a second colour lookup.
-var state = { users: new Map(), mode: 'hide', patched: false, lastInspected: null };
+// users: Map<userId, alpha 0..1>. Fully visible users are never put in the
+// map at all, so a tile whose only blocked occupants are at 100% skips the
+// rebuild exactly like a tile with nobody blocked.
+var state = { users: new Map(), patched: false, lastInspected: null };
 
 // tileKey -> { bmp, ids:Set }  keyed on the userBitmap OBJECT, never the tile
 // key: index.js rebuilds cache entries with {...currentEntry, colorBitmap},
@@ -187,9 +198,9 @@ function filterTile(tileKey, source) {
         idIndex.set(tileKey, idx);
     }
 
-    // Most tiles contain nobody blocked -- skip the rebuild entirely.
+    // Most tiles contain nobody faded -- skip the rebuild entirely.
     var hit = false;
-    state.users.forEach(function (_rgb, id) { if (idx.ids.has(id)) hit = true; });
+    state.users.forEach(function (_alpha, id) { if (idx.ids.has(id)) hit = true; });
     if (!hit) return source;
 
     try {
@@ -199,20 +210,22 @@ function filterTile(tileKey, source) {
         var cImg = cCtx.getImageData(0, 0, w, h);
         var c = cImg.data;
         var u = uCtx.getImageData(0, 0, w, h).data;
-        var highlight = state.mode === 'highlight';
 
         for (var i = 0; i < u.length; i += 4) {
             if (u[i + 3] === 0) continue;
             var id = (u[i] << 16) | (u[i + 1] << 8) | u[i + 2];
-            var col = state.users.get(id);
-            if (!col) continue;
-            if (highlight) {
-                c[i] = col[0]; c[i + 1] = col[1]; c[i + 2] = col[2]; c[i + 3] = 255;
-            } else {
+            var a = state.users.get(id);
+            if (a === undefined) continue;
+            if (a <= 0) {
                 // Fully transparent. The layer uploads DOM sources with
                 // UNPACK_PREMULTIPLY_ALPHA_WEBGL, so zeroing all four
                 // channels is what a cleared texel looks like there too.
                 c[i] = 0; c[i + 1] = 0; c[i + 2] = 0; c[i + 3] = 0;
+            } else {
+                // getImageData is unpremultiplied and the upload premultiplies
+                // for us, so scaling alpha alone is the whole fade -- RGB must
+                // be left exactly as it is.
+                c[i + 3] = (c[i + 3] * a) | 0;
             }
         }
         cCtx.putImageData(cImg, 0, 0);
@@ -286,25 +299,25 @@ if (typeof showPixelUser === 'function' && !showPixelUser.__gpcBlockedUsersHooke
 }
 
 window.__gpcBlockedUsers = {
-    // arr: [{ id:Number, rgb:[r,g,b] }] -- already resolved sandbox-side, so
-    // the page realm never has to parse colour strings in a hot path.
-    setUsers: function (arr, mode) {
+    // arr: [{ id:Number, alpha:0..1 }] -- already composed sandbox-side, so
+    // the page realm never recomputes visibility in a hot path.
+    setUsers: function (arr) {
         var next = new Map();
         (arr || []).forEach(function (u) {
             var id = Number(u && u.id);
             if (!Number.isInteger(id)) return;
-            var rgb = (u && u.rgb) || [];
-            next.set(id, [rgb[0] | 0, rgb[1] | 0, rgb[2] | 0]);
+            var a = Number(u && u.alpha);
+            if (!Number.isFinite(a)) a = 0;
+            if (a >= 1) return;                 // fully visible: nothing to do
+            next.set(id, a < 0 ? 0 : a);
         });
         state.users = next;
-        state.mode = mode === 'highlight' ? 'highlight' : 'hide';
         patchLayer();
         refresh();
     },
     lastInspected: function () { return state.lastInspected; },
     stats: function () {
-        return { patched: state.patched, blocked: state.users.size, mode: state.mode,
-                 indexedTiles: idIndex.size };
+        return { patched: state.patched, faded: state.users.size, indexedTiles: idIndex.size };
     }
 };
 
@@ -320,20 +333,17 @@ if (!patchLayer()) {
         script.remove();
     }
 
-    // Only users whose own eye is on, and only while the master switch is on.
+    // Only users the filter actually has work to do for.
     function activeUsers() {
-        if (!store.enabled) return [];
         return store.users
-            .filter((u) => u.enabled)
-            .map((u) => ({ id: u.id, rgb: hexToRgb(u.color) }));
+            .map((u) => ({ id: u.id, alpha: effectiveOpacity(u) }))
+            .filter((u) => u.alpha < 1);
     }
 
     function pushToBridge() {
         try {
             const api = _pw.__gpcBlockedUsers;
-            if (api && typeof api.setUsers === 'function') {
-                api.setUsers(activeUsers(), store.mode);
-            }
+            if (api && typeof api.setUsers === 'function') api.setUsers(activeUsers());
         } catch (err) {
             dbgPush(`Blocked Users bridge push failed: ${err && err.message ? err.message : String(err)}`,
                 { error: err, uiComponent: 'Blocked User List' });
@@ -366,7 +376,7 @@ if (!patchLayer()) {
         const added = [];
         ids.forEach((id) => {
             if (!Number.isInteger(id) || id < 0 || isBlocked(id)) return;
-            store.users.push({ id, name: name || '', note: '', enabled: true, color: DEFAULT_HL });
+            store.users.push({ id, name: name || '', note: '', opacity: 0 });
             added.push(id);
         });
         if (!added.length) return [];
@@ -413,10 +423,10 @@ if (!patchLayer()) {
     // ── export / import ──────────────────────────────────────────
     function exportObject() {
         return {
-            version: 2,
-            mode: store.mode,
+            version: 3,
+            globalOpacity: store.globalOpacity,
             users: store.users.map((u) => {
-                const out = { id: u.id, name: u.name, enabled: u.enabled, color: u.color };
+                const out = { id: u.id, name: u.name, opacity: u.opacity };
                 if (!store.excludeNotes && u.note) out.note = u.note;
                 return out;
             }),
@@ -442,9 +452,7 @@ if (!patchLayer()) {
         rows.forEach((r) => {
             if (typeof r === 'number' || typeof r === 'string') {
                 const n = Number(r);
-                if (Number.isInteger(n) && n >= 0) {
-                    incoming.push({ id: n, name: '', note: '', enabled: true, color: DEFAULT_HL });
-                }
+                if (Number.isInteger(n) && n >= 0) incoming.push({ id: n, name: '', note: '', opacity: 0 });
                 return;
             }
             const u = normalizeUser(r);
@@ -480,7 +488,7 @@ if (!patchLayer()) {
                 font-family: system-ui,-apple-system,sans-serif;
             }
             .gpp-bu-panel {
-                width: min(520px, 94vw); max-height: 86vh; display: flex; flex-direction: column;
+                width: min(540px, 94vw); max-height: 86vh; display: flex; flex-direction: column;
                 background: ${t('#ffffff', '#1e1e2e')}; color: ${t('#111827', '#f5f5f5')};
                 border: 1px solid ${t('#d1d5db', '#45475a')};
                 border-radius: 10px; overflow: hidden;
@@ -494,9 +502,11 @@ if (!patchLayer()) {
             .gpp-bu-title { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
             .gpp-bu-body { padding: 10px 12px; overflow-y: auto; }
             .gpp-bu-toolbar {
-                display: flex; align-items: center; justify-content: space-between; gap: 8px;
                 padding-bottom: 8px; margin-bottom: 8px;
                 border-bottom: 1px solid ${t('#d1d5db', '#45475a')};
+            }
+            .gpp-bu-toolrow {
+                display: flex; align-items: center; justify-content: space-between; gap: 8px;
             }
             .gpp-bu-count { font-size: 11px; color: ${t('#64748b', '#a6adc8')}; }
             .gpp-bu-btn {
@@ -553,14 +563,6 @@ if (!patchLayer()) {
             }
             .gpp-bu-row:last-child { border-bottom: none; }
             .gpp-bu-row:hover { background: ${t('#f9fafb', '#252537')}; }
-            .gpp-bu-row-off .gpp-bu-name, .gpp-bu-row-off .gpp-bu-meta { opacity: .45; }
-            .gpp-bu-eye {
-                background: none; border: none; cursor: pointer; padding: 2px;
-                display: flex; align-items: center; color: ${t('#2563eb', '#89b4fa')};
-                flex-shrink: 0; margin-top: 1px;
-            }
-            .gpp-bu-eye-off { color: ${t('#94a3b8', '#6c7086')}; }
-            .gpp-bu-eye:disabled { opacity: .35; cursor: not-allowed; }
             .gpp-bu-main { flex: 1; min-width: 0; }
             .gpp-bu-name {
                 font-size: 12px; font-weight: 600; overflow: hidden;
@@ -581,17 +583,42 @@ if (!patchLayer()) {
                 outline: none; border-color: ${t('#2563eb', '#89b4fa')};
                 background: ${t('#ffffff', '#11111b')}; color: ${t('#111827', '#f5f5f5')};
             }
-            .gpp-bu-swatch {
-                width: 22px; height: 22px; padding: 0; flex-shrink: 0; margin-top: 1px;
-                background: none; cursor: pointer;
-                border: 1px solid ${t('#d1d5db', '#45475a')}; border-radius: 5px;
-                transition: opacity .12s;
+            /* opacity control: [full hide] [====slider====] [full show] [%] */
+            .gpp-bu-fade { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+            .gpp-bu-end {
+                background: none; border: none; cursor: pointer; padding: 1px;
+                display: flex; align-items: center; flex-shrink: 0;
+                color: ${t('#94a3b8', '#6c7086')};
             }
-            .gpp-bu-swatch::-webkit-color-swatch-wrapper { padding: 2px; }
-            .gpp-bu-swatch::-webkit-color-swatch { border: none; border-radius: 3px; }
-            .gpp-bu-swatch::-moz-color-swatch { border: none; border-radius: 3px; }
-            .gpp-bu-swatch-idle { opacity: .4; }
-            .gpp-bu-swatch-idle:hover { opacity: 1; }
+            .gpp-bu-end:hover:not(:disabled) { color: ${t('#2563eb', '#89b4fa')}; }
+            .gpp-bu-end-active { color: ${t('#2563eb', '#89b4fa')}; }
+            .gpp-bu-end:disabled { opacity: .35; cursor: not-allowed; }
+            .gpp-bu-slider {
+                flex: 1; min-width: 60px; height: 4px; -webkit-appearance: none; appearance: none;
+                border-radius: 2px; cursor: pointer; margin: 0;
+                background: ${t('#e5e7eb', '#313244')};
+            }
+            .gpp-bu-slider::-webkit-slider-thumb {
+                -webkit-appearance: none; appearance: none;
+                width: 12px; height: 12px; border-radius: 50%; cursor: pointer;
+                background: ${t('#2563eb', '#89b4fa')};
+                border: 2px solid ${t('#ffffff', '#1e1e2e')};
+            }
+            .gpp-bu-slider::-moz-range-thumb {
+                width: 12px; height: 12px; border-radius: 50%; cursor: pointer; border: none;
+                background: ${t('#2563eb', '#89b4fa')};
+            }
+            .gpp-bu-slider:disabled { opacity: .4; cursor: not-allowed; }
+            .gpp-bu-pct {
+                font-size: 10px; font-family: ui-monospace,Consolas,monospace;
+                color: ${t('#64748b', '#a6adc8')};
+                width: 30px; text-align: right; flex-shrink: 0;
+            }
+            .gpp-bu-global {
+                margin-top: 8px; padding: 7px 8px; border-radius: 6px;
+                background: ${t('#f1f5f9', '#292a3a')};
+                border: 1px solid ${t('#e5e7eb', '#313244')};
+            }
             .gpp-bu-empty {
                 padding: 16px 10px; text-align: center; font-size: 11px;
                 color: ${t('#64748b', '#a6adc8')};
@@ -619,19 +646,77 @@ if (!patchLayer()) {
         `;
     }
 
-    const EYE_OPEN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    const EYE_OPEN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
         + '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-    const EYE_OFF = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    const EYE_OFF = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
         + '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 '
         + '9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>'
         + '<line x1="1" y1="1" x2="23" y2="23"/></svg>';
 
+    // Shared builder for the [full hide] [slider] [full show] [%] control, used
+    // once per row and again for the global one so they stay identical.
+    function buildFade(idBase, getValue, setValue, opts) {
+        const disabled = !!(opts && opts.disabled);
+        const wrap = document.createElement('div');
+        wrap.id = `${idBase}-fade`;
+        wrap.className = 'gpp-bu-fade';
+
+        const hideBtn = document.createElement('button');
+        hideBtn.id = `${idBase}-hide`;
+        hideBtn.type = 'button';
+        hideBtn.className = 'gpp-bu-end';
+        hideBtn.innerHTML = EYE_OFF;
+        hideBtn.title = 'Hide completely';
+        hideBtn.disabled = disabled;
+
+        const slider = document.createElement('input');
+        slider.id = `${idBase}-slider`;
+        slider.type = 'range';
+        slider.min = '0';
+        slider.max = '100';
+        slider.step = '1';
+        slider.className = 'gpp-bu-slider';
+        slider.disabled = disabled;
+
+        const showBtn = document.createElement('button');
+        showBtn.id = `${idBase}-show`;
+        showBtn.type = 'button';
+        showBtn.className = 'gpp-bu-end';
+        showBtn.innerHTML = EYE_OPEN;
+        showBtn.title = 'Show fully';
+        showBtn.disabled = disabled;
+
+        const pct = document.createElement('span');
+        pct.id = `${idBase}-pct`;
+        pct.className = 'gpp-bu-pct';
+
+        function paint() {
+            const v = clamp01(getValue());
+            slider.value = String(Math.round(v * 100));
+            pct.textContent = `${Math.round(v * 100)}%`;
+            hideBtn.classList.toggle('gpp-bu-end-active', v <= 0);
+            showBtn.classList.toggle('gpp-bu-end-active', v >= 1);
+        }
+
+        hideBtn.addEventListener('click', () => { setValue(0); paint(); });
+        showBtn.addEventListener('click', () => { setValue(1); paint(); });
+        slider.addEventListener('input', () => { setValue(Number(slider.value) / 100); paint(); });
+
+        wrap.appendChild(hideBtn);
+        wrap.appendChild(slider);
+        wrap.appendChild(showBtn);
+        wrap.appendChild(pct);
+        paint();
+        return { wrap, paint };
+    }
+
     // ── modal ────────────────────────────────────────────────────
     let listEl = null;
-    let selected = new Set();   // ids checked for bulk removal
-    let renderMain = null;      // rebinds the main view (set inside openModal)
+    let selected = new Set();
+    let renderMain = null;
+    let repaintGlobal = null;
 
     function renderList() {
         if (!listEl) return;
@@ -649,7 +734,7 @@ if (!patchLayer()) {
         store.users.forEach((u) => {
             const row = document.createElement('div');
             row.id = `gpp-blocked-users-row-${u.id}`;
-            row.className = 'gpp-bu-row' + ((!u.enabled || !store.enabled) ? ' gpp-bu-row-off' : '');
+            row.className = 'gpp-bu-row';
 
             const check = document.createElement('input');
             check.id = `gpp-blocked-users-check-${u.id}`;
@@ -659,24 +744,6 @@ if (!patchLayer()) {
             check.addEventListener('change', () => {
                 if (check.checked) selected.add(u.id); else selected.delete(u.id);
                 renderBulkBar();
-            });
-
-            const eye = document.createElement('button');
-            eye.id = `gpp-blocked-users-eye-${u.id}`;
-            eye.type = 'button';
-            // Eye OPEN means their pixels are visible (block paused).
-            // Eye CROSSED means the block is active and their pixels are gone.
-            const showing = !u.enabled || !store.enabled;
-            eye.className = 'gpp-bu-eye' + (showing ? ' gpp-bu-eye-off' : '');
-            eye.innerHTML = showing ? EYE_OPEN : EYE_OFF;
-            eye.disabled = !store.enabled;
-            eye.title = !store.enabled
-                ? 'Blocklist is disabled — all pixels are showing'
-                : (u.enabled ? 'Their pixels are hidden — click to show' : 'Their pixels are showing — click to hide');
-            eye.addEventListener('click', () => {
-                u.enabled = !u.enabled;
-                commit();
-                renderList();
             });
 
             const main = document.createElement('div');
@@ -693,6 +760,13 @@ if (!patchLayer()) {
             idLine.className = 'gpp-bu-meta';
             idLine.textContent = `ID ${u.id}`;
 
+            const fade = buildFade(
+                `gpp-blocked-users-${u.id}`,
+                () => u.opacity,
+                (v) => { u.opacity = clamp01(v); commit(); },
+                { disabled: !store.enabled },
+            );
+
             const note = document.createElement('input');
             note.id = `gpp-blocked-users-note-${u.id}`;
             note.type = 'text';
@@ -706,23 +780,8 @@ if (!patchLayer()) {
 
             main.appendChild(nameLine);
             main.appendChild(idLine);
+            main.appendChild(fade.wrap);
             main.appendChild(note);
-
-            // Per-user highlight colour. Only takes visible effect in Highlight
-            // mode, so it dims (but stays editable) while Hide is active rather
-            // than vanishing and making the row layout jump between modes.
-            const swatch = document.createElement('input');
-            swatch.id = `gpp-blocked-users-color-${u.id}`;
-            swatch.type = 'color';
-            swatch.className = 'gpp-bu-swatch' + (store.mode === 'highlight' ? '' : ' gpp-bu-swatch-idle');
-            swatch.value = normalizeHex(u.color);
-            swatch.title = store.mode === 'highlight'
-                ? `Highlight colour for ${u.name || 'ID ' + u.id}`
-                : 'Highlight colour — shows once you switch to Highlight mode';
-            swatch.addEventListener('input', () => {
-                u.color = normalizeHex(swatch.value);
-                commit();
-            });
 
             const rm = document.createElement('button');
             rm.id = `gpp-blocked-users-remove-${u.id}`;
@@ -737,9 +796,7 @@ if (!patchLayer()) {
             });
 
             row.appendChild(check);
-            row.appendChild(eye);
             row.appendChild(main);
-            row.appendChild(swatch);
             row.appendChild(rm);
             listEl.appendChild(row);
         });
@@ -815,7 +872,6 @@ if (!patchLayer()) {
         panel.id = 'gpp-blocked-users-panel';
         panel.className = 'gpp-bu-panel';
 
-        // ── header ──
         const header = document.createElement('div');
         header.id = 'gpp-blocked-users-header';
         header.className = 'gpp-bu-header';
@@ -843,56 +899,66 @@ if (!patchLayer()) {
         footer.id = 'gpp-blocked-users-footer';
         footer.className = 'gpp-bu-footer';
 
-        // ── main view ──
         renderMain = function () {
             body.innerHTML = '';
             footer.innerHTML = '';
             title.textContent = '🚷 Blocked User List';
 
-            // toolbar: master switch + mode + count
             const toolbar = document.createElement('div');
             toolbar.id = 'gpp-blocked-users-toolbar';
             toolbar.className = 'gpp-bu-toolbar';
 
-            const leftBtns = document.createElement('div');
-            leftBtns.id = 'gpp-blocked-users-toolbar-left';
-            leftBtns.className = 'gpp-bu-btnrow';
+            const toolrow = document.createElement('div');
+            toolrow.id = 'gpp-blocked-users-toolrow';
+            toolrow.className = 'gpp-bu-toolrow';
 
             const master = document.createElement('button');
             master.id = 'gpp-blocked-users-master-toggle';
             master.type = 'button';
             master.className = 'gpp-bu-btn' + (store.enabled ? ' gpp-bu-btn-on' : '');
             master.textContent = store.enabled ? 'Blocklist on' : 'Blocklist off';
-            master.title = 'Disabling shows everyone\'s pixels again without losing your list';
+            master.title = 'Turning the list off shows everyone at full opacity without losing your settings';
             master.addEventListener('click', () => {
                 store.enabled = !store.enabled;
                 commit();
                 renderMain();
             });
-            leftBtns.appendChild(master);
-
-            [['hide', 'Hide'], ['highlight', 'Highlight']].forEach(([key, text]) => {
-                const b = document.createElement('button');
-                b.id = `gpp-blocked-users-mode-${key}`;
-                b.type = 'button';
-                b.className = 'gpp-bu-btn' + (store.mode === key ? ' gpp-bu-btn-on' : '');
-                b.textContent = text;
-                b.addEventListener('click', () => {
-                    store.mode = key;
-                    commit();
-                    renderMain();
-                });
-                leftBtns.appendChild(b);
-            });
 
             const count = document.createElement('span');
             count.id = 'gpp-blocked-users-count';
             count.className = 'gpp-bu-count';
-            const active = activeUsers().length;
-            count.textContent = `${store.users.length} blocked · ${active} active`;
+            count.textContent = `${store.users.length} blocked · ${activeUsers().length} faded`;
 
-            toolbar.appendChild(leftBtns);
-            toolbar.appendChild(count);
+            toolrow.appendChild(master);
+            toolrow.appendChild(count);
+            toolbar.appendChild(toolrow);
+
+            // global fade
+            const globalBox = document.createElement('div');
+            globalBox.id = 'gpp-blocked-users-global';
+            globalBox.className = 'gpp-bu-global';
+
+            const globalLabel = document.createElement('span');
+            globalLabel.id = 'gpp-blocked-users-global-label';
+            globalLabel.className = 'gpp-bu-label';
+            globalLabel.textContent = 'Show every blocked user at least this much';
+
+            const globalFade = buildFade(
+                'gpp-blocked-users-global',
+                () => store.globalOpacity,
+                (v) => {
+                    store.globalOpacity = clamp01(v);
+                    commit();
+                    const c = document.getElementById('gpp-blocked-users-count');
+                    if (c) c.textContent = `${store.users.length} blocked · ${activeUsers().length} faded`;
+                },
+                { disabled: !store.enabled },
+            );
+            repaintGlobal = globalFade.paint;
+
+            globalBox.appendChild(globalLabel);
+            globalBox.appendChild(globalFade.wrap);
+            toolbar.appendChild(globalBox);
             body.appendChild(toolbar);
 
             // add section
@@ -975,7 +1041,6 @@ if (!patchLayer()) {
             addSection.appendChild(addBtnRow);
             body.appendChild(addSection);
 
-            // list
             listEl = document.createElement('div');
             listEl.id = 'gpp-blocked-users-list';
             listEl.className = 'gpp-bu-list';
@@ -990,7 +1055,6 @@ if (!patchLayer()) {
             renderList();
             renderBulkBar();
 
-            // footer
             const selectAll = document.createElement('button');
             selectAll.id = 'gpp-blocked-users-select-all';
             selectAll.type = 'button';
@@ -1015,12 +1079,12 @@ if (!patchLayer()) {
             footer.appendChild(ioBtn);
         };
 
-        // ── import / export view ──
         function renderIo() {
             body.innerHTML = '';
             footer.innerHTML = '';
             listEl = null;
             bulkBarEl = null;
+            repaintGlobal = null;
             title.textContent = '🚷 Import / Export';
 
             const status = document.createElement('div');
@@ -1190,6 +1254,7 @@ if (!patchLayer()) {
                 listEl = null;
                 bulkBarEl = null;
                 renderMain = null;
+                repaintGlobal = null;
                 cleanup.disconnect();
             }
         });
