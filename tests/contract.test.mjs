@@ -30,7 +30,7 @@ test('publishes the library bridge when @require wraps the source', () => {
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Ghost Template Manager/);
-    assert.match(artifact, /const VERSION = '2\.9\.1';/);
+    assert.match(artifact, /const VERSION = '2\.10\.0';/);
     const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const versionPattern = new RegExp(`const LIBRARY_VERSION = '${escapedVersion}'; // x-release-please-version`);
     assert.match(artifact, versionPattern);
@@ -40,7 +40,7 @@ test('organizes settings into the requested visual extension categories', () => 
     assert.match(artifact, /const EXTENSION_CATEGORIES = \[/);
     assert.match(artifact, /name: 'Painting', keys: \['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'\]/);
     assert.match(artifact, /name: 'Ghost Template', keys: \['ghostPlusPlus', 'showSyncGhostBtn'\]/);
-    assert.match(artifact, /name: 'Map', keys: \['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView'\]/);
+    assert.match(artifact, /name: 'Map', keys: \['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers'\]/);
     assert.match(artifact, /name: 'Menuing', keys: \['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'\]/);
     assert.match(artifact, /name: 'Misc', keys: \['extGoToLastLocation'\]/);
     assert.match(artifact, /name: 'Deprecated', keys: \['ghostPaletteSearch', 'ghostTemplateManager'\]/);
@@ -190,4 +190,30 @@ test('tracks snapshot-observed guild activity and marks inactive players yellow'
     assert.match(artifact, /Unknown members belong in Inactive/);
     assert.match(artifact, /c\.type === 'left' \|\| !lastSeenAt \|\| isMemberInactive\(lastSeenAt\) \|\| c\.diff <= 0/);
     assert.match(artifact, /isMemberInactive\(lastSeenAt\)/);
+});
+
+test('filters canvas tiles through the blocked user list at the layer boundary', () => {
+    assert.match(artifact, /EXTENSION: Blocked User List \[extBlockedUsers\]/);
+    assert.match(artifact, /if \(_settings\.extBlockedUsers\)/);
+    assert.match(artifact, /name: 'Blocked User List', icon: '🚫'/);
+
+    // The whole feature depends on hooking the single texture-upload choke
+    // point rather than the render loop, so that tileImageCache stays
+    // untouched ground truth for Ghost++ and the native pixel inspector.
+    assert.match(artifact, /pixelTileLayer\.setTile = function \(tileKey, source, corners\)/);
+    assert.match(artifact, /__gpcBlockedUsersOriginal/);
+
+    // Attribution decode must key on alpha, never on the id value: user id 0
+    // is a real account, which is why index.js itself tests a > 0.
+    assert.match(artifact, /if \(d\[i \+ 3\] === 0\) continue;/);
+    assert.match(artifact, /\(d\[i\] << 16\) \| \(d\[i \+ 1\] << 8\) \| d\[i \+ 2\]/);
+
+    // Per-tile id index keyed on bitmap identity, not tile key -- index.js
+    // rebuilds cache entries with a spread that would carry a stale index.
+    assert.match(artifact, /if \(!idx \|\| idx\.bmp !== ub\)/);
+
+    assert.match(artifact, /state\.mode === 'highlight'/);
+    assert.match(artifact, /window\.__gpcBlockedUsers = \{/);
+    assert.match(artifact, /gpc-blocked-users-btn/);
+    assert.match(artifact, /\/GetUserProfile/);
 });
