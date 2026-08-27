@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.12.0';
+    const VERSION = '2.12.1';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1307,6 +1307,13 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.12.1',
+            date: '2026-08-26',
+            items: [
+                { type: 'fixed', text: 'Ghost++: the full and compact views can now be dragged and resized with touch or pen input on mobile, and stay inside the visible viewport when the screen is narrow' },
+            ]
+        },
         {
             version: '2.12.0',
             date: '2026-08-24',
