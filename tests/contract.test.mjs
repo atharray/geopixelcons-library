@@ -297,6 +297,25 @@ test('fades blocked users by opacity rather than colour', () => {
     assert.match(artifact, /opacity = \(u && u\.enabled === false\) \? 1 : 0;/);
 });
 
+test('warns before painting over queued pixels owned by blocked users', () => {
+    assert.match(artifact, /function blockedQueuedPixels\(\)/);
+    assert.match(artifact, /queuedPixels\.keys\(\)/);
+    assert.match(artifact, /ownerDataIndex/);
+    assert.match(artifact, /getBlockedQueuedPixels: function \(\)/);
+    assert.match(artifact, /commitPaint: function \(\)/);
+
+    // Capture runs before the native inline onclick="placePixels()" handler,
+    // and confirmation invokes the real page-realm function exactly once.
+    assert.match(artifact, /const PAINT_WARNING_ID = 'gpp-blocked-paint-warning'/);
+    assert.match(artifact, /document\.addEventListener\('click', guardPaintEvent, true\)/);
+    assert.match(artifact, /document\.addEventListener\('keydown', guardPaintEvent, true\)/);
+    assert.match(artifact, /event\.stopImmediatePropagation\(\)/);
+    assert.match(artifact, /Paint over blocked user\?/);
+    assert.match(artifact, /bridge\.commitPaint\(\)/);
+    assert.match(artifact, /No, cancel/);
+    assert.match(artifact, /Yes, paint/);
+});
+
 test('applies blocked-user opacity to region screenshot exports', () => {
     // Region Screenshot reads the same composed opacity values as the live
     // blocked-user layer instead of duplicating the global/per-user formula.
