@@ -170,6 +170,7 @@
                     modalEl.style.left = Math.max(0, (window.innerWidth - modalRect.width) / 2) + 'px';
                     modalEl.style.top = Math.max(0, (window.innerHeight - modalRect.height) / 2) + 'px';
                     modalEl.style.right = 'auto';
+                    if (typeof gppConstrainModalToViewport === 'function') gppConstrainModalToViewport(modalEl);
                     const body = document.getElementById('gpp-left-body');
                     // Build the shell (drop zone + every section container)
                     // ONCE ever, not on every open — see ensureShellBuilt's

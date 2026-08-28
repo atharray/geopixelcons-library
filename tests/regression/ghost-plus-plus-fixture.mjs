@@ -163,7 +163,7 @@ const CORE_THEME_HELPERS = [
     "function t(light, dark) { return isDarkMode() ? dark : light; }",
 ].join('\n');
 
-function buildFixtureHead(forceCanvas2D) {
+function buildFixtureHead(forceCanvas2D, mobileViewport = false) {
     // Written by hand (no backticks used anywhere below) so it can be
     // concatenated with the raw Ghost++ source via plain string '+' without
     // any risk of the outer template literal being terminated early by a
@@ -206,6 +206,7 @@ function buildFixtureHead(forceCanvas2D) {
     lines.push('window.cancelAnimationFrame = function(id) { clearTimeout(id); };');
     lines.push('');
     lines.push('var FORCE_CANVAS2D = ' + (forceCanvas2D ? 'true' : 'false') + ';');
+    lines.push('var FIXTURE_MOBILE = ' + (mobileViewport ? 'true' : 'false') + ';');
     lines.push('if (FORCE_CANVAS2D) {');
     lines.push('    var __origGetContext = HTMLCanvasElement.prototype.getContext;');
     lines.push('    HTMLCanvasElement.prototype.getContext = function(type, opts) {');
@@ -2686,6 +2687,9 @@ function buildDriverScript() {
     L.push('    if (gppSettings.paletteViewMode !== "list") throw new Error("test setup: full Ghost++ view did not switch to List before entering compact mode");');
     L.push('    gppSettings.compactPaletteViewMode = "grid";');
     L.push('    gppState.saveSettings();');
+    L.push('    var compactPaletteDetails = modal.querySelector("#gpp-palette-section > details");');
+    L.push('    if (!compactPaletteDetails) throw new Error("test setup: Template Colors details section not found");');
+    L.push('    compactPaletteDetails.open = false;');
     L.push('    // The minify button now cross-fades (gppRunMinifyTransition) rather than');
     L.push('    // toggling .gpp-minified synchronously -- wait for the transitionend-driven');
     L.push('    // swap to actually land instead of asserting immediately after .click().');
@@ -2703,7 +2707,21 @@ function buildDriverScript() {
     L.push('    if (!compactGridBtn || !compactListBtn) throw new Error("compact minified view is missing its Grid/List palette buttons");');
     L.push('    if (gppSettings.compactPaletteViewMode !== "grid") throw new Error("compact mode did not start with its independent Grid preference");');
     L.push('    if (!compactGridBtn.classList.contains("gpp-vs-view-btn-active") || compactListBtn.classList.contains("gpp-vs-view-btn-active")) throw new Error("expected compact Grid to be active independently of the full-menu List preference");');
-    L.push('    if (!document.querySelector(".gpp-palette-grid") || document.querySelector(".gpp-palette-grid").classList.contains("gpp-palette-list-mode")) throw new Error("compact mode did not render its independent Grid layout");');
+    L.push('    if (!compactPaletteDetails.open) throw new Error("REGRESSION: entering compact view left the Template Colors details section closed, so the compact palette body is invisible");');
+    L.push('    if (!modal.querySelector(".gpp-palette-grid") || modal.querySelector(".gpp-palette-grid").classList.contains("gpp-palette-list-mode")) throw new Error("compact mode did not render its independent Grid layout");');
+    L.push('    var compactPaletteGrid = modal.querySelector(".gpp-palette-grid");');
+    L.push('    var compactPaletteSeed = compactPaletteGrid && compactPaletteGrid.firstElementChild;');
+    L.push('    var compactPaletteOriginalCount = compactPaletteGrid ? compactPaletteGrid.children.length : 0;');
+    L.push('    if (!compactPaletteGrid || !compactPaletteSeed) throw new Error("test setup: compact palette grid did not render a seed swatch");');
+    L.push('    for (var extraSwatch = 0; extraSwatch < 40; extraSwatch++) compactPaletteGrid.appendChild(compactPaletteSeed.cloneNode(true));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(resolve); });');
+    L.push('    var compactPaletteStyle = getComputedStyle(compactPaletteGrid);');
+    L.push('    if (compactPaletteStyle.overflowY !== "auto" && compactPaletteStyle.overflowY !== "scroll") throw new Error("REGRESSION: compact palette grid does not expose vertical overflow, overflow-y=" + compactPaletteStyle.overflowY);');
+    L.push('    if (!(compactPaletteGrid.clientHeight > 0) || !(compactPaletteGrid.scrollHeight > compactPaletteGrid.clientHeight + 1)) throw new Error("REGRESSION: compact palette grid expanded to its content instead of becoming scrollable: " + JSON.stringify({ clientHeight: compactPaletteGrid.clientHeight, scrollHeight: compactPaletteGrid.scrollHeight, panelHeight: modal.offsetHeight }));');
+    L.push('    compactPaletteGrid.scrollTop = compactPaletteGrid.scrollHeight;');
+    L.push('    if (!(compactPaletteGrid.scrollTop > 0)) throw new Error("REGRESSION: compact palette grid reports overflow but cannot scroll vertically");');
+    L.push('    compactPaletteGrid.scrollTop = 0;');
+    L.push('    while (compactPaletteGrid.children.length > compactPaletteOriginalCount) compactPaletteGrid.lastElementChild.remove();');
     L.push('    compactListBtn.click();');
     L.push('    if (gppSettings.compactPaletteViewMode !== "list") throw new Error("clicking the compact List button did not persist gppSettings.compactPaletteViewMode=list");');
     L.push('    if (gppSettings.paletteViewMode !== "list") throw new Error("compact List click incorrectly changed the full-menu palette preference");');
@@ -2736,10 +2754,34 @@ function buildDriverScript() {
     L.push('    var settledAtFull = await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000);');
     L.push('    if (!settledAtFull) throw new Error("the minify transition never finished (still fading) -- gpp-minify-transitioning was never removed");');
     L.push('    if (getComputedStyle(modal).opacity !== "1") throw new Error("REGRESSION: the modal did not fade back to full opacity after entering minified view, opacity=" + getComputedStyle(modal).opacity);');
+    L.push('    function assertCompactVisible(selector, label) {');
+    L.push('      var element = modal.querySelector(selector);');
+    L.push('      if (!element) throw new Error("REGRESSION: compact view is missing " + label + " (" + selector + ")");');
+    L.push('      var style = getComputedStyle(element);');
+    L.push('      var rect = element.getBoundingClientRect();');
+    L.push('      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0 || rect.width <= 0 || rect.height <= 0) {');
+    L.push('        var chain = [];');
+    L.push('        for (var cursor = element; cursor && cursor !== modal.parentElement; cursor = cursor.parentElement) {');
+    L.push('          var cursorStyle = getComputedStyle(cursor), cursorRect = cursor.getBoundingClientRect();');
+    L.push('          chain.push({ tag: cursor.tagName, id: cursor.id, className: cursor.className, display: cursorStyle.display, flex: cursorStyle.flex, width: cursorRect.width, height: cursorRect.height, offsetHeight: cursor.offsetHeight });');
+    L.push('        }');
+    L.push('        throw new Error("REGRESSION: compact " + label + " exists but is not visibly laid out: " + JSON.stringify({ display: style.display, visibility: style.visibility, opacity: style.opacity, width: rect.width, height: rect.height, flex: style.flex, chain: chain }));');
+    L.push('      }');
+    L.push('    }');
+    L.push('    assertCompactVisible("#gpp-modal-left", "left panel");');
+    L.push('    assertCompactVisible("#gpp-left-body", "left body");');
+    L.push('    assertCompactVisible("#gpp-palette-section", "palette section");');
+    L.push('    if (!compactPaletteDetails.open) throw new Error("REGRESSION: compact Template Colors details is closed");');
+    L.push('    assertCompactVisible("#gpp-palette-section > details > .gpp-body", "palette body");');
+    L.push('    assertCompactVisible(".gpp-palette-panel", "palette panel");');
+    L.push('    assertCompactVisible("#gpp-palette-bulk-top", "Enable all/Disable all row");');
+    L.push('    assertCompactVisible(".gpp-palette-view-row", "Palette view row");');
+    L.push('    assertCompactVisible(".gpp-palette-grid", "palette grid");');
     L.push('    minifyBtn.click();');
     L.push('    var exitedMinified = await waitFor(function() { return !modal.classList.contains("gpp-minified"); }, 2000);');
     L.push('    if (!exitedMinified) throw new Error("clicking the minify button a second time did not exit minified view in time");');
     L.push('    if (getComputedStyle(rightPanel).display === "none") throw new Error("REGRESSION: the right panel stayed hidden after exiting minified view");');
+    L.push('    if (compactPaletteDetails.open) throw new Error("REGRESSION: exiting compact view failed to restore the full-view Template Colors collapse state");');
     L.push('    var settledAtNormal = await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000);');
     L.push('    if (!settledAtNormal) throw new Error("the exit-minify transition never finished (still fading)");');
     L.push('    minifyBtn.click();');
@@ -2752,8 +2794,88 @@ function buildDriverScript() {
     L.push('    minifyBtn.click();');
     L.push('    var exitedAfterResize = await waitFor(function() { return !modal.classList.contains("gpp-minified"); }, 2000);');
     L.push('    if (!exitedAfterResize) throw new Error("clicking the minify button after the resize persistence check did not exit compact view");');
-    L.push('    return "Rescale Ghost++ only applies once the slider is released (\'change\', not \'input\'), live-updating --gpp-scale and persisting to gppSettings.uiScale; full and compact palette Grid/List preferences stay independent, and compact corner resizing persists width/height across compact re-entry";');
+    L.push('    var settledAfterResizeExit = await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000);');
+    L.push('    if (!settledAfterResizeExit) throw new Error("the final exit-minify transition never finished before the next interaction test");');
+    L.push('    return "Rescale Ghost++ only applies once the slider is released (\'change\', not \'input\'), live-updating --gpp-scale and persisting to gppSettings.uiScale; full and compact palette Grid/List preferences stay independent, the compact palette grid owns a real scrollable overflow area, and compact corner resizing persists width/height across compact re-entry";');
     L.push('  });');
+    L.push('');
+    // Mobile regression guard for the actual interaction failure: touch/pen
+    // pointerdown may carry button=-1, and a phone viewport must not leave the
+    // full or compact modal's usable handles beyond the visible screen.
+    L.push('  if (FIXTURE_MOBILE) {');
+    L.push('    await step("uiShell.mobile-touch-modal-interactions", async function() {');
+    L.push('      var modal = document.getElementById(GPP_IDS.modal);');
+    L.push('      if (!modal || modal.classList.contains("gpp-hidden")) throw new Error("test setup: expected the real modal to be open for the mobile interaction check");');
+    L.push('      if (modal.classList.contains("gpp-minified")) {');
+    L.push('        var restoreFullBtn = modal.querySelector(\'[data-gpp-action="minify"]\');');
+    L.push('        restoreFullBtn.click();');
+    L.push('        if (!await waitFor(function() { return !modal.classList.contains("gpp-minified"); }, 2000)) throw new Error("test setup: could not restore full view before the mobile interaction check");');
+    L.push('      }');
+    L.push('      // Use the normal compact defaults so a previous desktop-size preference does not make the test window fill the entire mobile viewport before the drag assertion.');
+    L.push('      gppSettings.compactWidth = 260;');
+    L.push('      gppSettings.compactHeight = 160;');
+    L.push('      gppState.saveSettings();');
+    L.push('      var fullBefore = modal.getBoundingClientRect();');
+    L.push('      if (fullBefore.right > window.innerWidth + 1 || fullBefore.bottom > window.innerHeight + 1) throw new Error("REGRESSION: full Ghost++ view is outside the mobile viewport after opening: " + JSON.stringify({ right: fullBefore.right, bottom: fullBefore.bottom, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }));');
+    L.push('      var head = modal.querySelector(".gpp-head");');
+    L.push('      var resizeHandle = modal.querySelector(".gpp-corner.se");');
+    L.push('      if (!head || !resizeHandle) throw new Error("test setup: full-view touch handles are missing");');
+    L.push('      if (getComputedStyle(head).touchAction !== "none" || getComputedStyle(resizeHandle).touchAction !== "none") throw new Error("REGRESSION: full-view drag/resize surfaces do not opt out of browser touch gestures");');
+    L.push('      function hitTests(handle, xRatio, yRatio) { var rect = handle.getBoundingClientRect(); var hit = document.elementFromPoint(rect.left + rect.width * (xRatio === undefined ? 0.5 : xRatio), rect.top + rect.height * (yRatio === undefined ? 0.5 : yRatio)); return hit === handle || (hit && hit.closest && hit.closest("[data-gpp-resize]") === handle); }');
+    L.push('      if (!hitTests(resizeHandle)) throw new Error("REGRESSION: the full-view SE resize corner is not the topmost hit target at its visible center");');
+    L.push('      if (resizeHandle.getBoundingClientRect().width < 24 || resizeHandle.getBoundingClientRect().height < 24) throw new Error("REGRESSION: the full-view resize corner hit target is smaller than 24px for touch use");');
+    L.push('      if (!hitTests(resizeHandle, 0.2, 0.2)) throw new Error("REGRESSION: the full-view SE resize corner is not the topmost hit target across its touch area");');
+    L.push('      function touchPointer(type, pointerId, x, y) { return new PointerEvent(type, { bubbles: true, button: -1, pointerId: pointerId, pointerType: "touch", isPrimary: true, clientX: x, clientY: y }); }');
+    L.push('      var dragBefore = modal.getBoundingClientRect();');
+    L.push('      head.dispatchEvent(touchPointer("pointerdown", 91, dragBefore.left + 24, dragBefore.top + 20));');
+    L.push('      head.dispatchEvent(touchPointer("pointermove", 91, dragBefore.left + 54, dragBefore.top + 42));');
+    L.push('      head.dispatchEvent(touchPointer("pointerup", 91, dragBefore.left + 54, dragBefore.top + 42));');
+    L.push('      var dragAfter = modal.getBoundingClientRect();');
+    L.push('      if (!(dragAfter.left > dragBefore.left || dragAfter.top > dragBefore.top)) throw new Error("REGRESSION: a touch-style pointer drag did not move the full Ghost++ modal");');
+    L.push('      if (dragAfter.right > window.innerWidth + 1 || dragAfter.bottom > window.innerHeight + 1) throw new Error("REGRESSION: full-view touch drag moved the modal outside the mobile viewport");');
+    L.push('      var fullWidthBeforeResize = modal.offsetWidth;');
+    L.push('      var fullHeightBeforeResize = modal.offsetHeight;');
+    L.push('      var resizeBefore = modal.getBoundingClientRect();');
+    L.push('      resizeHandle.dispatchEvent(touchPointer("pointerdown", 92, resizeBefore.right - 4, resizeBefore.bottom - 4));');
+    L.push('      resizeHandle.dispatchEvent(touchPointer("pointermove", 92, resizeBefore.right - 28, resizeBefore.bottom - 28));');
+    L.push('      resizeHandle.dispatchEvent(touchPointer("pointerup", 92, resizeBefore.right - 28, resizeBefore.bottom - 28));');
+    L.push('      if (!(modal.offsetWidth < fullWidthBeforeResize || modal.offsetHeight < fullHeightBeforeResize)) throw new Error("REGRESSION: a touch-style corner resize did not change the full Ghost++ modal size");');
+    L.push('      var fullAfterResize = modal.getBoundingClientRect();');
+    L.push('      if (fullAfterResize.right > window.innerWidth + 1 || fullAfterResize.bottom > window.innerHeight + 1) throw new Error("REGRESSION: full-view touch resize exceeded the mobile viewport");');
+    L.push('      var minifyBtn = modal.querySelector(\'[data-gpp-action="minify"]\');');
+    L.push('      minifyBtn.click();');
+    L.push('      if (!await waitFor(function() { return modal.classList.contains("gpp-minified"); }, 2000)) throw new Error("clicking the minify button did not enter compact view for the mobile interaction check: class=" + modal.className + ", opacity=" + getComputedStyle(modal).opacity + ", transitioning=" + modal.classList.contains("gpp-minify-transitioning"));');
+    L.push('      if (!await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000)) throw new Error("the mobile compact-entry transition never finished before touch interactions");');
+    L.push('      var compactBefore = modal.getBoundingClientRect();');
+    L.push('      if (compactBefore.right > window.innerWidth + 1 || compactBefore.bottom > window.innerHeight + 1) throw new Error("REGRESSION: compact Ghost++ view is outside the mobile viewport: " + JSON.stringify({ right: compactBefore.right, bottom: compactBefore.bottom, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }));');
+    L.push('      var compactHead = modal.querySelector(".gpp-head");');
+    L.push('      var compactResizeHandle = modal.querySelector(".gpp-corner.se");');
+    L.push('      if (getComputedStyle(compactHead).touchAction !== "none" || getComputedStyle(compactResizeHandle).touchAction !== "none") throw new Error("REGRESSION: compact-view drag/resize surfaces do not opt out of browser touch gestures");');
+    L.push('      if (compactResizeHandle.getBoundingClientRect().width < 24 || compactResizeHandle.getBoundingClientRect().height < 24) throw new Error("REGRESSION: the compact-view resize corner hit target is smaller than 24px for touch use");');
+    L.push('      if (!hitTests(compactResizeHandle, 0.2, 0.2)) throw new Error("REGRESSION: the compact-view SE resize corner is not the topmost hit target across its touch area");');
+    L.push('      var compactDragBefore = modal.getBoundingClientRect();');
+    L.push('      compactHead.dispatchEvent(touchPointer("pointerdown", 93, compactDragBefore.left + 24, compactDragBefore.top + 20));');
+    L.push('      compactHead.dispatchEvent(touchPointer("pointermove", 93, compactDragBefore.left + 54, compactDragBefore.top + 42));');
+    L.push('      compactHead.dispatchEvent(touchPointer("pointerup", 93, compactDragBefore.left + 54, compactDragBefore.top + 42));');
+    L.push('      var compactDragAfter = modal.getBoundingClientRect();');
+    L.push('      if (!(compactDragAfter.left > compactDragBefore.left || compactDragAfter.top > compactDragBefore.top)) throw new Error("REGRESSION: a touch-style pointer drag did not move compact Ghost++ view");');
+    L.push('      if (compactDragAfter.right > window.innerWidth + 1 || compactDragAfter.bottom > window.innerHeight + 1) throw new Error("REGRESSION: compact touch drag moved the modal outside the mobile viewport");');
+    L.push('      var compactWidthBeforeResize = modal.offsetWidth;');
+    L.push('      var compactHeightBeforeResize = modal.offsetHeight;');
+    L.push('      var compactResizeBefore = modal.getBoundingClientRect();');
+    L.push('      compactResizeHandle.dispatchEvent(touchPointer("pointerdown", 94, compactResizeBefore.right - 4, compactResizeBefore.bottom - 4));');
+    L.push('      compactResizeHandle.dispatchEvent(touchPointer("pointermove", 94, compactResizeBefore.right - 28, compactResizeBefore.bottom - 28));');
+    L.push('      compactResizeHandle.dispatchEvent(touchPointer("pointerup", 94, compactResizeBefore.right - 28, compactResizeBefore.bottom - 28));');
+    L.push('      if (!(modal.offsetWidth < compactWidthBeforeResize || modal.offsetHeight < compactHeightBeforeResize)) throw new Error("REGRESSION: a touch-style corner resize did not change compact Ghost++ view size");');
+    L.push('      if (!(gppSettings.compactWidth < compactWidthBeforeResize || gppSettings.compactHeight < compactHeightBeforeResize)) throw new Error("REGRESSION: compact touch resize did not persist its changed dimensions");');
+    L.push('      var compactAfterResize = modal.getBoundingClientRect();');
+    L.push('      if (compactAfterResize.right > window.innerWidth + 1 || compactAfterResize.bottom > window.innerHeight + 1) throw new Error("REGRESSION: compact touch resize exceeded the mobile viewport");');
+    L.push('      minifyBtn.click();');
+    L.push('      if (!await waitFor(function() { return !modal.classList.contains("gpp-minified"); }, 2000)) throw new Error("test cleanup: could not exit compact view after the mobile interaction check");');
+    L.push('      if (!await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000)) throw new Error("test cleanup: the mobile compact-exit transition never finished");');
+    L.push('      return "full and compact Ghost++ views accept touch-style button=-1 pointer gestures, use touch-action:none on their handles, move by touch, resize by touch, persist compact dimensions, and remain inside a narrow viewport";');
+    L.push('    });');
+    L.push('  }');
     L.push('');
     // ---- item uiShell.range-slider-blurs-on-change ----
     // Regression guard for a real reported bug: interacting with any
@@ -3294,8 +3416,8 @@ function buildDriverScript() {
     return L.join('\n');
 }
 
-async function buildFixtureHtml(forceCanvas2D, minify) {
-    const head = buildFixtureHead(forceCanvas2D);
+async function buildFixtureHtml(forceCanvas2D, minify, mobileViewport = false) {
+    const head = buildFixtureHead(forceCanvas2D, mobileViewport);
     const source = minify
         ? await readGhostPlusPlusSourceMinified()
         : readFixtureFeatureSource();
@@ -3378,6 +3500,7 @@ async function runBrowserFixture(html, options = {}) {
             '--no-default-browser-check',
             '--mute-audio',
             '--hide-scrollbars',
+            ...(options.windowSize ? [`--window-size=${options.windowSize}`] : []),
             `--user-data-dir=${profileDirectory}`,
             `http://127.0.0.1:${address.port}/`,
         ], {
@@ -3430,12 +3553,12 @@ function parseReportBody(body) {
     }
 }
 
-async function runPass(label, forceCanvas2D, minify = false) {
+async function runPass(label, forceCanvas2D, minify = false, mobileViewport = false) {
     console.log(`\n=== Running pass: ${label} (forceCanvas2D=${forceCanvas2D}${minify ? ', minified' : ''}) ===`);
-    const html = await buildFixtureHtml(forceCanvas2D, minify);
+    const html = await buildFixtureHtml(forceCanvas2D, minify, mobileViewport);
     let outcome;
     try {
-        const { body, stderr } = await runBrowserFixture(html);
+        const { body, stderr } = await runBrowserFixture(html, mobileViewport ? { windowSize: '390,844' } : {});
         const parsed = parseReportBody(body);
         outcome = { label, forceCanvas2D, crashedInfra: false, stderr, parsed };
     } catch (err) {
@@ -3497,6 +3620,7 @@ async function main() {
     const outcomes = [];
     outcomes.push(await runPass('WebGL2-allowed', false));
     outcomes.push(await runPass('Forced-Canvas2D-fallback', true));
+    outcomes.push(await runPass('Mobile-touch-modal', false, false, true));
     // Proves terser minification (build.js's own new size-reduction pass —
     // see that file) doesn't break anything this suite checks: the exact
     // same real Ghost++ source, minified, run through the exact same

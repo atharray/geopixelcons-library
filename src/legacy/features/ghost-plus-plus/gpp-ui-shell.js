@@ -61,7 +61,9 @@
             #${GPP_IDS.modal} {
                 position: fixed; left: 24px; top: 90px; z-index: 2000;
                 display: flex; flex-direction: row;
-                width: min(92vw, 800px); height: 75vh; min-width: 480px; min-height: 320px;
+                width: min(92vw, 800px); height: 75vh;
+                min-width: min(480px, calc(100vw - 16px));
+                min-height: min(320px, calc(100vh - 16px));
                 border-radius: .75rem; overflow: hidden;
                 background: ${t2('#ffffff', '#1e1e2e')}; color: ${t2('#111827', '#f5f5f5')};
                 border: 1px solid ${t2('#d1d5db', '#45475a')};
@@ -106,7 +108,7 @@
                so drop the title to leave it more room before truncating. */
             #${GPP_IDS.modal}.gpp-minified .gpp-head-title { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-left-body {
-                min-height: 0; overflow: hidden !important;
+                display: flex; flex-direction: column; min-height: 0; overflow: hidden !important;
             }
             #${GPP_IDS.modal}.gpp-minified #gpp-left-body > *:not(#gpp-palette-section) { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > summary,
@@ -116,21 +118,32 @@
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-controls-row,
             #${GPP_IDS.modal}.gpp-minified details.gpp-collapsible#gpp-palette-gnc-details { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section {
-                display: flex; flex: 1 1 auto; min-height: 0;
+                display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0;
+                padding: 6px; box-sizing: border-box;
             }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details {
-                display: flex; flex: 1 1 auto; flex-direction: column;
-                min-height: 0; border-top: none; padding: 6px;
+                display: flex; flex: 1 1 0; flex-direction: column;
+                min-height: 0; overflow: hidden; box-sizing: border-box;
+                border-top: none; padding: 0;
             }
-            #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > .gpp-body {
-                display: flex; flex: 1 1 auto; flex-direction: column;
+            #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details::details-content {
+                /* Chromium exposes the native disclosure wrapper through
+                   ::details-content. Give that generated box the same
+                   vertical flex contract as the direct body so the panel
+                   cannot fall back to its intrinsic one-line height. */
+                display: flex; flex: 1 1 0; flex-direction: column;
                 min-height: 0; overflow: hidden;
             }
+            #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > .gpp-body {
+                display: flex; flex: 1 1 0; flex-direction: column;
+                min-height: 0; overflow: hidden;
+                box-sizing: border-box;
+            }
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-panel {
-                flex: 1 1 auto; min-height: 0;
+                flex: 1 1 0; min-height: 0; overflow: hidden;
             }
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-grid {
-                flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto;
+                flex: 1 1 0; min-height: 0; max-height: none; overflow-y: auto;
             }
             /* Only present for the duration of a collapse/expand toggle (see
                the toggle-right handler below) — ports ghost-template-manager.js's
@@ -160,10 +173,12 @@
             #${GPP_IDS.modal}.gpp-minify-transitioning { transition: opacity .14s ease; }
             #${GPP_IDS.modal} .gpp-head {
                 display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: move;
+                touch-action: none; user-select: none; -webkit-user-select: none;
                 background: ${t2('#f8fafc', '#181825')}; border-bottom: 1px solid ${t2('#d1d5db', '#45475a')};
             }
             #${GPP_IDS.modal} .gpp-head .gpp-spacer { flex: 1; }
             #${GPP_IDS.modal} .gpp-head button {
+                position: relative; z-index: 7;
                 border: none; background: transparent; color: inherit; cursor: pointer; font-size: 14px;
             }
             /* Two stacked lines (name, then position) rather than one run-on
@@ -252,6 +267,7 @@
             .gpp-panel-splitter {
                 position: absolute; left: -4px; top: 0; bottom: 0; width: 8px;
                 cursor: ew-resize; z-index: 20; background: transparent; transition: background .15s;
+                touch-action: none; user-select: none; -webkit-user-select: none;
             }
             .gpp-panel-splitter:hover, .gpp-panel-splitter.gpp-ps-dragging { background: rgba(99,102,241,.25); }
             .gpp-collapse-btn {
@@ -259,12 +275,18 @@
                 background: ${t2('#ffffff', '#313244')}; color: inherit; cursor: pointer; font-size: 10px;
                 display: flex; align-items: center; justify-content: center; flex-shrink: 0;
             }
-            .gpp-edge { position: absolute; z-index: 5; cursor: move; }
+            .gpp-edge {
+                position: absolute; z-index: 5; cursor: move;
+                touch-action: none; user-select: none; -webkit-user-select: none;
+            }
             .gpp-edge.n, .gpp-edge.s { left: 12px; right: 12px; height: 6px; }
             .gpp-edge.n { top: 0; } .gpp-edge.s { bottom: 0; }
             .gpp-edge.e, .gpp-edge.w { top: 12px; bottom: 12px; width: 6px; }
             .gpp-edge.e { right: 0; } .gpp-edge.w { left: 0; }
-            .gpp-corner { position: absolute; z-index: 6; width: 14px; height: 14px; }
+            .gpp-corner {
+                position: absolute; z-index: 6; width: 24px; height: 24px;
+                touch-action: none; user-select: none; -webkit-user-select: none;
+            }
             .gpp-corner.nw { top: 0; left: 0; cursor: nwse-resize; }
             .gpp-corner.ne { top: 0; right: 0; cursor: nesw-resize; }
             .gpp-corner.sw { bottom: 0; left: 0; cursor: nesw-resize; }
@@ -604,6 +626,17 @@
         gppWireModalDrag(modal);
         gppWireModalResize(modal);
         gppWirePanelSplitter(modal);
+        const constrainToViewport = () => {
+            if (modal.classList.contains('gpp-hidden')) return;
+            requestAnimationFrame(() => {
+                if (document.body.contains(modal)) gppConstrainModalToViewport(modal);
+            });
+        };
+        window.addEventListener('resize', constrainToViewport, { passive: true });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', constrainToViewport, { passive: true });
+            window.visualViewport.addEventListener('scroll', constrainToViewport, { passive: true });
+        }
         modal.addEventListener('transitionend', event => {
             if (event.target === modal && event.propertyName === 'width') {
                 modal.classList.remove('gpp-modal-animating-width');
@@ -858,6 +891,23 @@
             // realistically just an impatient single click.
             if (modal.classList.contains('gpp-minify-transitioning')) return;
             const btn = modal.querySelector('[data-gpp-action="minify"]');
+            const paletteDetails = modal.querySelector('#gpp-palette-section > details');
+            const enteringMinified = !modal.classList.contains('gpp-minified');
+            // Compact mode hides the Template Colors summary because the
+            // palette is meant to be the whole body. A user can still have
+            // collapsed that native <details> section in full view, though;
+            // when closed, its body stays display:none regardless of the
+            // compact flex/overflow rules below, leaving the compact modal
+            // looking completely blank. Remember the full-view state, force
+            // the palette open for compact mode, and restore the state on
+            // exit so compact mode is independent without changing the
+            // user's normal-view preference.
+            if (paletteDetails) {
+                if (enteringMinified) {
+                    modal.dataset.gppCompactPaletteWasOpen = paletteDetails.open ? 'true' : 'false';
+                    paletteDetails.open = true;
+                }
+            }
             modal.classList.add('gpp-minify-transitioning');
             void modal.offsetHeight; // force the browser to commit the current (opacity:1) frame before the change below, or the transition may have nothing to animate from
             modal.style.opacity = '0.25';
@@ -865,7 +915,11 @@
                 if (event.target !== modal || event.propertyName !== 'opacity') return;
                 modal.removeEventListener('transitionend', onFadeOut);
                 const minified = modal.classList.toggle('gpp-minified'); // the actual (instant) layout swap, now hidden by the low opacity above
-                if (minified) gppApplyCompactSize(modal);
+                if (!minified && paletteDetails && modal.dataset.gppCompactPaletteWasOpen !== undefined) {
+                    paletteDetails.open = modal.dataset.gppCompactPaletteWasOpen === 'true';
+                    delete modal.dataset.gppCompactPaletteWasOpen;
+                }
+                if (typeof gppConstrainModalToViewport === 'function') gppConstrainModalToViewport(modal);
                 if (typeof gppRefreshPaletteViewMode === 'function') gppRefreshPaletteViewMode();
                 btn.title = minified ? 'Exit compact view' : 'Compact view: Enable/Disable all, palette view, and the color grid';
                 btn.setAttribute('aria-label', minified ? 'Exit minified view' : 'Minified view');
@@ -915,7 +969,7 @@
         const splitter = modal.querySelector('[data-gpp-splitter]');
         const right = document.getElementById(GPP_IDS.right);
         splitter.addEventListener('pointerdown', event => {
-            if (event.button !== 0 || right.classList.contains('gpp-collapsed')) return;
+            if (!gppIsPrimaryModalPointer(event) || right.classList.contains('gpp-collapsed')) return;
             event.preventDefault();
             event.stopPropagation();
             const startX = event.clientX;
@@ -926,8 +980,9 @@
             const scale = gppReadModalScale(modal);
             right.style.transition = 'none';
             splitter.classList.add('gpp-ps-dragging');
-            splitter.setPointerCapture(event.pointerId);
+            try { splitter.setPointerCapture(event.pointerId); } catch (_) { /* synthetic events may not have an active pointer */ }
             const onMove = ev => {
+                ev.preventDefault();
                 const delta = (startX - ev.clientX) / scale; // drag left = wider right panel; raw screen-pixel delta -> layout-pixel delta
                 const modalW = modal.offsetWidth;
                 const minW = Math.max(34, Math.floor(modalW * 0.05));
@@ -943,6 +998,7 @@
             };
             splitter.addEventListener('pointermove', onMove);
             splitter.addEventListener('pointerup', onUp);
+            splitter.addEventListener('pointercancel', onUp);
         });
     }
 
@@ -954,7 +1010,8 @@
         modal.querySelectorAll('[data-gpp-drag]').forEach(handle => {
             let drag = null;
             handle.addEventListener('pointerdown', event => {
-                if (event.button !== 0 || event.target.closest('button')) return;
+                if (!gppIsPrimaryModalPointer(event) || event.target.closest('button')) return;
+                event.preventDefault();
                 const rect = modal.getBoundingClientRect();
                 drag = { id: event.pointerId, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
                 // A real pointerdown has an active pointer to capture. Some
@@ -966,11 +1023,13 @@
             });
             handle.addEventListener('pointermove', event => {
                 if (!drag || drag.id !== event.pointerId) return;
-                modal.style.left = Math.max(0, event.clientX - drag.dx) + 'px';
-                modal.style.top = Math.max(0, event.clientY - drag.dy) + 'px';
+                event.preventDefault();
+                gppClampModalPosition(modal, event.clientX - drag.dx, event.clientY - drag.dy);
                 modal.style.right = 'auto';
             });
-            handle.addEventListener('pointerup', event => { if (drag && drag.id === event.pointerId) drag = null; });
+            const finishDrag = event => { if (drag && drag.id === event.pointerId) drag = null; };
+            handle.addEventListener('pointerup', finishDrag);
+            handle.addEventListener('pointercancel', finishDrag);
         });
     }
 
@@ -991,20 +1050,100 @@
 
     const GPP_COMPACT_MIN_WIDTH = 180;
     const GPP_COMPACT_MIN_HEIGHT = 72;
+    const GPP_VIEWPORT_MARGIN = 8;
+
+    // Mouse pointerdown uses button 0 for the primary button. Touch and pen
+    // pointerdown may use -1 because no mouse button changed; rejecting that
+    // value makes the entire modal look non-draggable/non-resizable on phones.
+    function gppIsPrimaryModalPointer(event) {
+        // Older/synthetic PointerEvent constructors leave pointerType empty
+        // and isPrimary false even for the only pointer in the test. Real
+        // touch/pen events identify their type, so only reject a non-primary
+        // event when that type signal is present.
+        if (!event || (event.isPrimary === false && event.pointerType)) return false;
+        const pointerType = event.pointerType || 'mouse';
+        return pointerType === 'mouse' ? event.button === 0 : (event.button === 0 || event.button === -1);
+    }
+
+    function gppVisibleViewport() {
+        const visual = window.visualViewport;
+        const width = visual && Number.isFinite(visual.width) ? visual.width : window.innerWidth;
+        const height = visual && Number.isFinite(visual.height) ? visual.height : window.innerHeight;
+        return {
+            width: Number.isFinite(width) && width > 0 ? width : 1200,
+            height: Number.isFinite(height) && height > 0 ? height : 900,
+        };
+    }
+
+    function gppModalLayoutDimension(modal, axis) {
+        const scale = gppReadModalScale(modal);
+        const rect = modal.getBoundingClientRect();
+        const layout = axis === 'width' ? modal.offsetWidth : modal.offsetHeight;
+        const visual = axis === 'width' ? rect.width : rect.height;
+        return (Number.isFinite(layout) && layout > 0) ? layout
+            : ((Number.isFinite(visual) && visual > 0) ? visual / scale : 1);
+    }
+
+    function gppModalViewportLimit(modal, axis, fixedPosition) {
+        const viewport = gppVisibleViewport();
+        const positionProperty = axis === 'width' ? 'left' : 'top';
+        const rawPosition = fixedPosition === undefined
+            ? parseFloat(getComputedStyle(modal).getPropertyValue(positionProperty))
+            : Number(fixedPosition);
+        const position = Number.isFinite(rawPosition) ? Math.max(GPP_VIEWPORT_MARGIN, rawPosition) : GPP_VIEWPORT_MARGIN;
+        const scale = gppReadModalScale(modal);
+        const available = (viewport[axis] - position - GPP_VIEWPORT_MARGIN) / scale;
+        return Math.max(1, available);
+    }
+
+    function gppClampModalPosition(modal, left, top) {
+        const viewport = gppVisibleViewport();
+        const scale = gppReadModalScale(modal);
+        const visualWidth = gppModalLayoutDimension(modal, 'width') * scale;
+        const visualHeight = gppModalLayoutDimension(modal, 'height') * scale;
+        const maxLeft = Math.max(GPP_VIEWPORT_MARGIN, viewport.width - visualWidth - GPP_VIEWPORT_MARGIN);
+        const maxTop = Math.max(GPP_VIEWPORT_MARGIN, viewport.height - visualHeight - GPP_VIEWPORT_MARGIN);
+        const requestedLeft = Number(left);
+        const requestedTop = Number(top);
+        modal.style.left = Math.min(maxLeft, Math.max(GPP_VIEWPORT_MARGIN,
+            Number.isFinite(requestedLeft) ? requestedLeft : GPP_VIEWPORT_MARGIN)) + 'px';
+        modal.style.top = Math.min(maxTop, Math.max(GPP_VIEWPORT_MARGIN,
+            Number.isFinite(requestedTop) ? requestedTop : GPP_VIEWPORT_MARGIN)) + 'px';
+    }
+
+    function gppClampModalDimension(value, min, max) {
+        const upper = Math.max(1, Number(max));
+        const lower = Math.min(min, upper);
+        return Math.min(upper, Math.max(lower, Number(value)));
+    }
+
+    function gppConstrainModalToViewport(modal) {
+        if (!modal || modal.classList.contains('gpp-hidden')) return;
+        gppClampModalPosition(modal, parseFloat(modal.style.left), parseFloat(modal.style.top));
+        if (modal.classList.contains('gpp-minified')) {
+            gppApplyCompactSize(modal);
+        } else {
+            const maxWidth = gppModalViewportLimit(modal, 'width');
+            const maxHeight = gppModalViewportLimit(modal, 'height');
+            const width = gppModalLayoutDimension(modal, 'width');
+            const height = gppModalLayoutDimension(modal, 'height');
+            if (width > maxWidth) modal.style.width = maxWidth + 'px';
+            if (height > maxHeight) modal.style.height = maxHeight + 'px';
+        }
+        gppClampModalPosition(modal, parseFloat(modal.style.left), parseFloat(modal.style.top));
+    }
 
     function gppCompactViewportLimit(modal, axis) {
-        const viewport = axis === 'width' ? window.innerWidth : window.innerHeight;
-        const safeViewport = Number.isFinite(viewport) && viewport > 0 ? viewport : (axis === 'width' ? 1200 : 900);
-        const positionProperty = axis === 'width' ? 'left' : 'top';
-        const position = parseFloat(getComputedStyle(modal).getPropertyValue(positionProperty));
-        const scale = gppReadModalScale(modal);
-        const available = (safeViewport - Math.max(0, Number.isFinite(position) ? position : 0) - 8) / scale;
-        return Math.max(axis === 'width' ? GPP_COMPACT_MIN_WIDTH : GPP_COMPACT_MIN_HEIGHT, available);
+        return gppModalViewportLimit(modal, axis);
     }
 
     function gppClampCompactDimension(value, fallback, min, max) {
         const parsed = Number(value);
-        return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+        const safeMax = Math.max(1, Number(max));
+        const safeMin = Math.min(min, safeMax);
+        const safeFallback = Number.isFinite(Number(fallback)) ? Number(fallback) : safeMin;
+        return Number.isFinite(parsed) ? Math.min(safeMax, Math.max(safeMin, parsed))
+            : Math.min(safeMax, Math.max(safeMin, safeFallback));
     }
 
     function gppApplyCompactSize(modal) {
@@ -1055,7 +1194,8 @@
             const sides = handle.dataset.gppResize;
             let drag = null;
             handle.addEventListener('pointerdown', event => {
-                if (event.button !== 0) return;
+                if (!gppIsPrimaryModalPointer(event)) return;
+                event.preventDefault();
                 const rect = modal.getBoundingClientRect(); // left/top only -- transform-origin: top left keeps these the same in layout and visual space regardless of scale
                 const compact = modal.classList.contains('gpp-minified');
                 drag = {
@@ -1078,6 +1218,7 @@
             });
             handle.addEventListener('pointermove', event => {
                 if (!drag || drag.id !== event.pointerId) return;
+                event.preventDefault();
                 // Raw screen-pixel cursor delta -> layout-pixel delta: 1
                 // real screen pixel of drag must produce 1 VISUAL pixel of
                 // size change to track the cursor exactly, which means
@@ -1097,37 +1238,34 @@
                     else modal.style.height = height + 'px';
                 };
                 if (sides.includes('e')) {
-                    const maxW = drag.compact ? gppCompactViewportLimit(modal, 'width') : Infinity;
-                    setWidth(Math.min(maxW, Math.max(minW, drag.layoutWidth + dx)));
+                    const maxW = gppModalViewportLimit(modal, 'width');
+                    setWidth(gppClampModalDimension(drag.layoutWidth + dx, minW, maxW));
                 }
                 if (sides.includes('s')) {
-                    const maxH = drag.compact ? gppCompactViewportLimit(modal, 'height') : Infinity;
-                    setHeight(Math.min(maxH, Math.max(minH, drag.layoutHeight + dy)));
+                    const maxH = gppModalViewportLimit(modal, 'height');
+                    setHeight(gppClampModalDimension(drag.layoutHeight + dy, minH, maxH));
                 }
                 if (sides.includes('w')) {
-                    const maxW = drag.compact
-                        ? Math.min(
-                            gppCompactViewportLimit(modal, 'width'),
-                            Math.max(minW, (drag.rect.left + drag.rect.width - 8) / drag.scale),
-                        )
-                        : Infinity;
-                    const width = Math.min(maxW, Math.max(minW, drag.layoutWidth - dx));
+                    const maxW = Math.min(
+                        gppModalViewportLimit(modal, 'width'),
+                        Math.max(1, (drag.rect.left + drag.rect.width - GPP_VIEWPORT_MARGIN) / drag.scale),
+                    );
+                    const width = gppClampModalDimension(drag.layoutWidth - dx, minW, maxW);
                     setWidth(width);
                     // Keep the visual right edge anchored under the cursor:
                     // the new VISUAL width is width * scale, not width.
                     modal.style.left = (drag.rect.left + drag.rect.width - width * drag.scale) + 'px';
                 }
                 if (sides.includes('n')) {
-                    const maxH = drag.compact
-                        ? Math.min(
-                            gppCompactViewportLimit(modal, 'height'),
-                            Math.max(minH, (drag.rect.top + drag.rect.height - 8) / drag.scale),
-                        )
-                        : Infinity;
-                    const height = Math.min(maxH, Math.max(minH, drag.layoutHeight - dy));
+                    const maxH = Math.min(
+                        gppModalViewportLimit(modal, 'height'),
+                        Math.max(1, (drag.rect.top + drag.rect.height - GPP_VIEWPORT_MARGIN) / drag.scale),
+                    );
+                    const height = gppClampModalDimension(drag.layoutHeight - dy, minH, maxH);
                     setHeight(height);
                     modal.style.top = (drag.rect.top + drag.rect.height - height * drag.scale) + 'px';
                 }
+                gppClampModalPosition(modal, parseFloat(modal.style.left), parseFloat(modal.style.top));
             });
             const finishResize = event => {
                 if (!drag || drag.id !== event.pointerId) return;

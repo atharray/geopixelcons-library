@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.13.0';
+    const VERSION = '2.13.1';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1307,6 +1307,16 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.13.1',
+            date: '2026-08-27',
+            items: [
+                { type: 'fixed', text: 'Ghost++: the full and compact views can now be dragged and resized with touch or pen input on mobile, and stay inside the visible viewport when the screen is narrow' },
+                { type: 'fixed', text: 'Ghost++ compact view: the palette grid now gets a constrained scroll area instead of expanding beyond the compact window, so palettes larger than the visible area can be scrolled on desktop and mobile' },
+                { type: 'fixed', text: 'Ghost++ compact view: the palette remains visible even when Template Colors was collapsed in the full view, while that full-view collapse state is restored when compact mode closes' },
+                { type: 'fixed', text: 'Ghost++ compact view: restored the visible palette controls after a browser flex-layout edge case left the mounted panel at zero height' },
+            ]
+        },
         {
             version: '2.13.0',
             date: '2026-08-27',
