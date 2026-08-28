@@ -8,6 +8,7 @@ const legacyCoreSource = readFileSync(new URL('../src/legacy/core.js', import.me
 const paintMenuControlsSource = readFileSync(new URL('../src/legacy/features/hide-paint-menu.js', import.meta.url), 'utf8');
 const controlsScaleSource = readFileSync(new URL('../src/legacy/features/controls-scale.js', import.meta.url), 'utf8');
 const paintingMenuOverhaulSource = readFileSync(new URL('../src/legacy/features/mobile-painting.js', import.meta.url), 'utf8');
+const regionScreenshotSource = readFileSync(new URL('../src/legacy/features/region-screenshot.js', import.meta.url), 'utf8');
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 test('loads as a side-effect-free factory before the main userscript', () => {
@@ -30,7 +31,7 @@ test('publishes the library bridge when @require wraps the source', () => {
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Ghost Template Manager/);
-    assert.match(artifact, /const VERSION = '2\.12\.0';/);
+    assert.match(artifact, /const VERSION = '2\.13\.0';/);
     const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const versionPattern = new RegExp(`const LIBRARY_VERSION = '${escapedVersion}'; // x-release-please-version`);
     assert.match(artifact, versionPattern);
@@ -294,6 +295,45 @@ test('fades blocked users by opacity rather than colour', () => {
 
     // v2 booleans migrate to the new scale without changing what a row did.
     assert.match(artifact, /opacity = \(u && u\.enabled === false\) \? 1 : 0;/);
+});
+
+test('warns before painting over queued pixels owned by blocked users', () => {
+    assert.match(artifact, /function blockedQueuedPixels\(\)/);
+    assert.match(artifact, /queuedPixels\.keys\(\)/);
+    assert.match(artifact, /ownerDataIndex/);
+    assert.match(artifact, /getBlockedQueuedPixels: function \(\)/);
+    assert.match(artifact, /commitPaint: function \(\)/);
+
+    // Capture runs before the native inline onclick="placePixels()" handler,
+    // and confirmation invokes the real page-realm function exactly once.
+    assert.match(artifact, /const PAINT_WARNING_ID = 'gpp-blocked-paint-warning'/);
+    assert.match(artifact, /document\.addEventListener\('click', guardPaintEvent, true\)/);
+    assert.match(artifact, /document\.addEventListener\('keydown', guardPaintEvent, true\)/);
+    assert.match(artifact, /event\.stopImmediatePropagation\(\)/);
+    assert.match(artifact, /Paint over blocked user\?/);
+    assert.match(artifact, /bridge\.commitPaint\(\)/);
+    assert.match(artifact, /No, cancel/);
+    assert.match(artifact, /Yes, paint/);
+});
+
+test('applies blocked-user opacity to region screenshot exports', () => {
+    // Region Screenshot reads the same composed opacity values as the live
+    // blocked-user layer instead of duplicating the global/per-user formula.
+    assert.match(artifact, /getOpacities: function \(\)/);
+    assert.match(regionScreenshotSource, /function getBlockedUserOpacities\(\)/);
+    assert.match(regionScreenshotSource, /bridge\.getOpacities\(\)/);
+
+    // Ownership data is available from both the normal cache and API fallback,
+    // including delta-only tiles.
+    assert.match(regionScreenshotSource, /userBitmap = cached\.userBitmap/);
+    assert.match(regionScreenshotSource, /tileInfo\.UserWebP/);
+    assert.match(regionScreenshotSource, /function buildUserBitmapFromDeltas\(/);
+
+    // The export scales alpha only, so transparent PNGs and solid-background
+    // exports both match the live canvas result.
+    assert.match(regionScreenshotSource, /function applyBlockedUserOpacity\(/);
+    assert.match(regionScreenshotSource, /data\[i \+ 3\] = \(data\[i \+ 3\] \* alpha\) \| 0;/);
+    assert.match(regionScreenshotSource, /applyBlockedUserOpacity\(/);
 });
 
 test('toggles the whole canvas through the tile layer opacity uniform', () => {

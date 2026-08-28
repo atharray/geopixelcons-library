@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.12.0';
+    const VERSION = '2.13.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -39,7 +39,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'extPillHoverLabels', name: 'Hover Labels', icon: '💊', desc: 'Adds the expanding pill-style hover animation with text labels to all submenu buttons under controls-left.', features: ['Expanding pill animation on hover', 'Shows button title/name as a label', 'Applies to all native dropdown submenu buttons', 'Respects dark mode colors', 'MutationObserver-based — detects dynamically added buttons'] },
         { key: 'extJanitorView', name: 'Janitor View', icon: '🛡️', desc: 'Reveals the hidden moderation button for janitors/moderators.', features: ['Removes the hidden class from the moderation group button', 'Makes the 🛡️ Moderation button visible in the controls'] },
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
-        { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Fades out canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Per-user opacity slider with one-click Hide and Show buttons at each end', 'Global slider fades every blocked user at once without losing their individual settings', 'Paste in many IDs at once with a live preview, and unblock several at a time', 'Private per-user notes, plus JSON import/export by clipboard or file', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
+        { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Fades out canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Per-user opacity slider with one-click Hide and Show buttons at each end', 'Global slider fades every blocked user at once without losing their individual settings', 'Warns before painting over pixels placed by a blocked user', 'Paste in many IDs at once with a live preview, and unblock several at a time', 'Private per-user notes, plus JSON import/export by clipboard or file', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
         { key: 'extCanvasToggle', name: 'Canvas Visibility Toggle', icon: '👁️', desc: 'Adds a button to the Image Tools (🖼️) dropdown that fades or hides the entire pixel canvas, leaving the base map visible.', features: ['Click the button for an opacity slider with Hide and Show buttons at each end', 'Any partial fade works, which is handy for tracing over existing art', 'Costs nothing to change — it sets the tile layer\'s opacity rather than redrawing anything', 'Always starts visible after a reload so a hidden canvas can never be mistaken for a broken site'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
@@ -1319,6 +1319,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.13.0',
+            date: '2026-08-24',
+            items: [
+                { type: 'changed', text: 'Region Screenshot: exported images now respect the Blocked User List, including each blocked user\'s effective opacity and the global fade setting' },
+                { type: 'added', text: 'Blocked User List: warns before painting over pixels placed by a blocked user, with the choice to cancel or continue' },
+            ]
+        },
         {
             version: '2.12.0',
             date: '2026-08-24',
@@ -26875,6 +26883,29 @@ patch();
     let selectionCtx = null;
     let screenshotButton = null;
     let _map = null; // resolved MapLibre map object (not the DOM element)
+    const _rscPageWindow = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
+
+    // The Blocked User List owns the opacity formula and publishes only the
+    // active, already-composed fades through its page-realm bridge. Reusing
+    // that result keeps exports identical to the live canvas, including the
+    // interaction between each user's slider and the global slider.
+    function getBlockedUserOpacities() {
+        const opacities = new Map();
+        try {
+            const bridge = _rscPageWindow.__gpcBlockedUsers;
+            if (!bridge || typeof bridge.getOpacities !== 'function') return opacities;
+            const entries = bridge.getOpacities();
+            if (!Array.isArray(entries)) return opacities;
+            entries.forEach((entry) => {
+                const id = Number(entry && entry.id);
+                const alpha = Number(entry && entry.alpha);
+                if (Number.isInteger(id) && Number.isFinite(alpha) && alpha < 1) {
+                    opacities.set(id, Math.max(0, Math.min(1, alpha)));
+                }
+            });
+        } catch (_) {}
+        return opacities;
+    }
 
     // ==================== BACKGROUND PREFERENCES ====================
     function loadBackgroundPreference() {
@@ -27541,11 +27572,78 @@ patch();
         selectionCtx.fillText(sizeText, x + w / 2, y + h / 2);
     }
 
+    // Apply the same per-owner alpha used by the live blocked-user renderer
+    // to the pixels already composed on the export canvas. The user bitmap's
+    // RGB channels encode the last owner's id and its alpha channel marks
+    // whether ownership data exists for that texel.
+    function applyBlockedUserOpacity(outputCtx, userBitmap, tileMinX, tileMinY,
+                                     localStartX, localStartY, destX, destY,
+                                     regionW, regionH, deltas, opacities) {
+        if (!userBitmap || !opacities || opacities.size === 0) return;
+
+        const userCanvas = new OffscreenCanvas(regionW, regionH);
+        const userCtx = userCanvas.getContext('2d', { willReadFrequently: true });
+        userCtx.drawImage(
+            userBitmap,
+            localStartX, localStartY, regionW, regionH,
+            0, 0, regionW, regionH
+        );
+
+        // Keep the ownership view aligned with any API deltas that arrived
+        // alongside the color data. Cached tiles normally already contain the
+        // current userBitmap; this covers uncached delta-only tiles as well.
+        if (deltas && deltas.length > 0) {
+            for (const delta of deltas) {
+                const gx = delta.gridX;
+                const gy = delta.gridY;
+                if (gx < tileMinX || gx > tileMinX + regionW - 1 ||
+                    gy < tileMinY || gy > tileMinY + regionH - 1) continue;
+
+                const ux = gx - tileMinX;
+                const uy = gy - tileMinY;
+                if (delta.color === null) {
+                    userCtx.clearRect(ux, uy, 1, 1);
+                } else if (Number.isInteger(delta.userId)) {
+                    const r = (delta.userId >> 16) & 0xff;
+                    const g = (delta.userId >> 8) & 0xff;
+                    const b = delta.userId & 0xff;
+                    userCtx.fillStyle = `rgb(${r},${g},${b})`;
+                    userCtx.fillRect(ux, uy, 1, 1);
+                }
+            }
+        }
+
+        const owners = userCtx.getImageData(0, 0, regionW, regionH).data;
+        const pixels = outputCtx.getImageData(destX, destY, regionW, regionH);
+        const data = pixels.data;
+
+        for (let i = 0; i < owners.length; i += 4) {
+            if (owners[i + 3] === 0) continue;
+            const userId = (owners[i] << 16) | (owners[i + 1] << 8) | owners[i + 2];
+            const alpha = opacities.get(userId);
+            if (alpha === undefined) continue;
+
+            if (alpha <= 0) {
+                data[i] = 0;
+                data[i + 1] = 0;
+                data[i + 2] = 0;
+                data[i + 3] = 0;
+            } else {
+                // Canvas ImageData is unpremultiplied, matching the live
+                // blocked-user filter's alpha-only scaling behavior.
+                data[i + 3] = (data[i + 3] * alpha) | 0;
+            }
+        }
+
+        outputCtx.putImageData(pixels, destX, destY);
+    }
+
     // ==================== SCREENSHOT RENDERING ====================
     async function renderRegionToCanvas(bounds, updateProgress) {
         const { minX, maxX, minY, maxY } = bounds;
         const outWidth  = maxX - minX + 1;
         const outHeight = maxY - minY + 1;
+        const blockedOpacities = getBlockedUserOpacities();
 
         // Output canvas — transparent background, 1px = 1 grid cell
         const outputCanvas = new OffscreenCanvas(outWidth, outHeight);
@@ -27578,11 +27676,13 @@ patch();
 
             // ---- Try cache first ----
             let colorBitmap = null;
+            let userBitmap = null;
             let deltas = null;
 
             const cached = tileImageCache.get(tileKey);
             if (cached) {
                 colorBitmap = cached.colorBitmap || null;
+                userBitmap = cached.userBitmap || null;
                 deltas = cached.deltas || null;
             }
 
@@ -27592,10 +27692,26 @@ patch();
                 try {
                     const fetched = await fetchTileColorBitmap(tileX, tileY);
                     colorBitmap = fetched.colorBitmap;
+                    userBitmap = fetched.userBitmap;
                     deltas = fetched.deltas;
                 } catch (err) {
                     console.warn(`[Region Screenshot] Could not load tile ${tileKey}:`, err);
                     continue;
+                }
+            }
+
+            // Older cache entries may have color data without ownership data.
+            // Fetch a paired tile only when a blocked export actually needs it.
+            if (colorBitmap && blockedOpacities.size > 0 && !userBitmap) {
+                try {
+                    const fetched = await fetchTileColorBitmap(tileX, tileY);
+                    if (fetched.userBitmap) {
+                        colorBitmap = fetched.colorBitmap || colorBitmap;
+                        userBitmap = fetched.userBitmap;
+                        deltas = fetched.deltas || deltas;
+                    }
+                } catch (err) {
+                    console.warn(`[Region Screenshot] Could not load ownership data for tile ${tileKey}:`, err);
                 }
             }
 
@@ -27648,6 +27764,12 @@ patch();
                     }
                 }
             }
+
+            applyBlockedUserOpacity(
+                outputCtx, userBitmap, tileMinX, tileMinY,
+                localStartX, localStartY, destX, destY,
+                regionW, regionH, deltas, blockedOpacities
+            );
         }
 
         updateProgress && updateProgress('Finalizing…');
@@ -27682,23 +27804,25 @@ patch();
         const tileKey = `tile_${tileX}_${tileY}`;
         const tileInfo = data.Tiles && data.Tiles[tileKey];
 
-        if (!tileInfo) return { colorBitmap: null, deltas: null };
+        if (!tileInfo) return { colorBitmap: null, userBitmap: null, deltas: null };
 
         // Full tile with WebP
         if (tileInfo.Type === 'full' && tileInfo.ColorWebP) {
             const colorBitmap = await decodeWebP(tileInfo.ColorWebP);
+            const userBitmap = tileInfo.UserWebP ? await decodeWebP(tileInfo.UserWebP) : null;
             // Process any bundled deltas
             const deltas = buildDeltasFromRaw(tileInfo.Deltas || []);
-            return { colorBitmap, deltas };
+            return { colorBitmap, userBitmap, deltas };
         }
 
         // Delta-only tile — build a small bitmap from the delta array
         if (tileInfo.Pixels && tileInfo.Pixels.length > 0) {
             const colorBitmap = await buildColorBitmapFromDeltas(tileInfo.Pixels, tileX, tileY);
-            return { colorBitmap, deltas: null };
+            const userBitmap = await buildUserBitmapFromDeltas(tileInfo.Pixels, tileX, tileY);
+            return { colorBitmap, userBitmap, deltas: null };
         }
 
-        return { colorBitmap: null, deltas: null };
+        return { colorBitmap: null, userBitmap: null, deltas: null };
     }
 
     async function decodeWebP(base64Data) {
@@ -27712,12 +27836,19 @@ patch();
 
     function buildDeltasFromRaw(rawDeltas) {
         return rawDeltas.map(p => {
-            const [gridX, gridY, color] = p;
-            if (color === -1) return { gridX, gridY, color: null };
+            const [gridX, gridY, color, userId] = p;
+            if (color === -1) return { gridX, gridY, color: null, userId: null };
             const r = (color >> 16) & 0xff;
             const g = (color >> 8) & 0xff;
             const b = color & 0xff;
-            return { gridX, gridY, color: `rgb(${r},${g},${b})` };
+            return {
+                gridX,
+                gridY,
+                color: `rgb(${r},${g},${b})`,
+                userId: userId !== undefined && userId !== null && Number.isInteger(Number(userId))
+                    ? Number(userId)
+                    : null,
+            };
         });
     }
 
@@ -27729,6 +27860,21 @@ patch();
             const r = (color >> 16) & 0xff;
             const g = (color >> 8) & 0xff;
             const b = color & 0xff;
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(gridX - tileX, gridY - tileY, 1, 1);
+        }
+        return createImageBitmap(canvas);
+    }
+
+    async function buildUserBitmapFromDeltas(rawDeltas, tileX, tileY) {
+        const canvas = new OffscreenCanvas(TILE_SIZE, TILE_SIZE);
+        const ctx = canvas.getContext('2d');
+        for (const [gridX, gridY, color, userId] of rawDeltas) {
+            if (color === -1 || userId === undefined || userId === null ||
+                !Number.isInteger(Number(userId))) continue;
+            const r = (Number(userId) >> 16) & 0xff;
+            const g = (Number(userId) >> 8) & 0xff;
+            const b = Number(userId) & 0xff;
             ctx.fillStyle = `rgb(${r},${g},${b})`;
             ctx.fillRect(gridX - tileX, gridY - tileY, 1, 1);
         }
@@ -28373,6 +28519,7 @@ patch();
             console.error('[GeoPixelcons++] ❌ Region Screenshot failed:', err);
         }
     }
+
 
 
     // ============================================================
@@ -30725,6 +30872,7 @@ var state = { users: new Map(), patched: false, lastInspected: null };
 // key: index.js rebuilds cache entries with {...currentEntry, colorBitmap},
 // which would carry a stale index forward. Identity comparison survives that.
 var idIndex = new Map();
+var ownerDataIndex = new Map();
 
 // Shared scratch canvases. setTile() uploads synchronously via texImage2D
 // before returning, so a single pair can never be observed mid-reuse.
@@ -30760,6 +30908,71 @@ function userIdsIn(ub, w, h) {
         }
     } catch (e) { return null; }
     return ids;
+}
+
+function ownerDataFor(tileKey, ub) {
+    var cached = ownerDataIndex.get(tileKey);
+    if (cached && cached.bmp === ub) return cached;
+    try {
+        var w = ub.width | 0, h = ub.height | 0;
+        if (!w || !h) return null;
+        scratch(w, h);
+        uCtx.drawImage(ub, 0, 0);
+        var data = uCtx.getImageData(0, 0, w, h).data;
+        var next = { bmp: ub, width: w, height: h, data: data };
+        ownerDataIndex.set(tileKey, next);
+        return next;
+    } catch (e) { return null; }
+}
+
+function blockedQueuedPixels() {
+    var result = { count: 0, users: [], unavailable: 0 };
+    if (state.users.size === 0) return result;
+    if (typeof queuedPixels === 'undefined' || !queuedPixels || typeof queuedPixels.keys !== 'function') return result;
+    if (typeof tileImageCache === 'undefined' || !tileImageCache) return result;
+
+    var seenUsers = new Set();
+    var keys = Array.from(queuedPixels.keys());
+    var tileSize = (typeof SYNC_TILE_SIZE !== 'undefined' && Number.isFinite(Number(SYNC_TILE_SIZE)))
+        ? Number(SYNC_TILE_SIZE) : 1000;
+
+    for (var i = 0; i < keys.length; i++) {
+        var rawKey = String(keys[i]);
+        var comma = rawKey.indexOf(',');
+        if (comma < 1) continue;
+        var gridX = Number(rawKey.slice(0, comma));
+        var gridY = Number(rawKey.slice(comma + 1));
+        if (!Number.isInteger(gridX) || !Number.isInteger(gridY)) continue;
+
+        var tileX = Math.floor(gridX / tileSize) * tileSize;
+        var tileY = Math.floor(gridY / tileSize) * tileSize;
+        var tileKey = tileX + ',' + tileY;
+        var entry = tileImageCache.get(tileKey);
+        if (!entry || !entry.userBitmap) {
+            result.unavailable++;
+            continue;
+        }
+
+        var owner = ownerDataFor(tileKey, entry.userBitmap);
+        var localX = gridX - tileX;
+        var localY = gridY - tileY;
+        if (!owner || localX < 0 || localY < 0 || localX >= owner.width || localY >= owner.height) {
+            result.unavailable++;
+            continue;
+        }
+
+        var offset = (localY * owner.width + localX) * 4;
+        if (owner.data[offset + 3] === 0) continue;
+        var userId = (owner.data[offset] << 16) | (owner.data[offset + 1] << 8) | owner.data[offset + 2];
+        if (!state.users.has(userId)) continue;
+
+        result.count++;
+        if (!seenUsers.has(userId)) {
+            seenUsers.add(userId);
+            result.users.push(userId);
+        }
+    }
+    return result;
 }
 
 function filterTile(tileKey, source) {
@@ -30898,6 +31111,23 @@ window.__gpcBlockedUsers = {
         patchLayer();
         refresh();
     },
+    // Region Screenshot uses the same already-composed alpha values for its
+    // exported pixels. Returning only the active fades keeps the screenshot
+    // path out of the sandbox's private storage and avoids duplicating the
+    // global-plus-per-user opacity formula there.
+    getOpacities: function () {
+        return Array.from(state.users.entries()).map(function (entry) {
+            return { id: entry[0], alpha: entry[1] };
+        });
+    },
+    getBlockedQueuedPixels: function () {
+        return blockedQueuedPixels();
+    },
+    commitPaint: function () {
+        if (typeof placePixels !== 'function') return false;
+        placePixels();
+        return true;
+    },
     lastInspected: function () { return state.lastInspected; },
     stats: function () {
         return { patched: state.patched, faded: state.users.size, indexedTiles: idIndex.size };
@@ -30934,6 +31164,123 @@ if (!patchLayer()) {
     }
 
     function commit() { saveStore(); pushToBridge(); }
+
+    // ── pre-paint warning ───────────────────────────────────────
+    // The native Paint button uses an inline onclick="placePixels()", so a
+    // normal bubble listener would run too late. Capture the click (and the
+    // native N shortcut) before the page handler, then call the real page
+    // function only after the user confirms.
+    const PAINT_WARNING_ID = 'gpp-blocked-paint-warning';
+    let paintWarningOpen = false;
+    let paintGuardInstalled = false;
+
+    function openPaintWarning(report, onConfirm) {
+        if (paintWarningOpen) return;
+        paintWarningOpen = true;
+
+        const dark = isDarkMode();
+        const overlay = document.createElement('div');
+        overlay.id = PAINT_WARNING_ID;
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:100002;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);';
+
+        const panel = document.createElement('div');
+        panel.style.cssText = `max-width:420px;margin:20px;padding:24px;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);background:${dark ? '#1e1e2e' : '#ffffff'};color:${dark ? '#cdd6f4' : '#1e293b'};font-family:system-ui,sans-serif;`;
+
+        const title = document.createElement('h2');
+        title.textContent = '⚠️ Paint over blocked user?';
+        title.style.cssText = `margin:0 0 12px;font-size:18px;font-weight:700;color:${dark ? '#f9e2af' : '#92400e'};`;
+
+        const countText = report.count === 1 ? '1 queued pixel' : `${report.count} queued pixels`;
+        const userText = report.users.length === 1 ? 'a user' : `${report.users.length} users`;
+        const message = document.createElement('p');
+        message.textContent = `${countText} will be painted over pixels placed by ${userText} on your Blocked User List. Are you sure you want to continue?`;
+        message.style.cssText = `margin:0;line-height:1.5;font-size:14px;color:${dark ? '#cdd6f4' : '#334155'};`;
+
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;margin-top:20px;';
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.id = 'gpp-blocked-paint-cancel';
+        cancel.textContent = 'No, cancel';
+        cancel.style.cssText = `padding:9px 16px;border:1px solid ${dark ? '#45475a' : '#e2e8f0'};border-radius:8px;background:${dark ? '#585b70' : '#e2e8f0'};color:${dark ? '#cdd6f4' : '#1e293b'};cursor:pointer;font-size:13px;`;
+
+        const confirm = document.createElement('button');
+        confirm.type = 'button';
+        confirm.id = 'gpp-blocked-paint-confirm';
+        confirm.textContent = 'Yes, paint';
+        confirm.style.cssText = `padding:9px 16px;border:0;border-radius:8px;background:${dark ? '#89b4fa' : '#3b82f6'};color:${dark ? '#1e1e2e' : '#ffffff'};cursor:pointer;font-size:13px;font-weight:600;`;
+
+        const close = () => {
+            paintWarningOpen = false;
+            overlay.remove();
+        };
+        cancel.addEventListener('click', close);
+        confirm.addEventListener('click', () => {
+            close();
+            onConfirm();
+        });
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        overlay.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); close(); }
+        });
+
+        actions.appendChild(cancel);
+        actions.appendChild(confirm);
+        panel.appendChild(title);
+        panel.appendChild(message);
+        panel.appendChild(actions);
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+        cancel.focus();
+    }
+
+    function isEditablePaintTarget(target) {
+        return !!(target && (
+            target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.isContentEditable
+        ));
+    }
+
+    function guardPaintEvent(event) {
+        if (event.type === 'click') {
+            const target = event.target;
+            const button = target && typeof target.closest === 'function'
+                ? target.closest('#commitBtn')
+                : null;
+            if (!button || button.disabled) return;
+        } else {
+            if (event.repeat || event.key.toLowerCase() !== 'n' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            if (isEditablePaintTarget(event.target)) return;
+        }
+
+        const bridge = _pw.__gpcBlockedUsers;
+        if (!bridge || typeof bridge.getBlockedQueuedPixels !== 'function' || typeof bridge.commitPaint !== 'function') return;
+
+        let report;
+        try { report = bridge.getBlockedQueuedPixels(); } catch (_) { return; }
+        if (!report || report.count <= 0) return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (paintWarningOpen) return;
+
+        openPaintWarning(report, () => {
+            try {
+                if (!bridge.commitPaint()) console.warn('[GeoPixelcons++] Could not continue the native paint action.');
+            } catch (err) {
+                console.error('[GeoPixelcons++] Native paint confirmation failed:', err);
+            }
+        });
+    }
+
+    function installPaintWarning() {
+        if (paintGuardInstalled) return;
+        paintGuardInstalled = true;
+        document.addEventListener('click', guardPaintEvent, true);
+        document.addEventListener('keydown', guardPaintEvent, true);
+    }
 
     // ── name resolution ──────────────────────────────────────────
     // Same endpoint and payload shape the native pixel inspector uses.
@@ -31892,6 +32239,7 @@ if (!patchLayer()) {
     function init() {
         installBridge();
         pushToBridge();
+        installPaintWarning();
 
         document.addEventListener('gpp:pixelUserInspected', (e) => updateHoverButton(e.detail));
 

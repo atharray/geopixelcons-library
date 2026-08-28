@@ -24,6 +24,29 @@
     let selectionCtx = null;
     let screenshotButton = null;
     let _map = null; // resolved MapLibre map object (not the DOM element)
+    const _rscPageWindow = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
+
+    // The Blocked User List owns the opacity formula and publishes only the
+    // active, already-composed fades through its page-realm bridge. Reusing
+    // that result keeps exports identical to the live canvas, including the
+    // interaction between each user's slider and the global slider.
+    function getBlockedUserOpacities() {
+        const opacities = new Map();
+        try {
+            const bridge = _rscPageWindow.__gpcBlockedUsers;
+            if (!bridge || typeof bridge.getOpacities !== 'function') return opacities;
+            const entries = bridge.getOpacities();
+            if (!Array.isArray(entries)) return opacities;
+            entries.forEach((entry) => {
+                const id = Number(entry && entry.id);
+                const alpha = Number(entry && entry.alpha);
+                if (Number.isInteger(id) && Number.isFinite(alpha) && alpha < 1) {
+                    opacities.set(id, Math.max(0, Math.min(1, alpha)));
+                }
+            });
+        } catch (_) {}
+        return opacities;
+    }
 
     // ==================== BACKGROUND PREFERENCES ====================
     function loadBackgroundPreference() {
@@ -690,11 +713,78 @@
         selectionCtx.fillText(sizeText, x + w / 2, y + h / 2);
     }
 
+    // Apply the same per-owner alpha used by the live blocked-user renderer
+    // to the pixels already composed on the export canvas. The user bitmap's
+    // RGB channels encode the last owner's id and its alpha channel marks
+    // whether ownership data exists for that texel.
+    function applyBlockedUserOpacity(outputCtx, userBitmap, tileMinX, tileMinY,
+                                     localStartX, localStartY, destX, destY,
+                                     regionW, regionH, deltas, opacities) {
+        if (!userBitmap || !opacities || opacities.size === 0) return;
+
+        const userCanvas = new OffscreenCanvas(regionW, regionH);
+        const userCtx = userCanvas.getContext('2d', { willReadFrequently: true });
+        userCtx.drawImage(
+            userBitmap,
+            localStartX, localStartY, regionW, regionH,
+            0, 0, regionW, regionH
+        );
+
+        // Keep the ownership view aligned with any API deltas that arrived
+        // alongside the color data. Cached tiles normally already contain the
+        // current userBitmap; this covers uncached delta-only tiles as well.
+        if (deltas && deltas.length > 0) {
+            for (const delta of deltas) {
+                const gx = delta.gridX;
+                const gy = delta.gridY;
+                if (gx < tileMinX || gx > tileMinX + regionW - 1 ||
+                    gy < tileMinY || gy > tileMinY + regionH - 1) continue;
+
+                const ux = gx - tileMinX;
+                const uy = gy - tileMinY;
+                if (delta.color === null) {
+                    userCtx.clearRect(ux, uy, 1, 1);
+                } else if (Number.isInteger(delta.userId)) {
+                    const r = (delta.userId >> 16) & 0xff;
+                    const g = (delta.userId >> 8) & 0xff;
+                    const b = delta.userId & 0xff;
+                    userCtx.fillStyle = `rgb(${r},${g},${b})`;
+                    userCtx.fillRect(ux, uy, 1, 1);
+                }
+            }
+        }
+
+        const owners = userCtx.getImageData(0, 0, regionW, regionH).data;
+        const pixels = outputCtx.getImageData(destX, destY, regionW, regionH);
+        const data = pixels.data;
+
+        for (let i = 0; i < owners.length; i += 4) {
+            if (owners[i + 3] === 0) continue;
+            const userId = (owners[i] << 16) | (owners[i + 1] << 8) | owners[i + 2];
+            const alpha = opacities.get(userId);
+            if (alpha === undefined) continue;
+
+            if (alpha <= 0) {
+                data[i] = 0;
+                data[i + 1] = 0;
+                data[i + 2] = 0;
+                data[i + 3] = 0;
+            } else {
+                // Canvas ImageData is unpremultiplied, matching the live
+                // blocked-user filter's alpha-only scaling behavior.
+                data[i + 3] = (data[i + 3] * alpha) | 0;
+            }
+        }
+
+        outputCtx.putImageData(pixels, destX, destY);
+    }
+
     // ==================== SCREENSHOT RENDERING ====================
     async function renderRegionToCanvas(bounds, updateProgress) {
         const { minX, maxX, minY, maxY } = bounds;
         const outWidth  = maxX - minX + 1;
         const outHeight = maxY - minY + 1;
+        const blockedOpacities = getBlockedUserOpacities();
 
         // Output canvas — transparent background, 1px = 1 grid cell
         const outputCanvas = new OffscreenCanvas(outWidth, outHeight);
@@ -727,11 +817,13 @@
 
             // ---- Try cache first ----
             let colorBitmap = null;
+            let userBitmap = null;
             let deltas = null;
 
             const cached = tileImageCache.get(tileKey);
             if (cached) {
                 colorBitmap = cached.colorBitmap || null;
+                userBitmap = cached.userBitmap || null;
                 deltas = cached.deltas || null;
             }
 
@@ -741,10 +833,26 @@
                 try {
                     const fetched = await fetchTileColorBitmap(tileX, tileY);
                     colorBitmap = fetched.colorBitmap;
+                    userBitmap = fetched.userBitmap;
                     deltas = fetched.deltas;
                 } catch (err) {
                     console.warn(`[Region Screenshot] Could not load tile ${tileKey}:`, err);
                     continue;
+                }
+            }
+
+            // Older cache entries may have color data without ownership data.
+            // Fetch a paired tile only when a blocked export actually needs it.
+            if (colorBitmap && blockedOpacities.size > 0 && !userBitmap) {
+                try {
+                    const fetched = await fetchTileColorBitmap(tileX, tileY);
+                    if (fetched.userBitmap) {
+                        colorBitmap = fetched.colorBitmap || colorBitmap;
+                        userBitmap = fetched.userBitmap;
+                        deltas = fetched.deltas || deltas;
+                    }
+                } catch (err) {
+                    console.warn(`[Region Screenshot] Could not load ownership data for tile ${tileKey}:`, err);
                 }
             }
 
@@ -797,6 +905,12 @@
                     }
                 }
             }
+
+            applyBlockedUserOpacity(
+                outputCtx, userBitmap, tileMinX, tileMinY,
+                localStartX, localStartY, destX, destY,
+                regionW, regionH, deltas, blockedOpacities
+            );
         }
 
         updateProgress && updateProgress('Finalizing…');
@@ -831,23 +945,25 @@
         const tileKey = `tile_${tileX}_${tileY}`;
         const tileInfo = data.Tiles && data.Tiles[tileKey];
 
-        if (!tileInfo) return { colorBitmap: null, deltas: null };
+        if (!tileInfo) return { colorBitmap: null, userBitmap: null, deltas: null };
 
         // Full tile with WebP
         if (tileInfo.Type === 'full' && tileInfo.ColorWebP) {
             const colorBitmap = await decodeWebP(tileInfo.ColorWebP);
+            const userBitmap = tileInfo.UserWebP ? await decodeWebP(tileInfo.UserWebP) : null;
             // Process any bundled deltas
             const deltas = buildDeltasFromRaw(tileInfo.Deltas || []);
-            return { colorBitmap, deltas };
+            return { colorBitmap, userBitmap, deltas };
         }
 
         // Delta-only tile — build a small bitmap from the delta array
         if (tileInfo.Pixels && tileInfo.Pixels.length > 0) {
             const colorBitmap = await buildColorBitmapFromDeltas(tileInfo.Pixels, tileX, tileY);
-            return { colorBitmap, deltas: null };
+            const userBitmap = await buildUserBitmapFromDeltas(tileInfo.Pixels, tileX, tileY);
+            return { colorBitmap, userBitmap, deltas: null };
         }
 
-        return { colorBitmap: null, deltas: null };
+        return { colorBitmap: null, userBitmap: null, deltas: null };
     }
 
     async function decodeWebP(base64Data) {
@@ -861,12 +977,19 @@
 
     function buildDeltasFromRaw(rawDeltas) {
         return rawDeltas.map(p => {
-            const [gridX, gridY, color] = p;
-            if (color === -1) return { gridX, gridY, color: null };
+            const [gridX, gridY, color, userId] = p;
+            if (color === -1) return { gridX, gridY, color: null, userId: null };
             const r = (color >> 16) & 0xff;
             const g = (color >> 8) & 0xff;
             const b = color & 0xff;
-            return { gridX, gridY, color: `rgb(${r},${g},${b})` };
+            return {
+                gridX,
+                gridY,
+                color: `rgb(${r},${g},${b})`,
+                userId: userId !== undefined && userId !== null && Number.isInteger(Number(userId))
+                    ? Number(userId)
+                    : null,
+            };
         });
     }
 
@@ -878,6 +1001,21 @@
             const r = (color >> 16) & 0xff;
             const g = (color >> 8) & 0xff;
             const b = color & 0xff;
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(gridX - tileX, gridY - tileY, 1, 1);
+        }
+        return createImageBitmap(canvas);
+    }
+
+    async function buildUserBitmapFromDeltas(rawDeltas, tileX, tileY) {
+        const canvas = new OffscreenCanvas(TILE_SIZE, TILE_SIZE);
+        const ctx = canvas.getContext('2d');
+        for (const [gridX, gridY, color, userId] of rawDeltas) {
+            if (color === -1 || userId === undefined || userId === null ||
+                !Number.isInteger(Number(userId))) continue;
+            const r = (Number(userId) >> 16) & 0xff;
+            const g = (Number(userId) >> 8) & 0xff;
+            const b = Number(userId) & 0xff;
             ctx.fillStyle = `rgb(${r},${g},${b})`;
             ctx.fillRect(gridX - tileX, gridY - tileY, 1, 1);
         }
