@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.1](https://github.com/atharray/geopixelcons-library/compare/v2.13.0...v2.13.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **ghost-plus-plus:** restore compact palette visibility ([38ddbc6](https://github.com/atharray/geopixelcons-library/commit/38ddbc6a5789ce566b9ac387c42407ba248e11dd))
+
 ## [2.13.0](https://github.com/atharray/geopixelcons-library/compare/v2.12.0...v2.13.0) (2026-08-28)
 
 
