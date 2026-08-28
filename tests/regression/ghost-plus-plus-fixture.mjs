@@ -2687,6 +2687,9 @@ function buildDriverScript() {
     L.push('    if (gppSettings.paletteViewMode !== "list") throw new Error("test setup: full Ghost++ view did not switch to List before entering compact mode");');
     L.push('    gppSettings.compactPaletteViewMode = "grid";');
     L.push('    gppState.saveSettings();');
+    L.push('    var compactPaletteDetails = modal.querySelector("#gpp-palette-section > details");');
+    L.push('    if (!compactPaletteDetails) throw new Error("test setup: Template Colors details section not found");');
+    L.push('    compactPaletteDetails.open = false;');
     L.push('    // The minify button now cross-fades (gppRunMinifyTransition) rather than');
     L.push('    // toggling .gpp-minified synchronously -- wait for the transitionend-driven');
     L.push('    // swap to actually land instead of asserting immediately after .click().');
@@ -2704,6 +2707,7 @@ function buildDriverScript() {
     L.push('    if (!compactGridBtn || !compactListBtn) throw new Error("compact minified view is missing its Grid/List palette buttons");');
     L.push('    if (gppSettings.compactPaletteViewMode !== "grid") throw new Error("compact mode did not start with its independent Grid preference");');
     L.push('    if (!compactGridBtn.classList.contains("gpp-vs-view-btn-active") || compactListBtn.classList.contains("gpp-vs-view-btn-active")) throw new Error("expected compact Grid to be active independently of the full-menu List preference");');
+    L.push('    if (!compactPaletteDetails.open) throw new Error("REGRESSION: entering compact view left the Template Colors details section closed, so the compact palette body is invisible");');
     L.push('    if (!document.querySelector(".gpp-palette-grid") || document.querySelector(".gpp-palette-grid").classList.contains("gpp-palette-list-mode")) throw new Error("compact mode did not render its independent Grid layout");');
     L.push('    var compactPaletteGrid = modal.querySelector(".gpp-palette-grid");');
     L.push('    var compactPaletteSeed = compactPaletteGrid && compactPaletteGrid.firstElementChild;');
@@ -2754,6 +2758,7 @@ function buildDriverScript() {
     L.push('    var exitedMinified = await waitFor(function() { return !modal.classList.contains("gpp-minified"); }, 2000);');
     L.push('    if (!exitedMinified) throw new Error("clicking the minify button a second time did not exit minified view in time");');
     L.push('    if (getComputedStyle(rightPanel).display === "none") throw new Error("REGRESSION: the right panel stayed hidden after exiting minified view");');
+    L.push('    if (compactPaletteDetails.open) throw new Error("REGRESSION: exiting compact view failed to restore the full-view Template Colors collapse state");');
     L.push('    var settledAtNormal = await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000);');
     L.push('    if (!settledAtNormal) throw new Error("the exit-minify transition never finished (still fading)");');
     L.push('    minifyBtn.click();');

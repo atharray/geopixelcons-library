@@ -880,6 +880,23 @@
             // realistically just an impatient single click.
             if (modal.classList.contains('gpp-minify-transitioning')) return;
             const btn = modal.querySelector('[data-gpp-action="minify"]');
+            const paletteDetails = modal.querySelector('#gpp-palette-section > details');
+            const enteringMinified = !modal.classList.contains('gpp-minified');
+            // Compact mode hides the Template Colors summary because the
+            // palette is meant to be the whole body. A user can still have
+            // collapsed that native <details> section in full view, though;
+            // when closed, its body stays display:none regardless of the
+            // compact flex/overflow rules below, leaving the compact modal
+            // looking completely blank. Remember the full-view state, force
+            // the palette open for compact mode, and restore the state on
+            // exit so compact mode is independent without changing the
+            // user's normal-view preference.
+            if (paletteDetails) {
+                if (enteringMinified) {
+                    modal.dataset.gppCompactPaletteWasOpen = paletteDetails.open ? 'true' : 'false';
+                    paletteDetails.open = true;
+                }
+            }
             modal.classList.add('gpp-minify-transitioning');
             void modal.offsetHeight; // force the browser to commit the current (opacity:1) frame before the change below, or the transition may have nothing to animate from
             modal.style.opacity = '0.25';
@@ -887,6 +904,10 @@
                 if (event.target !== modal || event.propertyName !== 'opacity') return;
                 modal.removeEventListener('transitionend', onFadeOut);
                 const minified = modal.classList.toggle('gpp-minified'); // the actual (instant) layout swap, now hidden by the low opacity above
+                if (!minified && paletteDetails && modal.dataset.gppCompactPaletteWasOpen !== undefined) {
+                    paletteDetails.open = modal.dataset.gppCompactPaletteWasOpen === 'true';
+                    delete modal.dataset.gppCompactPaletteWasOpen;
+                }
                 if (typeof gppConstrainModalToViewport === 'function') gppConstrainModalToViewport(modal);
                 if (typeof gppRefreshPaletteViewMode === 'function') gppRefreshPaletteViewMode();
                 btn.title = minified ? 'Exit compact view' : 'Compact view: Enable/Disable all, palette view, and the color grid';
