@@ -1312,6 +1312,7 @@
             date: '2026-08-26',
             items: [
                 { type: 'fixed', text: 'Ghost++: the full and compact views can now be dragged and resized with touch or pen input on mobile, and stay inside the visible viewport when the screen is narrow' },
+                { type: 'fixed', text: 'Ghost++ compact view: the palette grid now gets a constrained scroll area instead of expanding beyond the compact window, so palettes larger than the visible area can be scrolled on desktop and mobile' },
             ]
         },
         {

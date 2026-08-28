@@ -2705,6 +2705,19 @@ function buildDriverScript() {
     L.push('    if (gppSettings.compactPaletteViewMode !== "grid") throw new Error("compact mode did not start with its independent Grid preference");');
     L.push('    if (!compactGridBtn.classList.contains("gpp-vs-view-btn-active") || compactListBtn.classList.contains("gpp-vs-view-btn-active")) throw new Error("expected compact Grid to be active independently of the full-menu List preference");');
     L.push('    if (!document.querySelector(".gpp-palette-grid") || document.querySelector(".gpp-palette-grid").classList.contains("gpp-palette-list-mode")) throw new Error("compact mode did not render its independent Grid layout");');
+    L.push('    var compactPaletteGrid = modal.querySelector(".gpp-palette-grid");');
+    L.push('    var compactPaletteSeed = compactPaletteGrid && compactPaletteGrid.firstElementChild;');
+    L.push('    var compactPaletteOriginalCount = compactPaletteGrid ? compactPaletteGrid.children.length : 0;');
+    L.push('    if (!compactPaletteGrid || !compactPaletteSeed) throw new Error("test setup: compact palette grid did not render a seed swatch");');
+    L.push('    for (var extraSwatch = 0; extraSwatch < 40; extraSwatch++) compactPaletteGrid.appendChild(compactPaletteSeed.cloneNode(true));');
+    L.push('    await new Promise(function(resolve) { requestAnimationFrame(resolve); });');
+    L.push('    var compactPaletteStyle = getComputedStyle(compactPaletteGrid);');
+    L.push('    if (compactPaletteStyle.overflowY !== "auto" && compactPaletteStyle.overflowY !== "scroll") throw new Error("REGRESSION: compact palette grid does not expose vertical overflow, overflow-y=" + compactPaletteStyle.overflowY);');
+    L.push('    if (!(compactPaletteGrid.clientHeight > 0) || !(compactPaletteGrid.scrollHeight > compactPaletteGrid.clientHeight + 1)) throw new Error("REGRESSION: compact palette grid expanded to its content instead of becoming scrollable: " + JSON.stringify({ clientHeight: compactPaletteGrid.clientHeight, scrollHeight: compactPaletteGrid.scrollHeight, panelHeight: modal.offsetHeight }));');
+    L.push('    compactPaletteGrid.scrollTop = compactPaletteGrid.scrollHeight;');
+    L.push('    if (!(compactPaletteGrid.scrollTop > 0)) throw new Error("REGRESSION: compact palette grid reports overflow but cannot scroll vertically");');
+    L.push('    compactPaletteGrid.scrollTop = 0;');
+    L.push('    while (compactPaletteGrid.children.length > compactPaletteOriginalCount) compactPaletteGrid.lastElementChild.remove();');
     L.push('    compactListBtn.click();');
     L.push('    if (gppSettings.compactPaletteViewMode !== "list") throw new Error("clicking the compact List button did not persist gppSettings.compactPaletteViewMode=list");');
     L.push('    if (gppSettings.paletteViewMode !== "list") throw new Error("compact List click incorrectly changed the full-menu palette preference");');
@@ -2755,7 +2768,7 @@ function buildDriverScript() {
     L.push('    if (!exitedAfterResize) throw new Error("clicking the minify button after the resize persistence check did not exit compact view");');
     L.push('    var settledAfterResizeExit = await waitFor(function() { return !modal.classList.contains("gpp-minify-transitioning"); }, 2000);');
     L.push('    if (!settledAfterResizeExit) throw new Error("the final exit-minify transition never finished before the next interaction test");');
-    L.push('    return "Rescale Ghost++ only applies once the slider is released (\'change\', not \'input\'), live-updating --gpp-scale and persisting to gppSettings.uiScale; full and compact palette Grid/List preferences stay independent, and compact corner resizing persists width/height across compact re-entry";');
+    L.push('    return "Rescale Ghost++ only applies once the slider is released (\'change\', not \'input\'), live-updating --gpp-scale and persisting to gppSettings.uiScale; full and compact palette Grid/List preferences stay independent, the compact palette grid owns a real scrollable overflow area, and compact corner resizing persists width/height across compact re-entry";');
     L.push('  });');
     L.push('');
     // Mobile regression guard for the actual interaction failure: touch/pen

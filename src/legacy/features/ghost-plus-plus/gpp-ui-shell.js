@@ -108,7 +108,7 @@
                so drop the title to leave it more room before truncating. */
             #${GPP_IDS.modal}.gpp-minified .gpp-head-title { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-left-body {
-                min-height: 0; overflow: hidden !important;
+                display: flex; flex-direction: column; min-height: 0; overflow: hidden !important;
             }
             #${GPP_IDS.modal}.gpp-minified #gpp-left-body > *:not(#gpp-palette-section) { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > summary,
@@ -121,18 +121,18 @@
                 display: flex; flex: 1 1 auto; min-height: 0;
             }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details {
-                display: flex; flex: 1 1 auto; flex-direction: column;
-                min-height: 0; border-top: none; padding: 6px;
+                display: flex; flex: 1 1 0; flex-direction: column;
+                min-height: 0; overflow: hidden; border-top: none; padding: 6px;
             }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > .gpp-body {
-                display: flex; flex: 1 1 auto; flex-direction: column;
+                display: flex; flex: 1 1 0; flex-direction: column;
                 min-height: 0; overflow: hidden;
             }
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-panel {
-                flex: 1 1 auto; min-height: 0;
+                flex: 1 1 0; min-height: 0; overflow: hidden;
             }
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-grid {
-                flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto;
+                flex: 1 1 0; min-height: 0; max-height: none; overflow-y: auto;
             }
             /* Only present for the duration of a collapse/expand toggle (see
                the toggle-right handler below) — ports ghost-template-manager.js's
