@@ -2780,6 +2780,10 @@ function buildDriverScript() {
     L.push('      var resizeHandle = modal.querySelector(".gpp-corner.se");');
     L.push('      if (!head || !resizeHandle) throw new Error("test setup: full-view touch handles are missing");');
     L.push('      if (getComputedStyle(head).touchAction !== "none" || getComputedStyle(resizeHandle).touchAction !== "none") throw new Error("REGRESSION: full-view drag/resize surfaces do not opt out of browser touch gestures");');
+    L.push('      function hitTests(handle, xRatio, yRatio) { var rect = handle.getBoundingClientRect(); var hit = document.elementFromPoint(rect.left + rect.width * (xRatio === undefined ? 0.5 : xRatio), rect.top + rect.height * (yRatio === undefined ? 0.5 : yRatio)); return hit === handle || (hit && hit.closest && hit.closest("[data-gpp-resize]") === handle); }');
+    L.push('      if (!hitTests(resizeHandle)) throw new Error("REGRESSION: the full-view SE resize corner is not the topmost hit target at its visible center");');
+    L.push('      if (resizeHandle.getBoundingClientRect().width < 24 || resizeHandle.getBoundingClientRect().height < 24) throw new Error("REGRESSION: the full-view resize corner hit target is smaller than 24px for touch use");');
+    L.push('      if (!hitTests(resizeHandle, 0.2, 0.2)) throw new Error("REGRESSION: the full-view SE resize corner is not the topmost hit target across its touch area");');
     L.push('      function touchPointer(type, pointerId, x, y) { return new PointerEvent(type, { bubbles: true, button: -1, pointerId: pointerId, pointerType: "touch", isPrimary: true, clientX: x, clientY: y }); }');
     L.push('      var dragBefore = modal.getBoundingClientRect();');
     L.push('      head.dispatchEvent(touchPointer("pointerdown", 91, dragBefore.left + 24, dragBefore.top + 20));');
@@ -2806,6 +2810,8 @@ function buildDriverScript() {
     L.push('      var compactHead = modal.querySelector(".gpp-head");');
     L.push('      var compactResizeHandle = modal.querySelector(".gpp-corner.se");');
     L.push('      if (getComputedStyle(compactHead).touchAction !== "none" || getComputedStyle(compactResizeHandle).touchAction !== "none") throw new Error("REGRESSION: compact-view drag/resize surfaces do not opt out of browser touch gestures");');
+    L.push('      if (compactResizeHandle.getBoundingClientRect().width < 24 || compactResizeHandle.getBoundingClientRect().height < 24) throw new Error("REGRESSION: the compact-view resize corner hit target is smaller than 24px for touch use");');
+    L.push('      if (!hitTests(compactResizeHandle, 0.2, 0.2)) throw new Error("REGRESSION: the compact-view SE resize corner is not the topmost hit target across its touch area");');
     L.push('      var compactDragBefore = modal.getBoundingClientRect();');
     L.push('      compactHead.dispatchEvent(touchPointer("pointerdown", 93, compactDragBefore.left + 24, compactDragBefore.top + 20));');
     L.push('      compactHead.dispatchEvent(touchPointer("pointermove", 93, compactDragBefore.left + 54, compactDragBefore.top + 42));');

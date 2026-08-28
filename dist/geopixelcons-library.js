@@ -5568,6 +5568,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             }
             #${GPP_IDS.modal} .gpp-head .gpp-spacer { flex: 1; }
             #${GPP_IDS.modal} .gpp-head button {
+                position: relative; z-index: 7;
                 border: none; background: transparent; color: inherit; cursor: pointer; font-size: 14px;
             }
             /* Two stacked lines (name, then position) rather than one run-on
@@ -5673,7 +5674,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             .gpp-edge.e, .gpp-edge.w { top: 12px; bottom: 12px; width: 6px; }
             .gpp-edge.e { right: 0; } .gpp-edge.w { left: 0; }
             .gpp-corner {
-                position: absolute; z-index: 6; width: 14px; height: 14px;
+                position: absolute; z-index: 6; width: 24px; height: 24px;
                 touch-action: none; user-select: none; -webkit-user-select: none;
             }
             .gpp-corner.nw { top: 0; left: 0; cursor: nwse-resize; }
