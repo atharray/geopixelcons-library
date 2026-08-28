@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.0](https://github.com/atharray/geopixelcons-library/compare/v2.12.0...v2.13.0) (2026-08-28)
+
+
+### Features
+
+* **region-screenshot:** honor blocked-user opacity in exports ([#54](https://github.com/atharray/geopixelcons-library/issues/54)) ([95e1d80](https://github.com/atharray/geopixelcons-library/commit/95e1d80bfe6703ea8c1ff020f1db77aeeeca78e9))
+
 ## [2.12.0](https://github.com/atharray/geopixelcons-library/compare/v2.11.0...v2.12.0) (2026-08-24)
 
 
