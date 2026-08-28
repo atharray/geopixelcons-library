@@ -56,7 +56,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -3479,6 +3479,20 @@ async function runBrowserFixture(html, options = {}) {
     const browserPath = findBrowser();
     assert(browserPath, 'Chrome or Edge was not found; set CHROME_PATH or BROWSER_PATH');
     const profileDirectory = mkdtempSync(join(tmpdir(), 'gpp-fixture-'));
+    const downloadDirectory = join(profileDirectory, 'downloads');
+    const defaultProfileDirectory = join(profileDirectory, 'Default');
+    mkdirSync(downloadDirectory, { recursive: true });
+    mkdirSync(defaultProfileDirectory, { recursive: true });
+    // The fixture deliberately exercises the real export path, which clicks
+    // an <a download>. Keep those test artifacts inside the disposable
+    // browser profile instead of Chrome's normal user Downloads directory.
+    writeFileSync(join(defaultProfileDirectory, 'Preferences'), JSON.stringify({
+        download: {
+            default_directory: downloadDirectory,
+            prompt_for_download: false,
+            directory_upgrade: true,
+        },
+    }), 'utf8');
     let stdout = '';
     let stderr = '';
     let browser;
