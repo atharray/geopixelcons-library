@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.12.0 - readable release bundle */
+/* GeoPixelcons Library v2.13.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.13.0'; // x-release-please-version
@@ -1321,7 +1321,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const CHANGELOG = [
         {
             version: '2.13.0',
-            date: '2026-08-24',
+            date: '2026-08-27',
             items: [
                 { type: 'changed', text: 'Region Screenshot: exported images now respect the Blocked User List, including each blocked user\'s effective opacity and the global fade setting' },
                 { type: 'added', text: 'Blocked User List: warns before painting over pixels placed by a blocked user, with the choice to cancel or continue' },
