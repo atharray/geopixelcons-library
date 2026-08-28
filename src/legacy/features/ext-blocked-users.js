@@ -142,6 +142,7 @@ var state = { users: new Map(), patched: false, lastInspected: null };
 // key: index.js rebuilds cache entries with {...currentEntry, colorBitmap},
 // which would carry a stale index forward. Identity comparison survives that.
 var idIndex = new Map();
+var ownerDataIndex = new Map();
 
 // Shared scratch canvases. setTile() uploads synchronously via texImage2D
 // before returning, so a single pair can never be observed mid-reuse.
@@ -177,6 +178,71 @@ function userIdsIn(ub, w, h) {
         }
     } catch (e) { return null; }
     return ids;
+}
+
+function ownerDataFor(tileKey, ub) {
+    var cached = ownerDataIndex.get(tileKey);
+    if (cached && cached.bmp === ub) return cached;
+    try {
+        var w = ub.width | 0, h = ub.height | 0;
+        if (!w || !h) return null;
+        scratch(w, h);
+        uCtx.drawImage(ub, 0, 0);
+        var data = uCtx.getImageData(0, 0, w, h).data;
+        var next = { bmp: ub, width: w, height: h, data: data };
+        ownerDataIndex.set(tileKey, next);
+        return next;
+    } catch (e) { return null; }
+}
+
+function blockedQueuedPixels() {
+    var result = { count: 0, users: [], unavailable: 0 };
+    if (state.users.size === 0) return result;
+    if (typeof queuedPixels === 'undefined' || !queuedPixels || typeof queuedPixels.keys !== 'function') return result;
+    if (typeof tileImageCache === 'undefined' || !tileImageCache) return result;
+
+    var seenUsers = new Set();
+    var keys = Array.from(queuedPixels.keys());
+    var tileSize = (typeof SYNC_TILE_SIZE !== 'undefined' && Number.isFinite(Number(SYNC_TILE_SIZE)))
+        ? Number(SYNC_TILE_SIZE) : 1000;
+
+    for (var i = 0; i < keys.length; i++) {
+        var rawKey = String(keys[i]);
+        var comma = rawKey.indexOf(',');
+        if (comma < 1) continue;
+        var gridX = Number(rawKey.slice(0, comma));
+        var gridY = Number(rawKey.slice(comma + 1));
+        if (!Number.isInteger(gridX) || !Number.isInteger(gridY)) continue;
+
+        var tileX = Math.floor(gridX / tileSize) * tileSize;
+        var tileY = Math.floor(gridY / tileSize) * tileSize;
+        var tileKey = tileX + ',' + tileY;
+        var entry = tileImageCache.get(tileKey);
+        if (!entry || !entry.userBitmap) {
+            result.unavailable++;
+            continue;
+        }
+
+        var owner = ownerDataFor(tileKey, entry.userBitmap);
+        var localX = gridX - tileX;
+        var localY = gridY - tileY;
+        if (!owner || localX < 0 || localY < 0 || localX >= owner.width || localY >= owner.height) {
+            result.unavailable++;
+            continue;
+        }
+
+        var offset = (localY * owner.width + localX) * 4;
+        if (owner.data[offset + 3] === 0) continue;
+        var userId = (owner.data[offset] << 16) | (owner.data[offset + 1] << 8) | owner.data[offset + 2];
+        if (!state.users.has(userId)) continue;
+
+        result.count++;
+        if (!seenUsers.has(userId)) {
+            seenUsers.add(userId);
+            result.users.push(userId);
+        }
+    }
+    return result;
 }
 
 function filterTile(tileKey, source) {
@@ -315,6 +381,23 @@ window.__gpcBlockedUsers = {
         patchLayer();
         refresh();
     },
+    // Region Screenshot uses the same already-composed alpha values for its
+    // exported pixels. Returning only the active fades keeps the screenshot
+    // path out of the sandbox's private storage and avoids duplicating the
+    // global-plus-per-user opacity formula there.
+    getOpacities: function () {
+        return Array.from(state.users.entries()).map(function (entry) {
+            return { id: entry[0], alpha: entry[1] };
+        });
+    },
+    getBlockedQueuedPixels: function () {
+        return blockedQueuedPixels();
+    },
+    commitPaint: function () {
+        if (typeof placePixels !== 'function') return false;
+        placePixels();
+        return true;
+    },
     lastInspected: function () { return state.lastInspected; },
     stats: function () {
         return { patched: state.patched, faded: state.users.size, indexedTiles: idIndex.size };
@@ -351,6 +434,123 @@ if (!patchLayer()) {
     }
 
     function commit() { saveStore(); pushToBridge(); }
+
+    // ── pre-paint warning ───────────────────────────────────────
+    // The native Paint button uses an inline onclick="placePixels()", so a
+    // normal bubble listener would run too late. Capture the click (and the
+    // native N shortcut) before the page handler, then call the real page
+    // function only after the user confirms.
+    const PAINT_WARNING_ID = 'gpp-blocked-paint-warning';
+    let paintWarningOpen = false;
+    let paintGuardInstalled = false;
+
+    function openPaintWarning(report, onConfirm) {
+        if (paintWarningOpen) return;
+        paintWarningOpen = true;
+
+        const dark = isDarkMode();
+        const overlay = document.createElement('div');
+        overlay.id = PAINT_WARNING_ID;
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:100002;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);';
+
+        const panel = document.createElement('div');
+        panel.style.cssText = `max-width:420px;margin:20px;padding:24px;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);background:${dark ? '#1e1e2e' : '#ffffff'};color:${dark ? '#cdd6f4' : '#1e293b'};font-family:system-ui,sans-serif;`;
+
+        const title = document.createElement('h2');
+        title.textContent = '⚠️ Paint over blocked user?';
+        title.style.cssText = `margin:0 0 12px;font-size:18px;font-weight:700;color:${dark ? '#f9e2af' : '#92400e'};`;
+
+        const countText = report.count === 1 ? '1 queued pixel' : `${report.count} queued pixels`;
+        const userText = report.users.length === 1 ? 'a user' : `${report.users.length} users`;
+        const message = document.createElement('p');
+        message.textContent = `${countText} will be painted over pixels placed by ${userText} on your Blocked User List. Are you sure you want to continue?`;
+        message.style.cssText = `margin:0;line-height:1.5;font-size:14px;color:${dark ? '#cdd6f4' : '#334155'};`;
+
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;margin-top:20px;';
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.id = 'gpp-blocked-paint-cancel';
+        cancel.textContent = 'No, cancel';
+        cancel.style.cssText = `padding:9px 16px;border:1px solid ${dark ? '#45475a' : '#e2e8f0'};border-radius:8px;background:${dark ? '#585b70' : '#e2e8f0'};color:${dark ? '#cdd6f4' : '#1e293b'};cursor:pointer;font-size:13px;`;
+
+        const confirm = document.createElement('button');
+        confirm.type = 'button';
+        confirm.id = 'gpp-blocked-paint-confirm';
+        confirm.textContent = 'Yes, paint';
+        confirm.style.cssText = `padding:9px 16px;border:0;border-radius:8px;background:${dark ? '#89b4fa' : '#3b82f6'};color:${dark ? '#1e1e2e' : '#ffffff'};cursor:pointer;font-size:13px;font-weight:600;`;
+
+        const close = () => {
+            paintWarningOpen = false;
+            overlay.remove();
+        };
+        cancel.addEventListener('click', close);
+        confirm.addEventListener('click', () => {
+            close();
+            onConfirm();
+        });
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        overlay.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); close(); }
+        });
+
+        actions.appendChild(cancel);
+        actions.appendChild(confirm);
+        panel.appendChild(title);
+        panel.appendChild(message);
+        panel.appendChild(actions);
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+        cancel.focus();
+    }
+
+    function isEditablePaintTarget(target) {
+        return !!(target && (
+            target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.isContentEditable
+        ));
+    }
+
+    function guardPaintEvent(event) {
+        if (event.type === 'click') {
+            const target = event.target;
+            const button = target && typeof target.closest === 'function'
+                ? target.closest('#commitBtn')
+                : null;
+            if (!button || button.disabled) return;
+        } else {
+            if (event.repeat || event.key.toLowerCase() !== 'n' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            if (isEditablePaintTarget(event.target)) return;
+        }
+
+        const bridge = _pw.__gpcBlockedUsers;
+        if (!bridge || typeof bridge.getBlockedQueuedPixels !== 'function' || typeof bridge.commitPaint !== 'function') return;
+
+        let report;
+        try { report = bridge.getBlockedQueuedPixels(); } catch (_) { return; }
+        if (!report || report.count <= 0) return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (paintWarningOpen) return;
+
+        openPaintWarning(report, () => {
+            try {
+                if (!bridge.commitPaint()) console.warn('[GeoPixelcons++] Could not continue the native paint action.');
+            } catch (err) {
+                console.error('[GeoPixelcons++] Native paint confirmation failed:', err);
+            }
+        });
+    }
+
+    function installPaintWarning() {
+        if (paintGuardInstalled) return;
+        paintGuardInstalled = true;
+        document.addEventListener('click', guardPaintEvent, true);
+        document.addEventListener('keydown', guardPaintEvent, true);
+    }
 
     // ── name resolution ──────────────────────────────────────────
     // Same endpoint and payload shape the native pixel inspector uses.
@@ -1309,6 +1509,7 @@ if (!patchLayer()) {
     function init() {
         installBridge();
         pushToBridge();
+        installPaintWarning();
 
         document.addEventListener('gpp:pixelUserInspected', (e) => updateHoverButton(e.detail));
 

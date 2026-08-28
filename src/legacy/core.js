@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.12.1';
+    const VERSION = '2.13.1';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -27,7 +27,7 @@
         { key: 'extPillHoverLabels', name: 'Hover Labels', icon: '💊', desc: 'Adds the expanding pill-style hover animation with text labels to all submenu buttons under controls-left.', features: ['Expanding pill animation on hover', 'Shows button title/name as a label', 'Applies to all native dropdown submenu buttons', 'Respects dark mode colors', 'MutationObserver-based — detects dynamically added buttons'] },
         { key: 'extJanitorView', name: 'Janitor View', icon: '🛡️', desc: 'Reveals the hidden moderation button for janitors/moderators.', features: ['Removes the hidden class from the moderation group button', 'Makes the 🛡️ Moderation button visible in the controls'] },
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
-        { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Fades out canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Per-user opacity slider with one-click Hide and Show buttons at each end', 'Global slider fades every blocked user at once without losing their individual settings', 'Paste in many IDs at once with a live preview, and unblock several at a time', 'Private per-user notes, plus JSON import/export by clipboard or file', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
+        { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Fades out canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Per-user opacity slider with one-click Hide and Show buttons at each end', 'Global slider fades every blocked user at once without losing their individual settings', 'Warns before painting over pixels placed by a blocked user', 'Paste in many IDs at once with a live preview, and unblock several at a time', 'Private per-user notes, plus JSON import/export by clipboard or file', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
         { key: 'extCanvasToggle', name: 'Canvas Visibility Toggle', icon: '👁️', desc: 'Adds a button to the Image Tools (🖼️) dropdown that fades or hides the entire pixel canvas, leaving the base map visible.', features: ['Click the button for an opacity slider with Hide and Show buttons at each end', 'Any partial fade works, which is handy for tracing over existing art', 'Costs nothing to change — it sets the tile layer\'s opacity rather than redrawing anything', 'Always starts visible after a reload so a hidden canvas can never be mistaken for a broken site'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
@@ -1308,13 +1308,21 @@
     // ============================================================
     const CHANGELOG = [
         {
-            version: '2.12.1',
-            date: '2026-08-26',
+            version: '2.13.1',
+            date: '2026-08-27',
             items: [
                 { type: 'fixed', text: 'Ghost++: the full and compact views can now be dragged and resized with touch or pen input on mobile, and stay inside the visible viewport when the screen is narrow' },
                 { type: 'fixed', text: 'Ghost++ compact view: the palette grid now gets a constrained scroll area instead of expanding beyond the compact window, so palettes larger than the visible area can be scrolled on desktop and mobile' },
                 { type: 'fixed', text: 'Ghost++ compact view: the palette remains visible even when Template Colors was collapsed in the full view, while that full-view collapse state is restored when compact mode closes' },
                 { type: 'fixed', text: 'Ghost++ compact view: restored the visible palette controls after a browser flex-layout edge case left the mounted panel at zero height' },
+            ]
+        },
+        {
+            version: '2.13.0',
+            date: '2026-08-27',
+            items: [
+                { type: 'changed', text: 'Region Screenshot: exported images now respect the Blocked User List, including each blocked user\'s effective opacity and the global fade setting' },
+                { type: 'added', text: 'Blocked User List: warns before painting over pixels placed by a blocked user, with the choice to cancel or continue' },
             ]
         },
         {
