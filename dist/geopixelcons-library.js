@@ -1326,6 +1326,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Ghost++: the full and compact views can now be dragged and resized with touch or pen input on mobile, and stay inside the visible viewport when the screen is narrow' },
                 { type: 'fixed', text: 'Ghost++ compact view: the palette grid now gets a constrained scroll area instead of expanding beyond the compact window, so palettes larger than the visible area can be scrolled on desktop and mobile' },
                 { type: 'fixed', text: 'Ghost++ compact view: the palette remains visible even when Template Colors was collapsed in the full view, while that full-view collapse state is restored when compact mode closes' },
+                { type: 'fixed', text: 'Ghost++ compact view: restored the visible palette controls after a browser flex-layout edge case left the mounted panel at zero height' },
             ]
         },
         {
@@ -5521,15 +5522,26 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-controls-row,
             #${GPP_IDS.modal}.gpp-minified details.gpp-collapsible#gpp-palette-gnc-details { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section {
-                display: flex; flex: 1 1 auto; min-height: 0;
+                display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0;
+                padding: 6px; box-sizing: border-box;
             }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details {
                 display: flex; flex: 1 1 0; flex-direction: column;
-                min-height: 0; overflow: hidden; border-top: none; padding: 6px;
+                min-height: 0; overflow: hidden; box-sizing: border-box;
+                border-top: none; padding: 0;
+            }
+            #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details::details-content {
+                /* Chromium exposes the native disclosure wrapper through
+                   ::details-content. Give that generated box the same
+                   vertical flex contract as the direct body so the panel
+                   cannot fall back to its intrinsic one-line height. */
+                display: flex; flex: 1 1 0; flex-direction: column;
+                min-height: 0; overflow: hidden;
             }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > .gpp-body {
                 display: flex; flex: 1 1 0; flex-direction: column;
                 min-height: 0; overflow: hidden;
+                box-sizing: border-box;
             }
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-panel {
                 flex: 1 1 0; min-height: 0; overflow: hidden;

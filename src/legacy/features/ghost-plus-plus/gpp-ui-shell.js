@@ -118,15 +118,26 @@
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-controls-row,
             #${GPP_IDS.modal}.gpp-minified details.gpp-collapsible#gpp-palette-gnc-details { display: none !important; }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section {
-                display: flex; flex: 1 1 auto; min-height: 0;
+                display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0;
+                padding: 6px; box-sizing: border-box;
             }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details {
                 display: flex; flex: 1 1 0; flex-direction: column;
-                min-height: 0; overflow: hidden; border-top: none; padding: 6px;
+                min-height: 0; overflow: hidden; box-sizing: border-box;
+                border-top: none; padding: 0;
+            }
+            #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details::details-content {
+                /* Chromium exposes the native disclosure wrapper through
+                   ::details-content. Give that generated box the same
+                   vertical flex contract as the direct body so the panel
+                   cannot fall back to its intrinsic one-line height. */
+                display: flex; flex: 1 1 0; flex-direction: column;
+                min-height: 0; overflow: hidden;
             }
             #${GPP_IDS.modal}.gpp-minified #gpp-palette-section > details > .gpp-body {
                 display: flex; flex: 1 1 0; flex-direction: column;
                 min-height: 0; overflow: hidden;
+                box-sizing: border-box;
             }
             #${GPP_IDS.modal}.gpp-minified .gpp-palette-panel {
                 flex: 1 1 0; min-height: 0; overflow: hidden;
