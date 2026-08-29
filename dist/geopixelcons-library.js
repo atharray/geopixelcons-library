@@ -1323,7 +1323,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             version: '2.13.2',
             date: '2026-08-29',
             items: [
-                { type: 'fixed', text: 'Ghost++ compact view: the menu now opens at a taller 300px height, giving the palette and its scroll area enough room to be immediately understandable' },
+                { type: 'fixed', text: 'Ghost++ compact view: the menu now opens at a taller 225px height, giving the palette and its scroll area more room to be immediately understandable' },
                 { type: 'added', text: 'Ghost++: the corner being dragged now gets a subtle light-green tint that fades away when resizing ends, in both full and compact views' },
             ]
         },
@@ -4174,7 +4174,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         paletteViewMode: 'grid', // 'grid' | 'list' for the full Ghost++ menu
         compactPaletteViewMode: 'grid', // independent 'grid' | 'list' choice for the compact menu
         compactWidth: 260,       // remembered compact-menu width in layout pixels
-        compactHeight: 300,      // remembered compact-menu height in layout pixels; tall enough to expose the palette
+        compactHeight: 225,      // remembered compact-menu height in layout pixels; tall enough to expose the palette
         uiScale: 1,              // 0.5-1.5; whole-modal transform: scale() factor — see View Settings' "Rescale Ghost++" (gpp-view-settings.js) and gpp-ui-shell.js's --gpp-scale
     });
 
@@ -5515,7 +5515,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                so nothing needs to be re-rendered when toggling in or out. */
             #${GPP_IDS.modal}.gpp-minified {
                 width: min(var(--gpp-compact-width, 260px), calc(100vw - 16px)) !important; min-width: 0 !important;
-                height: min(var(--gpp-compact-height, 300px), calc(100vh - 16px)) !important; min-height: 0 !important;
+                height: min(var(--gpp-compact-height, 225px), calc(100vh - 16px)) !important; min-height: 0 !important;
             }
             #${GPP_IDS.modal}.gpp-minified #${GPP_IDS.right},
             #${GPP_IDS.modal}.gpp-minified .gpp-edge { display: none !important; }
@@ -6475,7 +6475,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     }
 
     const GPP_COMPACT_MIN_WIDTH = 180;
-    const GPP_COMPACT_MIN_HEIGHT = 300;
+    const GPP_COMPACT_MIN_HEIGHT = 225;
     const GPP_VIEWPORT_MARGIN = 8;
 
     // Mouse pointerdown uses button 0 for the primary button. Touch and pen
@@ -6583,7 +6583,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         if (typeof gppSettings.compactHeight === 'number' && Number.isFinite(gppSettings.compactHeight)) {
             const height = gppClampCompactDimension(
                 gppSettings.compactHeight,
-                300,
+                225,
                 GPP_COMPACT_MIN_HEIGHT,
                 gppCompactViewportLimit(modal, 'height'),
             );
@@ -6603,7 +6603,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             GPP_COMPACT_MIN_WIDTH,
             gppCompactViewportLimit(modal, 'width'),
         );
-        const heightFallback = modal.offsetHeight > 0 ? modal.offsetHeight : 300;
+        const heightFallback = modal.offsetHeight > 0 ? modal.offsetHeight : 225;
         const height = gppClampCompactDimension(
             heightStyle,
             heightFallback,

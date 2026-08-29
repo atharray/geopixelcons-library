@@ -2734,7 +2734,7 @@ function buildDriverScript() {
     L.push('    if (!compactHandle || getComputedStyle(compactHandle).display === "none") throw new Error("compact mode resize handle is not visible");');
     L.push('    var compactWidthBefore = modal.offsetWidth;');
     L.push('    var compactHeightBefore = modal.offsetHeight;');
-    L.push('    if (compactHeightBefore < 300) throw new Error("REGRESSION: compact mode opened shorter than its 300px usable default height: " + compactHeightBefore + "px");');
+    L.push('    if (compactHeightBefore < 225) throw new Error("REGRESSION: compact mode opened shorter than its 225px usable default height: " + compactHeightBefore + "px");');
     L.push('    var compactBoundsBefore = modal.getBoundingClientRect();');
     L.push('    if (compactBoundsBefore.right > window.innerWidth + 1 || compactBoundsBefore.bottom > window.innerHeight + 1) throw new Error("REGRESSION: compact mode default bounds extend beyond the viewport: " + JSON.stringify({ right: compactBoundsBefore.right, bottom: compactBoundsBefore.bottom, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }));');
     L.push('    var compactPointerId = 73;');
@@ -2818,7 +2818,7 @@ function buildDriverScript() {
     L.push('      }');
     L.push('      // Use the normal compact defaults so a previous desktop-size preference does not make the test window fill the entire mobile viewport before the drag assertion.');
     L.push('      gppSettings.compactWidth = 260;');
-    L.push('      gppSettings.compactHeight = 300;');
+    L.push('      gppSettings.compactHeight = 225;');
     L.push('      gppState.saveSettings();');
     L.push('      var fullBefore = modal.getBoundingClientRect();');
     L.push('      if (fullBefore.right > window.innerWidth + 1 || fullBefore.bottom > window.innerHeight + 1) throw new Error("REGRESSION: full Ghost++ view is outside the mobile viewport after opening: " + JSON.stringify({ right: fullBefore.right, bottom: fullBefore.bottom, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }));');

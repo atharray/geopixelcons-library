@@ -95,7 +95,7 @@
                so nothing needs to be re-rendered when toggling in or out. */
             #${GPP_IDS.modal}.gpp-minified {
                 width: min(var(--gpp-compact-width, 260px), calc(100vw - 16px)) !important; min-width: 0 !important;
-                height: min(var(--gpp-compact-height, 300px), calc(100vh - 16px)) !important; min-height: 0 !important;
+                height: min(var(--gpp-compact-height, 225px), calc(100vh - 16px)) !important; min-height: 0 !important;
             }
             #${GPP_IDS.modal}.gpp-minified #${GPP_IDS.right},
             #${GPP_IDS.modal}.gpp-minified .gpp-edge { display: none !important; }
@@ -1055,7 +1055,7 @@
     }
 
     const GPP_COMPACT_MIN_WIDTH = 180;
-    const GPP_COMPACT_MIN_HEIGHT = 300;
+    const GPP_COMPACT_MIN_HEIGHT = 225;
     const GPP_VIEWPORT_MARGIN = 8;
 
     // Mouse pointerdown uses button 0 for the primary button. Touch and pen
@@ -1163,7 +1163,7 @@
         if (typeof gppSettings.compactHeight === 'number' && Number.isFinite(gppSettings.compactHeight)) {
             const height = gppClampCompactDimension(
                 gppSettings.compactHeight,
-                300,
+                225,
                 GPP_COMPACT_MIN_HEIGHT,
                 gppCompactViewportLimit(modal, 'height'),
             );
@@ -1183,7 +1183,7 @@
             GPP_COMPACT_MIN_WIDTH,
             gppCompactViewportLimit(modal, 'width'),
         );
-        const heightFallback = modal.offsetHeight > 0 ? modal.offsetHeight : 300;
+        const heightFallback = modal.offsetHeight > 0 ? modal.offsetHeight : 225;
         const height = gppClampCompactDimension(
             heightStyle,
             heightFallback,

@@ -1311,7 +1311,7 @@
             version: '2.13.2',
             date: '2026-08-29',
             items: [
-                { type: 'fixed', text: 'Ghost++ compact view: the menu now opens at a taller 300px height, giving the palette and its scroll area enough room to be immediately understandable' },
+                { type: 'fixed', text: 'Ghost++ compact view: the menu now opens at a taller 225px height, giving the palette and its scroll area more room to be immediately understandable' },
                 { type: 'added', text: 'Ghost++: the corner being dragged now gets a subtle light-green tint that fades away when resizing ends, in both full and compact views' },
             ]
         },
