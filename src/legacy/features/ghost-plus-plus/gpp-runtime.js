@@ -30,7 +30,7 @@
         paletteViewMode: 'grid', // 'grid' | 'list' for the full Ghost++ menu
         compactPaletteViewMode: 'grid', // independent 'grid' | 'list' choice for the compact menu
         compactWidth: 260,       // remembered compact-menu width in layout pixels
-        compactHeight: 160,      // remembered compact-menu height in layout pixels; short by default
+        compactHeight: 300,      // remembered compact-menu height in layout pixels; tall enough to expose the palette
         uiScale: 1,              // 0.5-1.5; whole-modal transform: scale() factor — see View Settings' "Rescale Ghost++" (gpp-view-settings.js) and gpp-ui-shell.js's --gpp-scale
     });
 

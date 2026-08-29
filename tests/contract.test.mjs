@@ -31,7 +31,7 @@ test('publishes the library bridge when @require wraps the source', () => {
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Ghost Template Manager/);
-    assert.match(artifact, /const VERSION = '2\.13\.1';/);
+    assert.match(artifact, /const VERSION = '2\.13\.2';/);
     const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const versionPattern = new RegExp(`const LIBRARY_VERSION = '${escapedVersion}'; // x-release-please-version`);
     assert.match(artifact, versionPattern);
@@ -153,11 +153,13 @@ test('keeps native controls scale independent and places its setting below Map M
 test('keeps compact Ghost++ palette state and size separate from the full menu', () => {
     assert.match(artifact, /compactPaletteViewMode: 'grid'/);
     assert.match(artifact, /compactWidth: 260/);
-    assert.match(artifact, /compactHeight: 160/);
+    assert.match(artifact, /compactHeight: 300/);
     assert.match(artifact, /gppSettings\.compactPaletteViewMode/);
     assert.match(artifact, /--gpp-compact-width/);
     assert.match(artifact, /--gpp-compact-height/);
     assert.match(artifact, /function gppPersistCompactSize\(modal\)/);
+    assert.match(artifact, /GPP_COMPACT_MIN_HEIGHT = 300/);
+    assert.match(artifact, /gpp-resize-active/);
 });
 test('includes a confirmation gate for large bulk purchases', () => {
     assert.match(artifact, /BULK_PURCHASE_WARNING_THRESHOLD = 50/);
