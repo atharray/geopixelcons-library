@@ -95,7 +95,7 @@
                so nothing needs to be re-rendered when toggling in or out. */
             #${GPP_IDS.modal}.gpp-minified {
                 width: min(var(--gpp-compact-width, 260px), calc(100vw - 16px)) !important; min-width: 0 !important;
-                height: min(var(--gpp-compact-height, 160px), calc(100vh - 16px)) !important; min-height: 0 !important;
+                height: min(var(--gpp-compact-height, 225px), calc(100vh - 16px)) !important; min-height: 0 !important;
             }
             #${GPP_IDS.modal}.gpp-minified #${GPP_IDS.right},
             #${GPP_IDS.modal}.gpp-minified .gpp-edge { display: none !important; }
@@ -286,6 +286,12 @@
             .gpp-corner {
                 position: absolute; z-index: 6; width: 24px; height: 24px;
                 touch-action: none; user-select: none; -webkit-user-select: none;
+                background: transparent; border-radius: 7px;
+                transition: background-color .18s ease, box-shadow .18s ease;
+            }
+            .gpp-corner.gpp-resize-active {
+                background-color: ${t2('rgba(34,197,94,.25)', 'rgba(166,227,161,.42)')};
+                box-shadow: inset 0 0 0 1px ${t2('rgba(22,101,52,.45)', 'rgba(166,227,161,.65)')};
             }
             .gpp-corner.nw { top: 0; left: 0; cursor: nwse-resize; }
             .gpp-corner.ne { top: 0; right: 0; cursor: nesw-resize; }
@@ -856,7 +862,7 @@
         // or at least some type of minified view with only what you need to
         // paint"): a compact mode showing ONLY the Enable all/Disable all
         // buttons, the palette Grid/List control, and the color grid
-        // (height-capped to ~2 rows, scrollable)
+        // (height-capped with a usable scrollable palette area)
         // -- everything else (ingest, Progress, Error Settings, View
         // Settings, Template Settings, the whole right panel/library) is
         // hidden via the .gpp-minified CSS below. Pure CSS toggle, not a
@@ -1049,7 +1055,7 @@
     }
 
     const GPP_COMPACT_MIN_WIDTH = 180;
-    const GPP_COMPACT_MIN_HEIGHT = 72;
+    const GPP_COMPACT_MIN_HEIGHT = 225;
     const GPP_VIEWPORT_MARGIN = 8;
 
     // Mouse pointerdown uses button 0 for the primary button. Touch and pen
@@ -1157,7 +1163,7 @@
         if (typeof gppSettings.compactHeight === 'number' && Number.isFinite(gppSettings.compactHeight)) {
             const height = gppClampCompactDimension(
                 gppSettings.compactHeight,
-                160,
+                225,
                 GPP_COMPACT_MIN_HEIGHT,
                 gppCompactViewportLimit(modal, 'height'),
             );
@@ -1177,7 +1183,7 @@
             GPP_COMPACT_MIN_WIDTH,
             gppCompactViewportLimit(modal, 'width'),
         );
-        const heightFallback = modal.offsetHeight > 0 ? modal.offsetHeight : 120;
+        const heightFallback = modal.offsetHeight > 0 ? modal.offsetHeight : 225;
         const height = gppClampCompactDimension(
             heightStyle,
             heightFallback,
@@ -1211,6 +1217,7 @@
                     scale: gppReadModalScale(modal),
                     compact,
                 };
+                handle.classList.add('gpp-resize-active');
                 // Pointer capture is best-effort: synthetic events and a few
                 // embedded browser contexts have no active pointer to capture.
                 try { handle.setPointerCapture(event.pointerId); } catch (_) { /* no active pointer to capture */ }
@@ -1270,6 +1277,7 @@
             const finishResize = event => {
                 if (!drag || drag.id !== event.pointerId) return;
                 if (drag.compact) gppPersistCompactSize(modal);
+                handle.classList.remove('gpp-resize-active');
                 drag = null;
             };
             handle.addEventListener('pointerup', finishResize);

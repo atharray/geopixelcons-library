@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.13.0 - readable release bundle */
+/* GeoPixelcons Library v2.13.1 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.13.1'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.13.1';
+    const VERSION = '2.13.2';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1319,6 +1319,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.13.2',
+            date: '2026-08-29',
+            items: [
+                { type: 'fixed', text: 'Ghost++ compact view: the menu now opens at a taller 225px height, giving the palette and its scroll area more room to be immediately understandable' },
+                { type: 'added', text: 'Ghost++: the corner being dragged now gets a subtle light-green tint that fades away when resizing ends, in both full and compact views' },
+            ]
+        },
         {
             version: '2.13.1',
             date: '2026-08-27',
@@ -4166,7 +4174,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         paletteViewMode: 'grid', // 'grid' | 'list' for the full Ghost++ menu
         compactPaletteViewMode: 'grid', // independent 'grid' | 'list' choice for the compact menu
         compactWidth: 260,       // remembered compact-menu width in layout pixels
-        compactHeight: 160,      // remembered compact-menu height in layout pixels; short by default
+        compactHeight: 225,      // remembered compact-menu height in layout pixels; tall enough to expose the palette
         uiScale: 1,              // 0.5-1.5; whole-modal transform: scale() factor — see View Settings' "Rescale Ghost++" (gpp-view-settings.js) and gpp-ui-shell.js's --gpp-scale
     });
 
@@ -5507,7 +5515,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                so nothing needs to be re-rendered when toggling in or out. */
             #${GPP_IDS.modal}.gpp-minified {
                 width: min(var(--gpp-compact-width, 260px), calc(100vw - 16px)) !important; min-width: 0 !important;
-                height: min(var(--gpp-compact-height, 160px), calc(100vh - 16px)) !important; min-height: 0 !important;
+                height: min(var(--gpp-compact-height, 225px), calc(100vh - 16px)) !important; min-height: 0 !important;
             }
             #${GPP_IDS.modal}.gpp-minified #${GPP_IDS.right},
             #${GPP_IDS.modal}.gpp-minified .gpp-edge { display: none !important; }
@@ -5698,6 +5706,12 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             .gpp-corner {
                 position: absolute; z-index: 6; width: 24px; height: 24px;
                 touch-action: none; user-select: none; -webkit-user-select: none;
+                background: transparent; border-radius: 7px;
+                transition: background-color .18s ease, box-shadow .18s ease;
+            }
+            .gpp-corner.gpp-resize-active {
+                background-color: ${t2('rgba(34,197,94,.25)', 'rgba(166,227,161,.42)')};
+                box-shadow: inset 0 0 0 1px ${t2('rgba(22,101,52,.45)', 'rgba(166,227,161,.65)')};
             }
             .gpp-corner.nw { top: 0; left: 0; cursor: nwse-resize; }
             .gpp-corner.ne { top: 0; right: 0; cursor: nesw-resize; }
@@ -6268,7 +6282,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         // or at least some type of minified view with only what you need to
         // paint"): a compact mode showing ONLY the Enable all/Disable all
         // buttons, the palette Grid/List control, and the color grid
-        // (height-capped to ~2 rows, scrollable)
+        // (height-capped with a usable scrollable palette area)
         // -- everything else (ingest, Progress, Error Settings, View
         // Settings, Template Settings, the whole right panel/library) is
         // hidden via the .gpp-minified CSS below. Pure CSS toggle, not a
@@ -6461,7 +6475,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     }
 
     const GPP_COMPACT_MIN_WIDTH = 180;
-    const GPP_COMPACT_MIN_HEIGHT = 72;
+    const GPP_COMPACT_MIN_HEIGHT = 225;
     const GPP_VIEWPORT_MARGIN = 8;
 
     // Mouse pointerdown uses button 0 for the primary button. Touch and pen
@@ -6569,7 +6583,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         if (typeof gppSettings.compactHeight === 'number' && Number.isFinite(gppSettings.compactHeight)) {
             const height = gppClampCompactDimension(
                 gppSettings.compactHeight,
-                160,
+                225,
                 GPP_COMPACT_MIN_HEIGHT,
                 gppCompactViewportLimit(modal, 'height'),
             );
@@ -6589,7 +6603,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             GPP_COMPACT_MIN_WIDTH,
             gppCompactViewportLimit(modal, 'width'),
         );
-        const heightFallback = modal.offsetHeight > 0 ? modal.offsetHeight : 120;
+        const heightFallback = modal.offsetHeight > 0 ? modal.offsetHeight : 225;
         const height = gppClampCompactDimension(
             heightStyle,
             heightFallback,
@@ -6623,6 +6637,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                     scale: gppReadModalScale(modal),
                     compact,
                 };
+                handle.classList.add('gpp-resize-active');
                 // Pointer capture is best-effort: synthetic events and a few
                 // embedded browser contexts have no active pointer to capture.
                 try { handle.setPointerCapture(event.pointerId); } catch (_) { /* no active pointer to capture */ }
@@ -6682,6 +6697,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             const finishResize = event => {
                 if (!drag || drag.id !== event.pointerId) return;
                 if (drag.compact) gppPersistCompactSize(modal);
+                handle.classList.remove('gpp-resize-active');
                 drag = null;
             };
             handle.addEventListener('pointerup', finishResize);
