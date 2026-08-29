@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.2](https://github.com/atharray/geopixelcons-library/compare/v2.13.1...v2.13.2) (2026-08-29)
+
+
+### Bug Fixes
+
+* **ghost-plus-plus:** enlarge compact menu and show resize feedback ([#60](https://github.com/atharray/geopixelcons-library/issues/60)) ([2080fad](https://github.com/atharray/geopixelcons-library/commit/2080fad414f8e779b336e4d75ea62c93f942e3ec))
+
 ## [2.13.1](https://github.com/atharray/geopixelcons-library/compare/v2.13.0...v2.13.1) (2026-08-28)
 
 
