@@ -41,7 +41,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
         { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Fades out canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Per-user opacity slider with one-click Hide and Show buttons at each end', 'Global slider fades every blocked user at once without losing their individual settings', 'Warns before painting over pixels placed by a blocked user', 'Paste in many IDs at once with a live preview, and unblock several at a time', 'Private per-user notes, plus JSON import/export by clipboard or file', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
         { key: 'extCanvasToggle', name: 'Canvas Visibility Toggle', icon: '👁️', desc: 'Adds a button to the Image Tools (🖼️) dropdown that fades or hides the entire pixel canvas, leaving the base map visible.', features: ['Click the button for an opacity slider with Hide and Show buttons at each end', 'Any partial fade works, which is handy for tracing over existing art', 'Costs nothing to change — it sets the tile layer\'s opacity rather than redrawing anything', 'Always starts visible after a reload so a hidden canvas can never be mistaken for a broken site'] },
-        { key: 'extImprovedMapRendering', name: 'Improved Map Rendering', icon: '⚡', desc: 'Brings already-loaded pixel tiles back on screen instantly — after zooming in past your Render Level, or after panning back to tiles you have visited — instead of leaving them blank until the next server sync.', features: ['Redraws cached tiles the moment zoom crosses back above your Render Level', 'Redraws cached tiles as soon as you pan back over an area you have already seen', 'Uses the tile images the site already holds in memory — no extra server requests', 'Removes the 0–5 second blank-canvas wait after zooming or panning back', 'Only asks the site to redraw when a visible tile is actually missing, so labels and map layout are not disturbed while you pan', 'Changes nothing below the Render Level — pixels still hide there exactly as the site intends'] },
+        { key: 'extImprovedMapRendering', name: 'Improved Map Rendering', icon: '⚡', desc: 'Brings already-loaded tiles back instantly after zooming or panning, loads a wider ring of tiles around you than the site\'s 3×3, and can cap how much RAM the tile cache uses.', features: ['Redraws cached tiles the moment they come back into view — no waiting for the next server sync', 'Tile loading radius: fetch 5×5 (default), 7×7 or 9×9 tiles around the map centre instead of the site\'s 3×3, so zoomed-out views fill in without panning over every tile', 'Max tile cache (GB): optional budget that evicts the tiles farthest from view once the decoded cache exceeds it — tiles on screen are never evicted', 'Both settings live in this row and apply immediately, with a live readout of the current cache size', 'Changes nothing below the Render Level — pixels still hide there exactly as the site intends'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
@@ -61,7 +61,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { name: 'Deprecated', keys: ['ghostPaletteSearch', 'ghostTemplateManager'] },
     ];
 
-    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, mobilePaintingManualPalette: false, controlsUiScale: 100, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
+    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, mobilePaintingManualPalette: false, controlsUiScale: 100, improvedMapRenderingTileRadius: 2, improvedMapRenderingMaxCacheGB: 2, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
     FEATURE_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = true);
     // Ghost++ deliberately opts out of the blanket "every feature defaults on" rule above:
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
@@ -236,6 +236,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     let _regionsHighscore = null; // Populated by regions highscore module
     let _mapMarkers = null; // Populated by map markers module
     let _blockedUsers = null; // Populated by blocked user list module
+    let _improvedMapRendering = null; // Populated by improved map rendering module
 
     // ─── Shared coord cache for screenshot/highscore flyouts ────────
     const COORD_CACHE_KEY = 'gpc_cachedCoords';
@@ -661,6 +662,128 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         });
 
         const deprecatedSection = extensionCategoryPanels.get('Deprecated');
+
+        // Improved Map Rendering sub-settings. They live INSIDE the same row
+        // div as the feature's toggle, directly below it, and are only shown
+        // while the toggle is on. Changes apply live through the feature's
+        // bridge (no reload needed) and persist with the rest of _settings.
+        (function attachImprovedMapRenderingSettings() {
+            const row = extensionRowsByKey.get('extImprovedMapRendering');
+            if (!row) return;
+            const toggleInput = row.querySelector('input[type="checkbox"]');
+            if (!toggleInput) return;
+            row.style.flexWrap = 'wrap';
+
+            const panel = document.createElement('div');
+            panel.id = 'gpp-imr-settings';
+            panel.style.cssText = `
+                flex-basis: 100%; width: 100%; box-sizing: border-box;
+                display: ${_settings.extImprovedMapRendering ? 'flex' : 'none'}; flex-direction: column; gap: 8px;
+                margin-top: 10px; padding-top: 10px; font-size: 13px;
+                border-top: 1px dashed ${dark ? '#45475a' : '#cbd5e1'};
+            `;
+            const inputCss = `
+                width: 72px; padding: 4px 8px; border-radius: 6px; font-size: 13px; text-align: right;
+                background: ${dark ? '#181825' : '#ffffff'}; color: ${dark ? '#cdd6f4' : '#1e293b'};
+                border: 1px solid ${dark ? '#45475a' : '#cbd5e1'};
+            `;
+
+            function makeLine(labelText, helpText, control) {
+                const line = document.createElement('div');
+                line.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:10px;';
+                const label = document.createElement('div');
+                label.style.cssText = 'display:flex; align-items:center; gap:6px; font-weight:500;';
+                const text = document.createElement('span');
+                text.textContent = labelText;
+                label.appendChild(text);
+                const help = document.createElement('span');
+                help.textContent = '❓';
+                help.style.cssText = 'cursor:help;font-size:12px;flex-shrink:0;opacity:0.6;';
+                help.addEventListener('mouseenter', (ev) => showSimpleTooltip(ev, helpText));
+                help.addEventListener('mouseleave', removeTooltip);
+                label.appendChild(help);
+                line.appendChild(label);
+                line.appendChild(control);
+                return line;
+            }
+
+            // Max tile cache (GB) -- text input; 0 or blank = no limit.
+            const gbWrap = document.createElement('div');
+            gbWrap.style.cssText = 'display:flex; align-items:center; gap:6px;';
+            const gbInput = document.createElement('input');
+            gbInput.id = 'gpp-imr-max-cache-gb';
+            gbInput.type = 'text';
+            gbInput.inputMode = 'decimal';
+            gbInput.autocomplete = 'off';
+            gbInput.value = String(_settings.improvedMapRenderingMaxCacheGB ?? 2);
+            gbInput.style.cssText = inputCss;
+            const gbUnit = document.createElement('span');
+            gbUnit.textContent = 'GB';
+            gbWrap.appendChild(gbInput);
+            gbWrap.appendChild(gbUnit);
+            const commitGb = () => {
+                const raw = gbInput.value.trim().replace(',', '.');
+                let v = raw === '' ? 0 : Number(raw);
+                if (!isFinite(v) || v < 0) { gbInput.value = String(_settings.improvedMapRenderingMaxCacheGB ?? 2); return; }
+                v = Math.round(v * 100) / 100;
+                gbInput.value = String(v);
+                _settings.improvedMapRenderingMaxCacheGB = v;
+                saveSettings(_settings);
+                if (_improvedMapRendering) _improvedMapRendering.applySettings();
+                refreshReadout();
+            };
+            gbInput.addEventListener('change', commitGb);
+            gbInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); gbInput.blur(); } });
+
+            // Tile loading radius: 1 = the site's own 3x3 ... 4 = 9x9.
+            const radiusSelect = document.createElement('select');
+            radiusSelect.id = 'gpp-imr-tile-radius';
+            radiusSelect.style.cssText = inputCss + 'width:auto; text-align:left; cursor:pointer;';
+            [[1, '3×3'], [2, '5×5'], [3, '7×7'], [4, '9×9']].forEach(([r, label]) => {
+                const opt = document.createElement('option');
+                opt.value = String(r);
+                opt.textContent = `${r} — ${label} tiles`;
+                radiusSelect.appendChild(opt);
+            });
+            radiusSelect.value = String(Math.min(4, Math.max(1, Math.round(Number(_settings.improvedMapRenderingTileRadius)) || 2)));
+            radiusSelect.addEventListener('change', () => {
+                _settings.improvedMapRenderingTileRadius = Number(radiusSelect.value);
+                saveSettings(_settings);
+                if (_improvedMapRendering) _improvedMapRendering.applySettings();
+            });
+
+            // Live readout of what the cache currently holds.
+            const readout = document.createElement('div');
+            readout.id = 'gpp-imr-cache-readout';
+            readout.style.cssText = 'font-size:12px; opacity:0.75;';
+            function refreshReadout() {
+                const stats = _improvedMapRendering ? _improvedMapRendering.getStats() : null;
+                if (!stats) {
+                    readout.textContent = _settings.extImprovedMapRendering ? 'Cache stats appear after a reload.' : '';
+                    return;
+                }
+                const mb = stats.bytes / 1048576;
+                const size = mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : Math.round(mb) + ' MB';
+                const cap = stats.maxCacheBytes > 0 ? ` of ${(stats.maxCacheBytes / 1073741824).toFixed(2)} GB` : ' (no limit)';
+                readout.textContent = `Tile cache now: ${size} in ${stats.tiles} tiles${cap}` + (stats.evictions ? ` · ${stats.evictions} evicted so far` : '');
+            }
+
+            panel.appendChild(makeLine('Max tile cache', 'Estimated decoded size of the tile cache (about 7.6 MB per tile). Once exceeded, the tiles farthest from the view are freed. Tiles currently on screen are never freed, so this is a soft cap while zoomed far out. 0 or blank = no limit (the site\'s own behaviour).', gbWrap));
+            panel.appendChild(makeLine('Tile loading radius', 'How many tiles around the map centre are fetched on each sync. The site itself fetches 3×3. Larger rings fill zoomed-out views faster but download and decode more tiles.', radiusSelect));
+            panel.appendChild(readout);
+            row.appendChild(panel);
+
+            refreshReadout();
+            const readoutTimer = setInterval(() => {
+                if (!document.getElementById('gpc-settings-modal')) { clearInterval(readoutTimer); return; }
+                if (panel.style.display !== 'none') refreshReadout();
+            }, 2000);
+
+            toggleInput.addEventListener('change', () => {
+                panel.style.display = toggleInput.checked ? 'flex' : 'none';
+                if (toggleInput.checked) refreshReadout();
+            });
+        })();
 
         tabPanels.push(extPanel);
         modal.appendChild(extPanel);
@@ -1322,9 +1445,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const CHANGELOG = [
         {
             version: '2.14.0',
-            date: '2026-09-11',
+            date: '2026-09-12',
             items: [
                 { type: 'added', text: 'Improved Map Rendering (Map, off by default): already-loaded pixel tiles come back instantly when you zoom in past your Render Level again or pan back over an area you have visited, using the tiles already in memory instead of waiting up to 5 seconds for the next server sync' },
+                { type: 'added', text: 'Improved Map Rendering: Tile loading radius setting (default 5×5, up to 9×9) fetches a wider ring of tiles around the map centre than the site\'s 3×3, so zoomed-out views fill in without panning over every tile' },
+                { type: 'added', text: 'Improved Map Rendering: Max tile cache (GB) setting evicts the tiles farthest from view once the decoded tile cache exceeds the budget — the site never frees them otherwise; tiles on screen are never evicted' },
             ]
         },
         {
@@ -32745,10 +32870,19 @@ window.__gpcCanvasToggle = {
     //  EXTENSION: Improved Map Rendering [extImprovedMapRendering]
     // ============================================================
     //
-    //  Brings already-loaded pixel tiles back on screen the moment they are
-    //  needed again -- after zooming in past your Render Level, or after
-    //  panning back over tiles you have visited -- instead of leaving them
-    //  blank until the next server sync.
+    //  Three related fixes for how GeoPixels gets pixel tiles on screen, all
+    //  built on the site's own functions rather than a re-implementation:
+    //
+    //  1. RESTORE -- bring already-loaded tiles back the moment they are
+    //     needed again (after zooming in past your Render Level, or panning
+    //     back over tiles you have visited) instead of waiting for the next
+    //     server sync.
+    //  2. TILE LOADING RADIUS -- fetch a wider ring of tiles around the map
+    //     centre than the site's hardcoded 3x3, so a zoomed-out view fills in
+    //     without having to pan over every tile.
+    //  3. MAX TILE CACHE -- the site never frees decoded tiles from RAM. With
+    //     a wider ring that stops being harmless, so an optional budget
+    //     evicts the tiles farthest from the view once the cache exceeds it.
     //
     //  Why the site goes blank (js/index.js, verified against the live page):
     //    - Zoom-out: updateInterfaceState runs on every `zoom` frame and, the
@@ -32764,26 +32898,45 @@ window.__gpcCanvasToggle = {
     //      WITHOUT drawing, so the canvas stays empty until the 5 s 'full'
     //      sync tick completes a /GetPixelsCached round trip (measured: ~2.4 s
     //      average after a zoom, 1.1-5 s after a pan, then all textures
-    //      re-uploaded from memory in ~13 ms). Ironically a brand-new area
-    //      renders FASTER than a revisited one, because new tiles trigger a
-    //      fetch and the fetch triggers the draw.
+    //      re-uploaded from memory in ~13 ms).
     //
-    //  The fix is therefore not a debounce on the clear -- keeping textures
-    //  resident below the render level would fight the site's own zoom
-    //  prompt and defeat Render Level as a low-spec memory knob. It is a
-    //  missing redraw trigger: on every camera move, when some cached tile
-    //  inside the site's own draw buffer has no GPU texture, call the site's
-    //  drawCachedTilesOnMap(). That performs exactly the upload the 5 s sync
-    //  would have done later, with zero network requests (measured: first
-    //  tile in ~4-14 ms, all 9 in ~25-50 ms).
+    //  Why the site loads lazily: synchronize() always requests exactly the
+    //  3x3 tiles (75 km square) around the map CENTRE regardless of zoom. At
+    //  the default render level (10.5) that is ~20% of the viewport; at zoom
+    //  8 it is under 1%. Everything else on screen is whatever happened to be
+    //  cached when the centre last passed over it.
     //
-    //  Everything this needs -- map, pixelTileLayer, tileImageCache, minZoom --
-    //  is a top-level `let`/`const` in index.js, invisible to unsafeWindow
-    //  property access, so the hook runs as a classic <script> in the page's
-    //  own lexical scope, the same technique as ext-canvas-toggle.js and
-    //  ext-map-movement-lock.js. drawCachedTilesOnMap is a top-level function
-    //  declaration and so is a real global, but it is called from inside the
-    //  same page-realm script for consistency.
+    //  How each part works:
+    //    - Restore: on every camera move, when some cached tile inside the
+    //      site's own draw buffer has no GPU texture, call the site's
+    //      drawCachedTilesOnMap(). Zero network requests.
+    //    - Radius: the site's synchronize() posts its 3x3 tile list to the
+    //      sync worker; this hooks syncWorker.postMessage and appends the
+    //      outer ring (nearest first, at most MAX_NEW_TILES_PER_SYNC uncached
+    //      tiles per request so a 9x9 fills progressively instead of decoding
+    //      80 WebP pairs at once). The site's own response loop caches every
+    //      returned tile, so no caching logic is duplicated. A 'partial' sync
+    //      that would have returned early (centre 3x3 already cached) is
+    //      promoted to 'full' while the ring still has unrequested tiles, so
+    //      the ring fills at the 1 s partial cadence rather than the 5 s one.
+    //      Cached ring tiles are included with their timestamps on full syncs
+    //      so they receive updates too.
+    //    - Budget: after each sync settles and on moveend, if the estimated
+    //      decoded size (width x height x 4 bytes x 2 bitmaps per tile) exceeds
+    //      the budget, evict tiles outside BOTH the draw buffer and the fetch
+    //      ring, farthest from centre first, closing their ImageBitmaps and
+    //      dropping their GPU textures. Tiles on screen are never evicted, so
+    //      the budget is soft while zoomed far out. Never runs while the site
+    //      has a sync in flight: a response for an evicted tile would leave a
+    //      timestamp-only entry the site then treats as "in cache" forever
+    //      (its CASE 4). Such entries -- whatever their origin -- are detected
+    //      (bitmaps undefined rather than null) and re-requested as full tiles.
+    //
+    //  Everything this needs -- map, pixelTileLayer, tileImageCache, minZoom,
+    //  syncWorker, isSyncing -- is a top-level `let`/`const` in index.js,
+    //  invisible to unsafeWindow property access, so the hook runs as a
+    //  classic <script> in the page's own lexical scope, the same technique
+    //  as ext-canvas-toggle.js and ext-map-movement-lock.js.
     //
     //  Safety properties:
     //    - Calls the site's draw only when a cached tile inside the site's
@@ -32793,15 +32946,12 @@ window.__gpcCanvasToggle = {
     //      placement pass on the next frame even when the layer is already
     //      on top. The site pays that every 5 s; paying it per pan frame
     //      would thrash label placement.
-    //    - Idempotent: drawCachedTilesOnMap() early-returns below minZoom and
-    //      skips tiles that are already resident.
-    //    - Never touches tileImageCache, tileTextureState, or clear(); it only
-    //      asks the site to run its own redraw earlier than it otherwise would.
-    //    - Coalesced to one check per event-loop tick and throttled so rapid
-    //      oscillation across the threshold cannot stack uploads. It does not
-    //      use requestAnimationFrame, which is paused in hidden documents and
-    //      some embedded webviews (verified: a rAF-based version never fired
-    //      in the desktop app's browser pane while zoom events still did).
+    //    - Never calls clear(), never writes bitmaps into tileImageCache; the
+    //      only cache mutation is the budgeted eviction described above.
+    //    - Coalesced to one check per event-loop tick and throttled. It does
+    //      not use requestAnimationFrame, which is paused in hidden documents
+    //      and some embedded webviews (verified: a rAF-based version never
+    //      fired in the desktop app's browser pane while zoom events did).
     //
     if (_settings.extImprovedMapRendering) {
         try {
@@ -32822,6 +32972,9 @@ window.__gpcCanvasToggle = {
     window.__gpcImprovedMapRenderingBridge = true;
 
     var MIN_RESTORE_GAP_MS = 100;
+    var MAX_NEW_TILES_PER_SYNC = 16;      // uncached ring tiles per request; a 9x9 fills over ~5 syncs
+    var REREQUEST_COOLDOWN_MS = 30000;    // a tile the server did not return is not asked for again sooner
+    var MIN_RADIUS = 1, MAX_RADIUS = 4;   // 3x3 .. 9x9
     var state = {
         attached: false,
         checkPending: false,
@@ -32829,7 +32982,18 @@ window.__gpcCanvasToggle = {
         lastRestoreAt: 0,
         restores: 0,
         checks: 0,
-        lastReason: null
+        lastReason: null,
+        radius: 2,                        // 5x5 by default
+        maxCacheBytes: 0,                 // 0 = unlimited
+        syncHooked: false,
+        currentSyncType: null,
+        requestedAt: {},                  // tileKey -> Date.now() of the last request we added it to
+        ringFetches: 0,
+        ringTilesRequested: 0,
+        promotions: 0,
+        evictions: 0,
+        evictedBytes: 0,
+        evictPending: false
     };
 
     function getMap() {
@@ -32858,43 +33022,77 @@ window.__gpcCanvasToggle = {
         } catch (e) {}
         return null;
     }
+    function getGeometry() {
+        var t = null, grid = null, tileGrid = null;
+        try { t = (typeof turf !== 'undefined' && turf && typeof turf.toMercator === 'function') ? turf : null; } catch (e) {}
+        try { grid = (typeof gridSize === 'number') ? gridSize : null; } catch (e) {}
+        try { tileGrid = (typeof SYNC_TILE_SIZE === 'number') ? SYNC_TILE_SIZE : null; } catch (e) {}
+        if (!t || !grid || !tileGrid) return null;
+        return { turf: t, grid: grid, tileGrid: tileGrid, tileSize: grid * tileGrid, half: grid / 2 };
+    }
+    function isSiteSyncing() {
+        try { return typeof isSyncing !== 'undefined' && !!isSyncing; } catch (e) { return false; }
+    }
+
+    // The centre tile exactly as synchronize() computes it (index.js ~313).
+    function centreTile(m, g) {
+        var c = m.getCenter();
+        var merc = g.turf.toMercator([c.lng, c.lat]);
+        var gx = Math.round(merc[0] / g.grid), gy = Math.round(merc[1] / g.grid);
+        return {
+            x: Math.floor(gx / g.tileGrid) * g.tileGrid,
+            y: Math.floor(gy / g.tileGrid) * g.tileGrid
+        };
+    }
+    function parseKey(key) {
+        var comma = key.indexOf(',');
+        if (comma < 0) return null;
+        var ox = parseInt(key.slice(0, comma), 10), oy = parseInt(key.slice(comma + 1), 10);
+        if (isNaN(ox) || isNaN(oy)) return null;
+        return { x: ox, y: oy };
+    }
+    // Chebyshev distance in tiles from the centre tile.
+    function tileDistance(origin, centre, g) {
+        return Math.max(Math.abs(origin.x - centre.x), Math.abs(origin.y - centre.y)) / g.tileGrid;
+    }
 
     // Mirrors the visibility test inside drawCachedTilesOnMap (index.js):
     // a tile is drawn when it intersects a buffer of twice the viewport,
     // never smaller than 7 tiles, centred on the map centre. Everything is
     // done in Web Mercator metres -- the same rectangle the site builds, just
-    // without the per-tile lng/lat round trip. Returns true when at least one
-    // cached tile inside that buffer has no GPU texture yet, i.e. exactly the
-    // moments the site's own draw would upload something.
-    //
-    // This matters because drawCachedTilesOnMap() also calls map.moveLayer(),
-    // which marks the style's layer order dirty and forces MapLibre into a
-    // full label-placement pass on the next frame even when the layer is
-    // already on top. Calling it on every pan frame would thrash placement;
-    // calling it only when there is a texture to upload keeps that cost to
-    // the same occasions the site would have paid it anyway.
-    function needsDraw(m, layer, cache) {
-        if (layer.tiles.size === 0) return true;      // the zoom-back-in case: nothing resident at all
-        var t, grid, tileGrid;
-        try { t = (typeof turf !== 'undefined') ? turf : null; } catch (e) { t = null; }
-        try { grid = (typeof gridSize === 'number') ? gridSize : null; } catch (e) { grid = null; }
-        try { tileGrid = (typeof SYNC_TILE_SIZE === 'number') ? SYNC_TILE_SIZE : null; } catch (e) { tileGrid = null; }
-        if (!t || typeof t.toMercator !== 'function' || !grid || !tileGrid ||
-            typeof m.getBounds !== 'function' || typeof m.getCenter !== 'function') {
-            return false;                              // cannot mirror the site's test; stay conservative
-        }
+    // without the per-tile lng/lat round trip.
+    function bufferBox(m, g) {
+        if (typeof m.getBounds !== 'function' || typeof m.getCenter !== 'function') return null;
         var bounds = m.getBounds();
-        var sw = t.toMercator([bounds.getWest(), bounds.getSouth()]);
-        var ne = t.toMercator([bounds.getEast(), bounds.getNorth()]);
+        var sw = g.turf.toMercator([bounds.getWest(), bounds.getSouth()]);
+        var ne = g.turf.toMercator([bounds.getEast(), bounds.getNorth()]);
         var centre = m.getCenter();
-        var c = t.toMercator([centre.lng, centre.lat]);
-        var minBuffer = 7 * tileGrid * grid;
+        var c = g.turf.toMercator([centre.lng, centre.lat]);
+        var minBuffer = 7 * g.tileSize;
         var w = Math.max((ne[0] - sw[0]) * 2, minBuffer);
         var h = Math.max((ne[1] - sw[1]) * 2, minBuffer);
-        var minX = c[0] - w / 2, maxX = c[0] + w / 2;
-        var minY = c[1] - h / 2, maxY = c[1] + h / 2;
-        var tileSize = tileGrid * grid;
-        var half = grid / 2;
+        return { minX: c[0] - w / 2, maxX: c[0] + w / 2, minY: c[1] - h / 2, maxY: c[1] + h / 2 };
+    }
+    function tileInBox(origin, box, g) {
+        var x0 = origin.x * g.grid - g.half, y0 = origin.y * g.grid - g.half;
+        var x1 = x0 + g.tileSize, y1 = y0 + g.tileSize;
+        return !(x1 < box.minX || x0 > box.maxX || y1 < box.minY || y0 > box.maxY);
+    }
+
+    // Returns true when at least one cached tile inside the draw buffer has
+    // no GPU texture yet, i.e. exactly the moments the site's own draw would
+    // upload something. This matters because drawCachedTilesOnMap() also
+    // calls map.moveLayer(), which marks the style's layer order dirty and
+    // forces MapLibre into a full label-placement pass on the next frame even
+    // when the layer is already on top. Calling it on every pan frame would
+    // thrash placement; calling it only when there is a texture to upload
+    // keeps that cost to the same occasions the site would have paid it.
+    function needsDraw(m, layer, cache) {
+        if (layer.tiles.size === 0) return true;      // the zoom-back-in case: nothing resident at all
+        var g = getGeometry();
+        if (!g) return false;                          // cannot mirror the site's test; stay conservative
+        var box = bufferBox(m, g);
+        if (!box) return false;
         var hasTile = (typeof layer.hasTile === 'function')
             ? function (k) { return layer.hasTile(k); }
             : function (k) { return layer.tiles.has(k); };
@@ -32903,13 +33101,9 @@ window.__gpcCanvasToggle = {
             var key = step.value[0], entry = step.value[1];
             if (!entry || !entry.colorBitmap || !entry.userBitmap) continue;   // nothing drawable yet
             if (hasTile(key)) continue;                                        // already on the GPU
-            var comma = key.indexOf(',');
-            if (comma < 0) continue;
-            var ox = parseInt(key.slice(0, comma), 10), oy = parseInt(key.slice(comma + 1), 10);
-            if (isNaN(ox) || isNaN(oy)) continue;
-            var x0 = ox * grid - half, y0 = oy * grid - half;
-            var x1 = x0 + tileSize, y1 = y0 + tileSize;
-            if (x1 < minX || x0 > maxX || y1 < minY || y0 > maxY) continue;    // outside the buffer
+            var origin = parseKey(key);
+            if (!origin) continue;
+            if (!tileInBox(origin, box, g)) continue;                          // outside the buffer
             return true;
         }
         return false;
@@ -32963,12 +33157,229 @@ window.__gpcCanvasToggle = {
         }, 0);
     }
 
+    // ---------- tile loading radius ----------
+
+    // A cache entry the site will keep sending a timestamp for but never
+    // re-fetch: CASE 4 in synchronize() stores { timestamp } with no bitmap
+    // fields at all. Mid-merge entries are different -- the site sets their
+    // bitmaps to null explicitly -- and must keep their timestamp.
+    function isZombieEntry(entry) {
+        return !!entry && entry.colorBitmap === undefined && entry.userBitmap === undefined;
+    }
+    function entryTimestamp(entry) {
+        if (!entry || isZombieEntry(entry)) return 0;
+        var ts = entry.timestamp;
+        return (typeof ts === 'number' && ts > 0) ? ts : 0;
+    }
+    function recentlyRequested(key, now) {
+        var at = state.requestedAt[key];
+        return typeof at === 'number' && (now - at) < REREQUEST_COOLDOWN_MS;
+    }
+
+    // Visits ring tiles nearest-first: distance minD (1 = the site's own 3x3
+    // minus the centre), then the next ring, ... up to state.radius.
+    function forEachRingTile(centre, g, fn, minD) {
+        for (var d = (minD || 1); d <= state.radius; d++) {
+            for (var i = -d; i <= d; i++) {
+                for (var j = -d; j <= d; j++) {
+                    if (Math.max(Math.abs(i), Math.abs(j)) !== d) continue;
+                    if (fn(centre.x + i * g.tileGrid, centre.y + j * g.tileGrid) === false) return;
+                }
+            }
+        }
+    }
+
+    // Does the ring BEYOND the site's 3x3 still contain tiles we have not
+    // asked for? Drives the partial -> full promotion. Missing tiles inside
+    // the 3x3 are the site's own business: its partial sync requests those
+    // itself, and turning that into a full sync would only add traffic.
+    // Below the render level synchronize() bails before requesting anything,
+    // so there is nothing to promote either.
+    function ringHasUnrequestedTiles() {
+        if (state.radius <= 1) return false;
+        var m = getMap(), cache = getCache(), g = getGeometry();
+        if (!m || !cache || !g || typeof m.getCenter !== 'function') return false;
+        var threshold = getThreshold();
+        if (threshold !== null && m.getZoom() < threshold) return false;
+        var centre = centreTile(m, g);
+        var now = Date.now();
+        var found = false;
+        forEachRingTile(centre, g, function (x, y) {
+            var key = x + ',' + y;
+            if (entryTimestamp(cache.get(key)) > 0) return true;
+            if (recentlyRequested(key, now)) return true;
+            found = true;
+            return false;
+        }, 2);
+        return found;
+    }
+
+    // Appends the outer ring to the tile list the site is about to post.
+    function expandTiles(tiles) {
+        if (state.radius <= 1 || !Array.isArray(tiles)) return tiles;
+        var m = getMap(), cache = getCache(), g = getGeometry();
+        if (!m || !cache || !g || typeof m.getCenter !== 'function') return tiles;
+        var centre = centreTile(m, g);
+        var isFull = state.currentSyncType === 'full';
+        var present = {};
+        for (var i = 0; i < tiles.length; i++) present[tiles[i].x + ',' + tiles[i].y] = true;
+        var now = Date.now();
+        var extra = [], newCount = 0;
+        forEachRingTile(centre, g, function (x, y) {
+            var key = x + ',' + y;
+            if (present[key]) return;
+            var ts = entryTimestamp(cache.get(key));
+            if (ts === 0) {
+                if (newCount >= MAX_NEW_TILES_PER_SYNC) return;
+                if (recentlyRequested(key, now)) return;
+                newCount++;
+                state.requestedAt[key] = now;
+                extra.push({ x: x, y: y, timestamp: 0 });
+            } else if (isFull) {
+                extra.push({ x: x, y: y, timestamp: ts });
+            }
+        });
+        if (extra.length === 0) return tiles;
+        state.ringFetches++;
+        state.ringTilesRequested += extra.length;
+        return tiles.concat(extra);
+    }
+
+    function hookSync() {
+        if (state.syncHooked) return true;
+        var orig;
+        try { orig = (typeof synchronize === 'function') ? synchronize : null; } catch (e) { orig = null; }
+        if (!orig) return false;
+        try { if (typeof ensureSyncWorker === 'function') ensureSyncWorker(); } catch (e) {}
+        var worker;
+        try { worker = (typeof syncWorker !== 'undefined' && syncWorker && typeof syncWorker.postMessage === 'function') ? syncWorker : null; } catch (e) { worker = null; }
+        if (!worker) return false;
+
+        // The postMessage hook sees every request the site makes; the
+        // synchronize wrapper tells it which kind, and promotes partial
+        // syncs while the ring is incomplete.
+        var origPost = worker.postMessage;
+        worker.postMessage = function (msg) {
+            try {
+                if (msg && msg.type === 'sync-delta' && Array.isArray(msg.tiles)) {
+                    msg.tiles = expandTiles(msg.tiles);
+                }
+            } catch (e) { /* fall through with the site's own list */ }
+            return origPost.apply(this, arguments);
+        };
+
+        window.synchronize = function (syncType) {
+            var type = (syncType === undefined) ? 'partial' : syncType;
+            if (type === 'partial') {
+                var promote = false;
+                try { promote = !isSiteSyncing() && ringHasUnrequestedTiles(); } catch (e) { promote = false; }
+                if (promote) { type = 'full'; state.promotions++; }
+            }
+            state.currentSyncType = type;
+            var result;
+            try {
+                result = orig.apply(this, [type]);
+            } finally {
+                state.currentSyncType = null;
+            }
+            if (result && typeof result.then === 'function') {
+                result.then(function () { scheduleEvict('sync'); }, function () {});
+            }
+            return result;
+        };
+        state.syncHooked = true;
+        return true;
+    }
+
+    // ---------- max tile cache ----------
+
+    function entryBytes(entry) {
+        var cb = entry.colorBitmap, ub = entry.userBitmap;
+        if (!cb || !ub) return 0;
+        var cw = cb.width || 0, ch = cb.height || 0, uw = ub.width || 0, uh = ub.height || 0;
+        return (cw * ch + uw * uh) * 4;
+    }
+    function cacheStats() {
+        var cache = getCache();
+        var tiles = 0, bytes = 0;
+        if (cache) {
+            var it = cache.values();
+            for (var step = it.next(); !step.done; step = it.next()) {
+                var b = entryBytes(step.value);
+                if (b > 0) { tiles++; bytes += b; }
+            }
+        }
+        return { tiles: tiles, bytes: bytes };
+    }
+    function closeBitmap(b) {
+        try { if (b && typeof b.close === 'function') b.close(); } catch (e) {}
+    }
+    function dropGpuTile(key) {
+        var layer = getLayer();
+        try { if (layer && typeof layer.removeTile === 'function' && layer.tiles.has(key)) layer.removeTile(key); } catch (e) {}
+        try { if (typeof tileTextureState !== 'undefined' && tileTextureState && typeof tileTextureState.delete === 'function') tileTextureState.delete(key); } catch (e) {}
+    }
+
+    // Returns the number of tiles evicted.
+    function evict(reason) {
+        if (!(state.maxCacheBytes > 0)) return 0;
+        if (isSiteSyncing()) return 0;               // a response could still reference an evicted tile
+        var m = getMap(), cache = getCache(), g = getGeometry();
+        if (!m || !cache || !g || typeof m.getCenter !== 'function') return 0;
+        var box = bufferBox(m, g);
+        if (!box) return 0;
+        var centre = centreTile(m, g);
+        var total = 0, candidates = [];
+        var it = cache.entries();
+        for (var step = it.next(); !step.done; step = it.next()) {
+            var key = step.value[0], entry = step.value[1];
+            var bytes = entryBytes(entry);
+            if (bytes === 0) continue;                // mid-merge or zombie: not ours to touch
+            total += bytes;
+            var origin = parseKey(key);
+            if (!origin) continue;
+            if (tileInBox(origin, box, g)) continue;  // on screen (or about to be): never evicted
+            var dist = tileDistance(origin, centre, g);
+            if (dist <= state.radius) continue;        // inside the fetch ring: keep
+            candidates.push({ key: key, bytes: bytes, dist: dist });
+        }
+        if (total <= state.maxCacheBytes || candidates.length === 0) return 0;
+        candidates.sort(function (a, b) { return b.dist - a.dist; });
+        var evicted = 0;
+        for (var i = 0; i < candidates.length && total > state.maxCacheBytes; i++) {
+            var c = candidates[i];
+            var e = cache.get(c.key);
+            if (!e) continue;
+            closeBitmap(e.colorBitmap);
+            closeBitmap(e.userBitmap);
+            cache.delete(c.key);
+            dropGpuTile(c.key);
+            delete state.requestedAt[c.key];
+            total -= c.bytes;
+            evicted++;
+            state.evictedBytes += c.bytes;
+        }
+        state.evictions += evicted;
+        return evicted;
+    }
+    function scheduleEvict(reason) {
+        if (state.evictPending) return;
+        state.evictPending = true;
+        setTimeout(function () {
+            state.evictPending = false;
+            try { evict(reason); } catch (e) {}
+        }, 0);
+    }
+
+    // ---------- wiring ----------
+
     // MapLibre fires 'move' on every camera frame -- pans AND zooms (a zoom
     // frame emits 'move' then 'zoom') -- so 'move' alone covers both the
     // zoom-back-in case and panning back over already-visited tiles.
-    // 'moveend' guarantees a final check after inertia settles.
+    // 'moveend' guarantees a final check after inertia settles, and is the
+    // natural moment to enforce the cache budget.
     function onMove() { scheduleRestore('move'); }
-    function onMoveEnd() { scheduleRestore('moveend'); }
+    function onMoveEnd() { scheduleRestore('moveend'); scheduleEvict('moveend'); }
 
     function attach() {
         if (state.attached) return true;
@@ -32977,6 +33388,7 @@ window.__gpcCanvasToggle = {
         m.on('move', onMove);
         m.on('moveend', onMoveEnd);
         state.attached = true;
+        hookSync();
         return true;
     }
 
@@ -32991,17 +33403,53 @@ window.__gpcCanvasToggle = {
         state.attached = false;
     }
 
+    function configure(opts) {
+        if (!opts || typeof opts !== 'object') return getConfig();
+        if (opts.radius !== undefined) {
+            var r = Math.round(Number(opts.radius));
+            if (isFinite(r)) state.radius = Math.min(MAX_RADIUS, Math.max(MIN_RADIUS, r));
+        }
+        if (opts.maxCacheBytes !== undefined) {
+            var b = Number(opts.maxCacheBytes);
+            state.maxCacheBytes = (isFinite(b) && b > 0) ? Math.floor(b) : 0;
+            scheduleEvict('configure');
+        }
+        return getConfig();
+    }
+    function getConfig() {
+        return { radius: state.radius, maxCacheBytes: state.maxCacheBytes };
+    }
+
     window.__gpcImprovedMapRendering = {
         attach: attach,
         detach: detach,
+        configure: configure,
+        getConfig: getConfig,
         restore: function () { return restore('manual'); },
+        evict: function () { return evict('manual'); },
+        getStats: function () {
+            var s = cacheStats();
+            return {
+                tiles: s.tiles,
+                bytes: s.bytes,
+                radius: state.radius,
+                maxCacheBytes: state.maxCacheBytes,
+                evictions: state.evictions,
+                evictedBytes: state.evictedBytes,
+                ringFetches: state.ringFetches,
+                ringTilesRequested: state.ringTilesRequested,
+                promotions: state.promotions,
+                syncHooked: state.syncHooked
+            };
+        },
         getState: function () {
             return {
                 attached: state.attached,
                 restores: state.restores,
                 checks: state.checks,
                 lastReason: state.lastReason,
-                lastRestoreAt: state.lastRestoreAt
+                lastRestoreAt: state.lastRestoreAt,
+                syncHooked: state.syncHooked
             };
         }
     };
@@ -33013,6 +33461,26 @@ window.__gpcCanvasToggle = {
         script.textContent = BRIDGE_SOURCE;
         (document.head || document.documentElement).appendChild(script);
         script.remove();
+    }
+
+    // Converts the persisted settings into the bridge's units.
+    function bridgeConfigFromSettings() {
+        const radius = Number(_settings.improvedMapRenderingTileRadius);
+        const gb = Number(_settings.improvedMapRenderingMaxCacheGB);
+        return {
+            radius: isFinite(radius) ? radius : 2,
+            maxCacheBytes: (isFinite(gb) && gb > 0) ? Math.floor(gb * 1024 * 1024 * 1024) : 0,
+        };
+    }
+
+    function applySettings() {
+        try {
+            const api = _pw[BRIDGE_API];
+            if (api && typeof api.configure === 'function') api.configure(bridgeConfigFromSettings());
+        } catch (err) {
+            dbgPush(`Improved Map Rendering configure failed: ${err && err.message ? err.message : String(err)}`,
+                { error: err, uiComponent: 'Improved Map Rendering' });
+        }
     }
 
     // `map` is created inside the site's async init(), usually well after
@@ -33038,7 +33506,19 @@ window.__gpcCanvasToggle = {
     }
 
     installBridge();
+    applySettings();
     attachWhenReady();
+
+    // Lets the Settings modal apply radius / budget changes live.
+    _improvedMapRendering = {
+        applySettings,
+        getStats() {
+            try {
+                const api = _pw[BRIDGE_API];
+                return (api && typeof api.getStats === 'function') ? api.getStats() : null;
+            } catch (err) { return null; }
+        },
+    };
 
             })();
             _featureStatus.extImprovedMapRendering = 'ok';
