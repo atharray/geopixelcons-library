@@ -41,7 +41,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
         { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Fades out canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Per-user opacity slider with one-click Hide and Show buttons at each end', 'Global slider fades every blocked user at once without losing their individual settings', 'Warns before painting over pixels placed by a blocked user', 'Paste in many IDs at once with a live preview, and unblock several at a time', 'Private per-user notes, plus JSON import/export by clipboard or file', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
         { key: 'extCanvasToggle', name: 'Canvas Visibility Toggle', icon: '👁️', desc: 'Adds a button to the Image Tools (🖼️) dropdown that fades or hides the entire pixel canvas, leaving the base map visible.', features: ['Click the button for an opacity slider with Hide and Show buttons at each end', 'Any partial fade works, which is handy for tracing over existing art', 'Costs nothing to change — it sets the tile layer\'s opacity rather than redrawing anything', 'Always starts visible after a reload so a hidden canvas can never be mistaken for a broken site'] },
-        { key: 'extImprovedMapRendering', name: 'Improved Map Rendering', icon: '⚡', desc: 'Brings the pixel canvas back instantly when you zoom in past your Render Level again, instead of leaving it blank until the next server sync.', features: ['Redraws the cached tiles the moment zoom crosses back above your Render Level', 'Uses the tile images the site already holds in memory — no extra server requests', 'Removes the 0–5 second blank-canvas wait after a quick zoom out and back in', 'Changes nothing below the Render Level — pixels still hide there exactly as the site intends'] },
+        { key: 'extImprovedMapRendering', name: 'Improved Map Rendering', icon: '⚡', desc: 'Brings already-loaded pixel tiles back on screen instantly — after zooming in past your Render Level, or after panning back to tiles you have visited — instead of leaving them blank until the next server sync.', features: ['Redraws cached tiles the moment zoom crosses back above your Render Level', 'Redraws cached tiles as soon as you pan back over an area you have already seen', 'Uses the tile images the site already holds in memory — no extra server requests', 'Removes the 0–5 second blank-canvas wait after zooming or panning back', 'Only asks the site to redraw when a visible tile is actually missing, so labels and map layout are not disturbed while you pan', 'Changes nothing below the Render Level — pixels still hide there exactly as the site intends'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
@@ -1324,7 +1324,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             version: '2.14.0',
             date: '2026-09-11',
             items: [
-                { type: 'added', text: 'Improved Map Rendering (Map, off by default): the pixel canvas comes back instantly when you zoom in past your Render Level again, using the tiles already in memory instead of waiting up to 5 seconds for the next server sync' },
+                { type: 'added', text: 'Improved Map Rendering (Map, off by default): already-loaded pixel tiles come back instantly when you zoom in past your Render Level again or pan back over an area you have visited, using the tiles already in memory instead of waiting up to 5 seconds for the next server sync' },
             ]
         },
         {
@@ -32745,30 +32745,37 @@ window.__gpcCanvasToggle = {
     //  EXTENSION: Improved Map Rendering [extImprovedMapRendering]
     // ============================================================
     //
-    //  Brings the pixel canvas back the moment you zoom in past your Render
-    //  Level again, instead of leaving it blank until the next server sync.
+    //  Brings already-loaded pixel tiles back on screen the moment they are
+    //  needed again -- after zooming in past your Render Level, or after
+    //  panning back over tiles you have visited -- instead of leaving them
+    //  blank until the next server sync.
     //
     //  Why the site goes blank (js/index.js, verified against the live page):
-    //    - updateInterfaceState runs on every `zoom` frame and, the instant
-    //      zoom drops below minZoom, calls pixelTileLayer.clear() and
+    //    - Zoom-out: updateInterfaceState runs on every `zoom` frame and, the
+    //      instant zoom drops below minZoom, calls pixelTileLayer.clear() and
     //      tileTextureState.clear(). That deletes only the GPU textures --
     //      tileImageCache, the decoded ImageBitmaps, is never evicted.
-    //    - Zooming back in re-uploads nothing directly. The only code path
-    //      that reaches drawCachedTilesOnMap() afterwards is synchronize():
-    //      the 1 s 'partial' sync finds every nearby tile already cached and
-    //      returns early WITHOUT drawing, so the canvas stays empty until
-    //      the 5 s 'full' sync tick completes a /GetPixelsCached round trip
-    //      (measured: ~2.4 s average wait, then all 9 textures re-uploaded
-    //      from memory in ~13 ms).
+    //    - Pan-away: drawCachedTilesOnMap() evicts GPU textures for tiles
+    //      outside a buffer of 2x the viewport (min 7 tiles). Again the RAM
+    //      copy stays.
+    //    - Coming back re-uploads nothing directly. The only code path that
+    //      reaches drawCachedTilesOnMap() is synchronize(): the 1 s 'partial'
+    //      sync finds every nearby tile already cached and returns early
+    //      WITHOUT drawing, so the canvas stays empty until the 5 s 'full'
+    //      sync tick completes a /GetPixelsCached round trip (measured: ~2.4 s
+    //      average after a zoom, 1.1-5 s after a pan, then all textures
+    //      re-uploaded from memory in ~13 ms). Ironically a brand-new area
+    //      renders FASTER than a revisited one, because new tiles trigger a
+    //      fetch and the fetch triggers the draw.
     //
     //  The fix is therefore not a debounce on the clear -- keeping textures
     //  resident below the render level would fight the site's own zoom
     //  prompt and defeat Render Level as a low-spec memory knob. It is a
-    //  missing redraw trigger: when zoom crosses back above the threshold
-    //  and the layer has no textures but the cache has bitmaps, call the
-    //  site's own drawCachedTilesOnMap(). That performs exactly the upload
-    //  the 5 s sync would have done later, with zero network requests
-    //  (measured: first tile in ~7 ms, all 9 in ~25 ms).
+    //  missing redraw trigger: on every camera move, when some cached tile
+    //  inside the site's own draw buffer has no GPU texture, call the site's
+    //  drawCachedTilesOnMap(). That performs exactly the upload the 5 s sync
+    //  would have done later, with zero network requests (measured: first
+    //  tile in ~4-14 ms, all 9 in ~25-50 ms).
     //
     //  Everything this needs -- map, pixelTileLayer, tileImageCache, minZoom --
     //  is a top-level `let`/`const` in index.js, invisible to unsafeWindow
@@ -32779,9 +32786,15 @@ window.__gpcCanvasToggle = {
     //  same page-realm script for consistency.
     //
     //  Safety properties:
-    //    - Idempotent and self-limiting: drawCachedTilesOnMap() itself
-    //      early-returns below minZoom, and once tiles.size > 0 the hook is a
-    //      no-op until the site clears the layer again.
+    //    - Calls the site's draw only when a cached tile inside the site's
+    //      own buffer is missing from the GPU (see needsDraw). This is not
+    //      just thrift: drawCachedTilesOnMap() also calls map.moveLayer(),
+    //      which dirties MapLibre's layer order and forces a full label
+    //      placement pass on the next frame even when the layer is already
+    //      on top. The site pays that every 5 s; paying it per pan frame
+    //      would thrash label placement.
+    //    - Idempotent: drawCachedTilesOnMap() early-returns below minZoom and
+    //      skips tiles that are already resident.
     //    - Never touches tileImageCache, tileTextureState, or clear(); it only
     //      asks the site to run its own redraw earlier than it otherwise would.
     //    - Coalesced to one check per event-loop tick and throttled so rapid
@@ -32815,6 +32828,7 @@ window.__gpcCanvasToggle = {
         trailingTimer: null,
         lastRestoreAt: 0,
         restores: 0,
+        checks: 0,
         lastReason: null
     };
 
@@ -32845,16 +32859,75 @@ window.__gpcCanvasToggle = {
         return null;
     }
 
+    // Mirrors the visibility test inside drawCachedTilesOnMap (index.js):
+    // a tile is drawn when it intersects a buffer of twice the viewport,
+    // never smaller than 7 tiles, centred on the map centre. Everything is
+    // done in Web Mercator metres -- the same rectangle the site builds, just
+    // without the per-tile lng/lat round trip. Returns true when at least one
+    // cached tile inside that buffer has no GPU texture yet, i.e. exactly the
+    // moments the site's own draw would upload something.
+    //
+    // This matters because drawCachedTilesOnMap() also calls map.moveLayer(),
+    // which marks the style's layer order dirty and forces MapLibre into a
+    // full label-placement pass on the next frame even when the layer is
+    // already on top. Calling it on every pan frame would thrash placement;
+    // calling it only when there is a texture to upload keeps that cost to
+    // the same occasions the site would have paid it anyway.
+    function needsDraw(m, layer, cache) {
+        if (layer.tiles.size === 0) return true;      // the zoom-back-in case: nothing resident at all
+        var t, grid, tileGrid;
+        try { t = (typeof turf !== 'undefined') ? turf : null; } catch (e) { t = null; }
+        try { grid = (typeof gridSize === 'number') ? gridSize : null; } catch (e) { grid = null; }
+        try { tileGrid = (typeof SYNC_TILE_SIZE === 'number') ? SYNC_TILE_SIZE : null; } catch (e) { tileGrid = null; }
+        if (!t || typeof t.toMercator !== 'function' || !grid || !tileGrid ||
+            typeof m.getBounds !== 'function' || typeof m.getCenter !== 'function') {
+            return false;                              // cannot mirror the site's test; stay conservative
+        }
+        var bounds = m.getBounds();
+        var sw = t.toMercator([bounds.getWest(), bounds.getSouth()]);
+        var ne = t.toMercator([bounds.getEast(), bounds.getNorth()]);
+        var centre = m.getCenter();
+        var c = t.toMercator([centre.lng, centre.lat]);
+        var minBuffer = 7 * tileGrid * grid;
+        var w = Math.max((ne[0] - sw[0]) * 2, minBuffer);
+        var h = Math.max((ne[1] - sw[1]) * 2, minBuffer);
+        var minX = c[0] - w / 2, maxX = c[0] + w / 2;
+        var minY = c[1] - h / 2, maxY = c[1] + h / 2;
+        var tileSize = tileGrid * grid;
+        var half = grid / 2;
+        var hasTile = (typeof layer.hasTile === 'function')
+            ? function (k) { return layer.hasTile(k); }
+            : function (k) { return layer.tiles.has(k); };
+        var it = cache.entries();
+        for (var step = it.next(); !step.done; step = it.next()) {
+            var key = step.value[0], entry = step.value[1];
+            if (!entry || !entry.colorBitmap || !entry.userBitmap) continue;   // nothing drawable yet
+            if (hasTile(key)) continue;                                        // already on the GPU
+            var comma = key.indexOf(',');
+            if (comma < 0) continue;
+            var ox = parseInt(key.slice(0, comma), 10), oy = parseInt(key.slice(comma + 1), 10);
+            if (isNaN(ox) || isNaN(oy)) continue;
+            var x0 = ox * grid - half, y0 = oy * grid - half;
+            var x1 = x0 + tileSize, y1 = y0 + tileSize;
+            if (x1 < minX || x0 > maxX || y1 < minY || y0 > maxY) continue;    // outside the buffer
+            return true;
+        }
+        return false;
+    }
+
     // Returns true only when it actually asked the site to redraw.
     function restore(reason) {
         var m = getMap(), layer = getLayer(), cache = getCache();
         if (!m || !layer || !cache) return false;
-        if (layer.tiles.size > 0) return false;      // textures already resident
         if (cache.size === 0) return false;           // nothing in memory to bring back
         var threshold = getThreshold();
         var zoom = m.getZoom();
         if (threshold !== null && zoom < threshold) return false;   // still below Render Level
         if (typeof drawCachedTilesOnMap !== 'function') return false;
+        var needed;
+        try { needed = needsDraw(m, layer, cache); } catch (e) { needed = false; }
+        state.checks++;
+        if (!needed) return false;                    // every visible tile is already resident
         try {
             drawCachedTilesOnMap();
         } catch (e) {
@@ -32866,11 +32939,11 @@ window.__gpcCanvasToggle = {
         return true;
     }
 
-    // Coalesce the synchronous zoom/zoomend pair (and any burst of zoom
-    // frames in one tick) into a single check. Deliberately a macrotask, not
-    // requestAnimationFrame: rAF is paused in hidden/background documents and
-    // some embedded webviews, and a pending flag waiting on a frame that never
-    // comes would silently block every later restore.
+    // Coalesce the synchronous move/zoom/moveend burst of one tick into a
+    // single check. Deliberately a macrotask, not requestAnimationFrame: rAF
+    // is paused in hidden/background documents and some embedded webviews,
+    // and a pending flag waiting on a frame that never comes would silently
+    // block every later restore.
     function scheduleRestore(reason) {
         if (state.checkPending) return;
         state.checkPending = true;
@@ -32890,14 +32963,19 @@ window.__gpcCanvasToggle = {
         }, 0);
     }
 
-    function onZoom() { scheduleRestore('zoom'); }
+    // MapLibre fires 'move' on every camera frame -- pans AND zooms (a zoom
+    // frame emits 'move' then 'zoom') -- so 'move' alone covers both the
+    // zoom-back-in case and panning back over already-visited tiles.
+    // 'moveend' guarantees a final check after inertia settles.
+    function onMove() { scheduleRestore('move'); }
+    function onMoveEnd() { scheduleRestore('moveend'); }
 
     function attach() {
         if (state.attached) return true;
         var m = getMap();
         if (!m) return false;
-        m.on('zoom', onZoom);
-        m.on('zoomend', onZoom);
+        m.on('move', onMove);
+        m.on('moveend', onMoveEnd);
         state.attached = true;
         return true;
     }
@@ -32906,8 +32984,8 @@ window.__gpcCanvasToggle = {
         if (!state.attached) return;
         var m = getMap();
         if (m && typeof m.off === 'function') {
-            m.off('zoom', onZoom);
-            m.off('zoomend', onZoom);
+            m.off('move', onMove);
+            m.off('moveend', onMoveEnd);
         }
         if (state.trailingTimer) { clearTimeout(state.trailingTimer); state.trailingTimer = null; }
         state.attached = false;
@@ -32921,6 +32999,7 @@ window.__gpcCanvasToggle = {
             return {
                 attached: state.attached,
                 restores: state.restores,
+                checks: state.checks,
                 lastReason: state.lastReason,
                 lastRestoreAt: state.lastRestoreAt
             };
