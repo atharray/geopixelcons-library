@@ -8,18 +8,21 @@
 //      (extracted from the feature file, never re-typed here) inside a vm
 //      context that fakes exactly the GeoPixels globals it depends on:
 //      map, pixelTileLayer, tileImageCache, tileTextureState, minZoom,
-//      gridSize, SYNC_TILE_SIZE, turf, drawCachedTilesOnMap, synchronize,
-//      ensureSyncWorker, syncWorker, isSyncing.
+//      gridSize, SYNC_TILE_SIZE, turf, drawCachedTilesOnMap, isSyncing,
+//      Worker (the sync-worker the ring loader instantiates), mergeWorker /
+//      ensureMergeWorker, createImageBitmap, document.hidden, and a
+//      controllable Date so pacing/cooldowns can be tested instantly.
 //      The fakes mirror the real contracts:
 //        - drawCachedTilesOnMap (index.js ~549-655): early-return below
 //          minZoom, upload every cached tile inside a buffer of 2x the
 //          viewport (min 7 tiles), evict GPU textures outside it.
-//        - synchronize (index.js ~299-505): bail if isSyncing or below
-//          minZoom, build the 3x3 around the CENTRE tile ('full' = all nine
-//          with timestamps, 'partial' = only never-seen ones), return early
-//          with no worker message when that list is empty, otherwise post
-//          {type:'sync-delta', tiles} and cache every tile the worker
-//          returns, then draw.
+//        - sync-worker (js/sync-worker.js): receives {type:'sync-delta',
+//          tiles}, answers ONE message {ok, processedTiles:{tile_X_Y:{type,
+//          colorBitmap,userBitmap,deltas,timestamp}}}; the fake server
+//          enforces the real 9-tile cap (HTTP 413 -> ok:false).
+//        - mergeWorker (index.js ~3504-3530): receives {tileKey,colorBitmap,
+//          userBitmap,deltas}, answers with merged bitmaps which the site's
+//          own handler writes back into tileImageCache and then draws.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -94,7 +97,7 @@ test('bridge hygiene: site functions only, no clear(), no bitmap writes, no rAF'
     assert.match(BRIDGE_SOURCE, /drawCachedTilesOnMap\(\)/);
     assert.match(BRIDGE_SOURCE, /function needsDraw\(/);
     assert.doesNotMatch(BRIDGE_SOURCE, /\.clear\(/);
-    assert.doesNotMatch(BRIDGE_SOURCE, /tileImageCache\.set|cache\.set\(/);
+    assert.doesNotMatch(BRIDGE_SOURCE, /tileImageCache\.set/);
     assert.doesNotMatch(BRIDGE_SOURCE, /setTile\(/);
     // The only cache deletion is inside the budgeted eviction, guarded by isSyncing.
     const evictBlock = BRIDGE_SOURCE.slice(BRIDGE_SOURCE.indexOf('function evict('), BRIDGE_SOURCE.indexOf('function scheduleEvict('));
@@ -111,11 +114,23 @@ test('bridge hygiene: site functions only, no clear(), no bitmap writes, no rAF'
     // Listens to camera movement, which covers zoom frames too.
     assert.match(BRIDGE_SOURCE, /m\.on\('move', onMove\)/);
     assert.match(BRIDGE_SOURCE, /m\.on\('moveend', onMoveEnd\)/);
-    // Ring fetch rides on the site's own request/response path.
-    assert.match(BRIDGE_SOURCE, /worker\.postMessage = function \(msg\)/);
-    assert.match(BRIDGE_SOURCE, /window\.synchronize = function \(syncType\)/);
-    assert.match(BRIDGE_SOURCE, /MAX_NEW_TILES_PER_SYNC = 16/);
+    // The ring loader must never touch the site's own sync path: the server
+    // caps a request at 9 tiles, so padding the site's request would 413 it.
+    assert.doesNotMatch(BRIDGE_SOURCE, /window\.synchronize\s*=/);
+    assert.doesNotMatch(BRIDGE_SOURCE, /syncWorker/);
+    assert.match(BRIDGE_SOURCE, /RING_BATCH_SIZE = 9;/);
+    assert.match(BRIDGE_SOURCE, /new Worker\(SYNC_WORKER_URL\)/);
+    assert.match(BRIDGE_SOURCE, /SYNC_WORKER_URL = '\/js\/sync-worker\.js'/);
     assert.match(BRIDGE_SOURCE, /MIN_RADIUS = 1, MAX_RADIUS = 4/);
+    // Ring responses go through the site's merge worker for deltas and never
+    // write a timestamp-only entry (the site's zombie-making CASE 4).
+    const ringBlock = BRIDGE_SOURCE.slice(BRIDGE_SOURCE.indexOf('function onRingWorkerMessage('), BRIDGE_SOURCE.indexOf('function assign('));
+    assert.match(ringBlock, /mw\.postMessage\(\{ tileKey: cacheKey/);
+    assert.doesNotMatch(ringBlock, /\{ timestamp: timestamp \}\)/);
+    // The ring loader's own cache.set calls are confined to that response handler.
+    const setCount = (BRIDGE_SOURCE.match(/cache\.set\(/g) || []).length;
+    const setInRing = (ringBlock.match(/cache\.set\(/g) || []).length;
+    assert.equal(setCount, setInRing, 'cache.set only in the ring response handler');
 });
 
 // ---------------------------------------------------------------------------
@@ -211,67 +226,64 @@ function makeFakeSite({ renderLevel = 10.5, zoom = 14, cachedKeys = ROW_KEYS, re
     // What the site's updateInterfaceState does on every zoom frame.
     map.on('zoom', () => { if (map._zoom < renderLevel && pixelTileLayer.tiles.size > 0) { pixelTileLayer.tiles.clear(); tileTextureState.clear(); } });
 
-    // ---- sync worker + synchronize, mirroring index.js ----
-    const worker = {
-        messages: [],
-        // The fake server: returns every requested tile unless overridden.
-        server: (tiles) => tiles,
+    // ---- ring loader collaborators, mirroring js/sync-worker.js and the merge worker ----
+    let serverTimestamp = 100;
+    const workers = [];
+    class FakeWorker {
+        constructor(url) {
+            this.url = url; this.listeners = new Map(); this.messages = []; workers.push(this);
+        }
+        addEventListener(type, fn) { if (!this.listeners.has(type)) this.listeners.set(type, new Set()); this.listeners.get(type).add(fn); }
+        _emit(type, data) { for (const fn of this.listeners.get(type) || []) fn({ data }); }
         postMessage(msg) {
             this.messages.push(msg);
-            const returned = this.server(msg.tiles);
-            setTimeout(() => this._resolve && this._resolve({ tiles: returned }), 0);
-        },
-    };
-    const syncCalls = [];
-    let serverTimestamp = 100;
-    async function synchronize(syncType = 'partial') {
-        syncCalls.push(syncType);
-        if (context.isSyncing) return;
-        if (map._zoom < renderLevel) return;
-        context.isSyncing = true;
-        try {
-            const c = map.getCenter();
-            const merc = fakeTurf.toMercator([c.lng, c.lat]);
-            const cx = Math.floor(Math.round(merc[0] / GRID) / TILE_GRID) * TILE_GRID;
-            const cy = Math.floor(Math.round(merc[1] / GRID) / TILE_GRID) * TILE_GRID;
-            const tiles = [];
-            for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
-                const x = cx + i * TILE_GRID, y = cy + j * TILE_GRID;
-                const cached = tileImageCache.get(`${x},${y}`);
-                const timestamp = cached ? cached.timestamp : 0;       // index.js: cachedEntry ? cachedEntry.timestamp : 0
-                if (syncType === 'full') tiles.push({ x, y, timestamp });
-                else if (timestamp === 0) tiles.push({ x, y, timestamp: 0 });
-            }
-            if (tiles.length === 0) { context.isSyncing = false; return; }
-            context.ensureSyncWorker();
-            const result = await new Promise((resolve) => { worker._resolve = resolve; context.syncWorker.postMessage({ type: 'sync-delta', tiles, userID: 'u', tokenUser: 't' }); });
-            serverTimestamp++;
-            for (const t of result.tiles) {
-                const key = `${t.x},${t.y}`;
-                const cur = tileImageCache.get(key) || {};
-                if (t.timestamp === 0) {
-                    if (cur.colorBitmap) cur.colorBitmap.close();
-                    if (cur.userBitmap) cur.userBitmap.close();
-                    tileImageCache.set(key, { ...cur, timestamp: serverTimestamp, colorBitmap: makeBitmap(), userBitmap: makeBitmap() });
-                } else if (cur.colorBitmap && cur.userBitmap) {
-                    tileImageCache.set(key, { ...cur, timestamp: serverTimestamp });   // deltas applied (no-op here)
-                } else {
-                    tileImageCache.set(key, { ...cur, timestamp: serverTimestamp });   // CASE 4 zombie, exactly like the site
+            if (!msg || msg.type !== 'sync-delta') return;
+            const respond = () => {
+                if (msg.tiles.length > 9) { this._emit('message', { ok: false, error: 'GetPixelsCached returned 413' }); return; }
+                const returned = fake.server(msg.tiles);
+                serverTimestamp++;
+                const processedTiles = {};
+                for (const t of returned) {
+                    const key = `tile_${t.x}_${t.y}`;
+                    if (t.timestamp === 0) processedTiles[key] = { type: 'full', colorBitmap: makeBitmap(), userBitmap: makeBitmap(), deltas: fake.deltasFor(t), timestamp: serverTimestamp };
+                    else processedTiles[key] = { type: 'delta', deltas: fake.deltasFor(t), timestamp: serverTimestamp };
                 }
-            }
-            drawCachedTilesOnMap();
-        } finally {
-            context.isSyncing = false;
+                this._emit('message', { ok: true, processedTiles, users: [], userData: null });
+            };
+            if (fake.autoRespond) setTimeout(respond, 0); else fake.pendingResponses.push(respond);
         }
     }
+    const fake = { server: (tiles) => tiles, deltasFor: () => [], autoRespond: true, pendingResponses: [] };
 
+    const mergeWorker = {
+        messages: [],
+        postMessage(msg, transfer) {
+            this.messages.push({ msg, transfer });
+            // The site's onmessage handler: cache the merged bitmaps, then draw.
+            setTimeout(() => {
+                const entry = tileImageCache.get(msg.tileKey) || {};
+                tileImageCache.set(msg.tileKey, { ...entry, colorBitmap: makeBitmap(), userBitmap: makeBitmap() });
+                drawCachedTilesOnMap();
+            }, 0);
+        },
+    };
+
+    // A clock the tests can advance so pacing and cooldowns are testable instantly.
+    let nowMs = 1_000_000;
+    const FakeDate = { now: () => nowMs };
+
+    const documentFake = { hidden: false };
     const context = {
         map, pixelTileLayer, tileImageCache, tileTextureState, drawCachedTilesOnMap,
-        synchronize, ensureSyncWorker() { if (!context.syncWorker) context.syncWorker = worker; }, syncWorker: null, isSyncing: false,
+        isSyncing: false,
+        Worker: FakeWorker, mergeWorker, ensureMergeWorker() {}, createImageBitmap: async (b) => makeBitmap(),
+        document: documentFake,
         minZoom: renderLevel,
         userConfig: { renderLevel },
         gridSize: GRID, SYNC_TILE_SIZE: TILE_GRID, turf: fakeTurf,
-        setTimeout, clearTimeout, Date, isFinite, isNaN, parseInt, Math, Number, Array, Object,
+        setTimeout, clearTimeout, clearInterval, Date: FakeDate, Promise, isFinite, isNaN, parseInt, Math, Number, Array, Object,
+        // unref'd so a test that attaches without detaching cannot keep the process alive
+        setInterval: (fn, ms) => { const t = setInterval(fn, ms); t.unref(); return t; },
         // No requestAnimationFrame on purpose: the bridge must work in a
         // document whose rAF is paused (hidden tab, embedded webview).
     };
@@ -279,8 +291,10 @@ function makeFakeSite({ renderLevel = 10.5, zoom = 14, cachedKeys = ROW_KEYS, re
     vm.createContext(context);
 
     return {
-        context, map, pixelTileLayer, tileImageCache, tileTextureState, draws, worker, syncCalls,
+        context, map, pixelTileLayer, tileImageCache, tileTextureState, draws, fake, mergeWorker, workers,
         setDrawThrows(v) { drawThrows = v; },
+        advance(ms) { nowMs += ms; },
+        now() { return nowMs; },
         install() { vm.runInContext(BRIDGE_SOURCE, context, { filename: 'improved-map-rendering-bridge.js' }); return context.__gpcImprovedMapRendering; },
         // MapLibre emits 'move' on every camera frame, then 'zoom' when zooming.
         zoomTo(z) { map._zoom = z; map.emit('move'); map.emit('zoom'); },
@@ -288,9 +302,11 @@ function makeFakeSite({ renderLevel = 10.5, zoom = 14, cachedKeys = ROW_KEYS, re
         settle() { map.emit('moveend'); },
         siteTick() { drawCachedTilesOnMap(); },   // the site's own 5 s full-sync draw
         gpuKeys() { return new Set(pixelTileLayer.tiles.keys()); },
-        // Calls whatever `synchronize` currently is in the page (the bridge's wrapper once hooked).
-        async sync(type) { await context.synchronize(type); await sleep(5); },
-        lastRequest() { return worker.messages[worker.messages.length - 1]; },
+        ringWorker() { return workers[0] || null; },
+        requests() { return workers.flatMap((w) => w.messages); },
+        lastRequest() { const r = this.requests(); return r[r.length - 1]; },
+        // Drives the ring loop like the bridge's own 1 s timer would, then lets the fake worker answer.
+        async tick(api) { const posted = api.ringTick(); await sleep(5); return posted; },
         cachedKeys() { return new Set([...tileImageCache.entries()].filter(([, e]) => e.colorBitmap && e.userBitmap).map(([k]) => k)); },
     };
 }
@@ -324,7 +340,7 @@ test('restores the canvas from memory as soon as zoom crosses back above the ren
 test('restores evicted tiles when panning back over an area already visited', async () => {
     const site = makeFakeSite({ resident: [...HOME_SET] });
     const api = site.install();
-    api.attach();
+    api.attach(); api.configure({ radius: 1 });          // restore only; the ring loader has its own tests
 
     // Pan far away. The site's next sync tick uploads the far tiles and
     // evicts the home tiles from the GPU; the bridge must not fight that.
@@ -351,7 +367,7 @@ test('does not call the site draw while panning across tiles that are already re
     // never reach it.
     const site = makeFakeSite({ resident: [...HOME_SET] });
     const api = site.install();
-    api.attach();
+    api.attach(); api.configure({ radius: 1 });
 
     // Pan WEST, away from the cached-but-not-resident far tiles, so nothing
     // new can enter the buffer.
@@ -365,7 +381,7 @@ test('does not call the site draw while panning across tiles that are already re
 
 test('draws once when a missing tile enters the buffer mid-drag, not on every frame', async () => {
     const site = makeFakeSite({ resident: [...HOME_SET] });
-    site.install().attach();
+    const api = site.install(); api.attach(); api.configure({ radius: 1 });
 
     let firstDrawAtX = null;
     for (let x = HOME[0]; x <= HOME[0] + 30000; x += 1000) {
@@ -413,7 +429,7 @@ test('throttles rapid re-crossings but still restores the final state', async ()
 
 test('does nothing when there is nothing cached to bring back', async () => {
     const site = makeFakeSite({ cachedKeys: [] });
-    site.install().attach();
+    const api = site.install(); api.attach(); api.configure({ radius: 1 });
     site.zoomTo(9.0); await sleep(20);
     site.zoomTo(14.0); site.settle(); await sleep(20);
     assert.deepEqual(site.draws, []);
@@ -465,16 +481,14 @@ test('survives a throwing drawCachedTilesOnMap without breaking later restores',
     assert.equal(api.getState().restores, 1);
 });
 
-test('attach waits safely for the map, installs listeners once, and hooks the sync path', () => {
+test('attach waits safely for the map and installs listeners exactly once', () => {
     const site = makeFakeSite();
     const api = site.install();
     const realMap = site.context.map;
-    const siteSync = site.context.synchronize;
 
     delete site.context.map;                 // site init() has not created map yet
     assert.equal(api.attach(), false);
     assert.equal(api.getState().attached, false);
-    assert.equal(site.context.synchronize, siteSync, 'nothing hooked before the map exists');
 
     site.context.map = realMap;
     assert.equal(api.attach(), true);
@@ -482,9 +496,7 @@ test('attach waits safely for the map, installs listeners once, and hooks the sy
     assert.equal(realMap.listenerCount('move'), 1);
     assert.equal(realMap.listenerCount('moveend'), 1);
     assert.equal(realMap.listenerCount('zoom'), 1, 'only the site handler; the bridge relies on move');
-    assert.notEqual(site.context.synchronize, siteSync, 'synchronize is wrapped');
-    assert.ok(site.context.syncWorker, 'the worker was created so its postMessage could be wrapped');
-    assert.equal(api.getState().syncHooked, true);
+    assert.equal(site.workers.length, 0, 'the ring worker is created lazily, on the first batch');
 
     // Re-running the bridge source (e.g. a second install attempt) is a no-op.
     vm.runInContext(BRIDGE_SOURCE, site.context);
@@ -524,112 +536,98 @@ test('configure() clamps radius to 1..4 and the cache budget to >= 0', () => {
     assert.equal(api.configure({ maxCacheBytes: 1.5e9 }).maxCacheBytes, 1500000000);
 });
 
-test('expands a full sync from the site 3x3 to the configured ring, nearest first', async () => {
-    const site = makeFakeSite({ cachedKeys: [] });
+test('loads the 5x5 ring through its own worker in 9-tile batches, nearest first, one in flight', async () => {
+    // The site's own 3x3 is cached (its sync handles that); the ring beyond it is not.
+    const site = makeFakeSite({ cachedKeys: ringKeys(HOME_CENTRE, 1) });
     const api = site.install(); api.attach();
     api.configure({ radius: 2 });
 
-    await site.sync('full');
-    const req = site.lastRequest();
-    assert.equal(req.tiles.length, 25, '3x3 from the site + 16 ring tiles');
-    assert.ok(req.tiles.every((t) => t.timestamp === 0), 'nothing cached yet, so everything is a fresh request');
-    assert.ok(setEq(new Set(req.tiles.map((t) => `${t.x},${t.y}`)), new Set(ringKeys(HOME_CENTRE, 2))));
-    // The site's own 9 come first, untouched; the ring is appended.
-    assert.deepEqual(req.tiles.slice(0, 9).map((t) => `${t.x},${t.y}`).sort(), ringKeys(HOME_CENTRE, 1).sort());
-    assert.equal(site.cachedKeys().size, 25, 'the site response loop cached every returned tile');
-    assert.equal(api.getStats().ringFetches, 1);
-    assert.equal(api.getStats().ringTilesRequested, 16);
+    assert.equal(await site.tick(api), true, 'a batch went out');
+    assert.equal(site.workers.length, 1, 'exactly one ring worker');
+    assert.equal(site.ringWorker().url, '/js/sync-worker.js', 'the site\'s own worker script');
+    const req1 = site.lastRequest();
+    assert.equal(req1.type, 'sync-delta');
+    assert.equal(req1.tiles.length, 9, 'server cap');
+    assert.equal(req1.userID, undefined, 'no credentials: the worker then skips /GetUserData');
+    assert.ok(req1.tiles.every((t) => t.timestamp === 0));
+    const d2 = new Set(ringKeys(HOME_CENTRE, 2).filter((k) => !ringKeys(HOME_CENTRE, 1).includes(k)));
+    assert.ok(req1.tiles.every((t) => d2.has(`${t.x},${t.y}`)), 'only ring tiles beyond the 3x3');
+    assert.equal(site.cachedKeys().size, 9 + 9, 'the batch was cached through the site-equivalent path');
+    assert.equal(api.getStats().ringTilesCached, 9);
 
-    // Next full sync: every ring tile is cached, so it is sent WITH its timestamp (updates flow to the ring too).
-    await site.sync('full');
-    const req2 = site.lastRequest();
-    assert.equal(req2.tiles.length, 25);
-    assert.ok(req2.tiles.every((t) => t.timestamp > 0));
+    assert.equal(await site.tick(api), false, 'pacing: no second batch within RING_MIN_GAP_MS');
+    site.advance(1000);
+    assert.equal(await site.tick(api), true);
+    assert.equal(site.lastRequest().tiles.length, 7, 'the remaining 16 - 9 ring tiles');
+    assert.equal(site.cachedKeys().size, 25, 'the whole 5x5 is loaded');
+
+    site.advance(1000);
+    assert.equal(await site.tick(api), false, 'ring complete: nothing to do');
+    assert.equal(api.getStats().ringBatches, 2);
+    assert.equal(api.getStats().ringTilesRequested, 16);
 });
 
-test('radius 1 leaves the site request untouched; radius 4 fills a 9x9 progressively, 16 new tiles per sync', async () => {
-    const site = makeFakeSite({ cachedKeys: [] });
+test('radius 1 never creates a worker; radius 4 fills a 9x9 in 9 paced batches', async () => {
+    const site = makeFakeSite({ cachedKeys: ringKeys(HOME_CENTRE, 1) });
     const api = site.install(); api.attach();
 
     api.configure({ radius: 1 });
-    await site.sync('full');
-    assert.equal(site.lastRequest().tiles.length, 9);
-    assert.equal(api.getStats().ringFetches, 0);
+    assert.equal(await site.tick(api), false);
+    assert.equal(site.workers.length, 0);
 
     api.configure({ radius: 4 });
-    await site.sync('full');
-    assert.equal(site.lastRequest().tiles.length, 9 + 16, 'capped: 16 uncached ring tiles per request');
-    // Nearest first: this batch must be exactly the d=2 ring (16 tiles).
-    const d2 = new Set(ringKeys(HOME_CENTRE, 2).filter((k) => !ringKeys(HOME_CENTRE, 1).includes(k)));
-    assert.ok(setEq(new Set(site.lastRequest().tiles.slice(9).map((t) => `${t.x},${t.y}`)), d2));
-
-    // Subsequent partial syncs would normally return early (centre 3x3 cached);
-    // the bridge promotes them to full while the ring is incomplete.
-    let syncs = 0;
-    while (site.cachedKeys().size < 81 && syncs < 10) { await site.sync('partial'); syncs++; }
-    assert.equal(site.cachedKeys().size, 81, 'the whole 9x9 arrived');
-    assert.equal(syncs, 4, '24 + 32 remaining tiles at 16 per sync = 4 more syncs');
-    assert.equal(api.getStats().promotions, 4);
-    assert.deepEqual(site.syncCalls.slice(-4), ['full', 'full', 'full', 'full'], 'the fake site saw full syncs');
-
-    await site.sync('partial');
-    assert.equal(site.syncCalls[site.syncCalls.length - 1], 'partial', 'ring complete: no more promotion');
-    assert.equal(api.getStats().promotions, 4);
+    let batches = 0;
+    for (let i = 0; i < 20 && site.cachedKeys().size < 81; i++) { if (await site.tick(api)) batches++; site.advance(1000); }
+    assert.equal(site.cachedKeys().size, 81);
+    assert.equal(batches, 8, '72 ring tiles / 9 per batch');
+    // Nearest first: the first batch was entirely distance-2 tiles.
+    const firstBatch = site.requests()[0].tiles.map((t) => Math.max(Math.abs(t.x - 1000), Math.abs(t.y)) / TILE_GRID);
+    assert.ok(firstBatch.every((d) => d === 2), `first batch distances: ${firstBatch}`);
 });
 
-test('preserves the site partial-sync semantics once the ring is complete', async () => {
-    // Ring fully cached except one tile of the site's OWN 3x3: the site's
-    // partial sync requests exactly that tile, and the bridge must neither
-    // promote it to a full sync nor pad the request with cached ring tiles.
-    const site = makeFakeSite({ cachedKeys: ringKeys(HOME_CENTRE, 2).filter((k) => k !== '0,0') });
+test('never holds more than one batch in flight, and recovers if the worker never answers', async () => {
+    const site = makeFakeSite({ cachedKeys: ringKeys(HOME_CENTRE, 1) });
     const api = site.install(); api.attach();
-    api.configure({ radius: 2 });
+    api.configure({ radius: 3 });
+    site.fake.autoRespond = false;                       // the worker goes silent
 
-    await site.sync('partial');
-    const req = site.lastRequest();
-    assert.deepEqual(req.tiles.map((t) => `${t.x},${t.y}`), ['0,0']);
-    assert.equal(req.tiles[0].timestamp, 0);
-    assert.equal(site.syncCalls[site.syncCalls.length - 1], 'partial', 'not promoted: nothing beyond the 3x3 is missing');
-    assert.equal(api.getStats().promotions, 0);
-    assert.equal(api.getStats().ringFetches, 0);
+    assert.equal(await site.tick(api), true);
+    assert.equal(api.getStats().ringInFlight, true);
+    site.advance(5000);
+    assert.equal(await site.tick(api), false, 'still waiting on the first batch');
+    assert.equal(site.requests().length, 1);
+
+    site.advance(30000);                                  // RING_TIMEOUT_MS
+    assert.equal(await site.tick(api), true, 'timed out: moved on to the next batch');
+    assert.equal(site.requests().length, 2);
+    // The timeout and the re-request cooldown are both 30 s from the request,
+    // so the abandoned tiles are eligible again -- and, still being the
+    // nearest uncached ones, they are exactly what gets retried.
+    const a = site.requests()[0].tiles.map((t) => `${t.x},${t.y}`).sort();
+    const b = site.requests()[1].tiles.map((t) => `${t.x},${t.y}`).sort();
+    assert.deepEqual(b, a, 'the nearest tiles are retried');
+    assert.equal(api.getStats().ringInFlight, true, 'and again only one batch is in flight');
 });
 
-test('promotes a partial sync to full only when a tile BEYOND the 3x3 is unrequested', async () => {
-    const site = makeFakeSite({ cachedKeys: ringKeys(HOME_CENTRE, 2).filter((k) => k !== '3000,2000') });
+test('a tile the server never returns is not re-requested until the cooldown expires', async () => {
+    const site = makeFakeSite({ cachedKeys: ringKeys(HOME_CENTRE, 1) });
     const api = site.install(); api.attach();
     api.configure({ radius: 2 });
+    site.fake.server = (tiles) => tiles.filter((t) => !(t.x === 3000 && t.y === 2000));
 
-    await site.sync('partial');
-    assert.equal(site.syncCalls[site.syncCalls.length - 1], 'full', 'promoted: a d=2 ring tile is missing');
-    const keys = site.lastRequest().tiles.map((t) => `${t.x},${t.y}`);
-    assert.equal(keys.length, 25, 'the full request carries the whole ring');
-    const missing = site.lastRequest().tiles.find((t) => t.x === 3000 && t.y === 2000);
-    assert.equal(missing.timestamp, 0, 'the missing tile is a fresh request');
-    assert.ok(site.lastRequest().tiles.filter((t) => t !== missing).every((t) => t.timestamp > 0), 'cached ring tiles carry timestamps');
-    assert.equal(api.getStats().promotions, 1);
-    assert.equal(site.cachedKeys().size, 25);
-});
+    for (let i = 0; i < 3; i++) { await site.tick(api); site.advance(1000); }
+    assert.equal(site.cachedKeys().size, 24, 'everything but the hole');
+    const before = site.requests().length;
+    for (let i = 0; i < 5; i++) { await site.tick(api); site.advance(1000); }
+    assert.equal(site.requests().length, before, 'nothing during the cooldown');
 
-test('a tile the server never returns is not re-requested every second', async () => {
-    const site = makeFakeSite({ cachedKeys: [] });
-    const api = site.install(); api.attach();
-    api.configure({ radius: 2 });
-    site.worker.server = (tiles) => tiles.filter((t) => `${t.x},${t.y}` !== '3000,2000');   // one ring tile "missing" upstream
-
-    await site.sync('full');
-    assert.equal(site.cachedKeys().size, 24);
-    const requestsAfterFirst = site.worker.messages.length;
-
-    // Many partial ticks: the centre 3x3 is cached, the one hole was requested
-    // moments ago, so no promotion and no request at all.
-    for (let i = 0; i < 5; i++) await site.sync('partial');
-    assert.equal(site.worker.messages.length, requestsAfterFirst, 'no requests during the cooldown');
-    assert.equal(api.getStats().promotions, 0);
-    assert.ok(site.syncCalls.slice(-5).every((t) => t === 'partial'));
-
-    // A site-initiated full sync during the cooldown does not re-add it either.
-    await site.sync('full');
-    assert.ok(!site.lastRequest().tiles.some((t) => t.x === 3000 && t.y === 2000));
+    site.advance(30000);
+    await site.tick(api);
+    const hole = site.lastRequest().tiles.find((t) => t.x === 3000 && t.y === 2000);
+    assert.ok(hole && hole.timestamp === 0, 'asked once more after the cooldown, as a fresh request');
+    // (the cooldown and the 5x5 refresh interval are both 30 s, so this batch
+    // may also carry delta checks for cached ring tiles -- with timestamps)
+    assert.ok(site.lastRequest().tiles.filter((t) => t !== hole).every((t) => t.timestamp > 0));
 });
 
 test('re-requests timestamp-only zombie entries as full tiles, but leaves mid-merge entries alone', async () => {
@@ -641,21 +639,80 @@ test('re-requests timestamp-only zombie entries as full tiles, but leaves mid-me
     // Mid-merge: the site sets bitmaps to null explicitly while the merge worker runs.
     site.tileImageCache.set('3000,1000', { timestamp: 78, colorBitmap: null, userBitmap: null });
 
-    await site.sync('full');
-    const byKey = Object.fromEntries(site.lastRequest().tiles.map((t) => [`${t.x},${t.y}`, t.timestamp]));
-    assert.equal(byKey['3000,2000'], 0, 'zombie is asked for as a full tile');
-    assert.equal(byKey['3000,1000'], 78, 'mid-merge keeps its timestamp');
+    assert.equal(await site.tick(api), true);
+    assert.equal(JSON.stringify(site.lastRequest().tiles), JSON.stringify([{ x: 3000, y: 2000, timestamp: 0 }]), 'only the zombie, as a fresh request');
+    assert.ok(site.tileImageCache.get('3000,2000').colorBitmap, 'and it is a real tile again');
+    assert.equal(site.tileImageCache.get('3000,1000').colorBitmap, null, 'mid-merge entry untouched');
 });
 
-test('does not request anything below the render level', async () => {
-    const site = makeFakeSite({ cachedKeys: [] });
+test('refreshes cached ring tiles for deltas on a slow cadence, stalest first, through the merge worker', async () => {
+    const site = makeFakeSite({ cachedKeys: ringKeys(HOME_CENTRE, 2) });    // site loaded everything itself
+    const api = site.install(); api.attach();
+    api.configure({ radius: 2 });
+
+    assert.equal(await site.tick(api), false, 'freshly attached: nothing due');
+    site.advance(29000);
+    assert.equal(await site.tick(api), false, 'below the 15 s x radius interval');
+    site.advance(2000);
+    assert.equal(await site.tick(api), true, 'refresh due');
+    const req = site.lastRequest();
+    assert.equal(req.tiles.length, 9);
+    assert.ok(req.tiles.every((t) => t.timestamp > 0), 'delta checks carry the cached timestamps');
+    assert.equal(site.mergeWorker.messages.length, 0, 'no deltas -> nothing merged, nothing rewritten');
+
+    // Next batch covers the remaining 7; then the ring is quiet again until the next interval.
+    site.advance(1000);
+    assert.equal(await site.tick(api), true);
+    assert.equal(site.lastRequest().tiles.length, 7);
+    site.advance(1000);
+    assert.equal(await site.tick(api), false);
+
+    // A refresh that DOES find deltas: cloned bitmaps go to the merge worker,
+    // the entry is marked mid-merge, and the merge result lands back in the cache.
+    site.fake.deltasFor = (t) => (t.x === 3000 && t.y === 2000) ? [{ key: '3000,2000', gridX: 3000, gridY: 2000, color: '#FF0000', userId: 1 }] : [];
+    site.advance(31000);
+    await site.tick(api); site.advance(1000); await site.tick(api);
+    await sleep(10);
+    assert.equal(site.mergeWorker.messages.length, 1);
+    assert.equal(site.mergeWorker.messages[0].msg.tileKey, '3000,2000');
+    assert.ok(site.tileImageCache.get('3000,2000').colorBitmap, 'merged bitmap written back by the site handler');
+});
+
+test('does not touch tiles that are not in the cache when a delta arrives for them (no zombies)', async () => {
+    const site = makeFakeSite({ cachedKeys: ringKeys(HOME_CENTRE, 2) });
+    const api = site.install(); api.attach();
+    api.configure({ radius: 2 });
+    site.fake.autoRespond = false;
+    site.fake.deltasFor = () => [{ key: 'x', gridX: 0, gridY: 0, color: '#FF0000', userId: 1 }];
+    site.advance(31000);
+    assert.equal(await site.tick(api), true);                    // a refresh batch is in flight
+    const key = `${site.lastRequest().tiles[0].x},${site.lastRequest().tiles[0].y}`;
+    site.tileImageCache.delete(key);                              // evicted meanwhile
+    site.fake.pendingResponses.shift()(); await sleep(5);
+    assert.equal(site.tileImageCache.has(key), false, 'a delta for an absent tile writes nothing');
+});
+
+test('does not request anything below the render level or while the tab is hidden', async () => {
+    const site = makeFakeSite({ cachedKeys: ringKeys(HOME_CENTRE, 1) });
     const api = site.install(); api.attach();
     api.configure({ radius: 3 });
     site.map._zoom = 9;
-    await site.sync('full');
-    await site.sync('partial');
-    assert.equal(site.worker.messages.length, 0);
-    assert.equal(api.getStats().promotions, 0);
+    assert.equal(await site.tick(api), false);
+    site.map._zoom = 14;
+    site.context.document.hidden = true;
+    assert.equal(await site.tick(api), false);
+    site.context.document.hidden = false;
+    assert.equal(await site.tick(api), true);
+    assert.equal(site.requests().length, 1);
+});
+
+test('an oversized batch can never be sent (the fake server 413s it like the real one)', async () => {
+    const site = makeFakeSite({ cachedKeys: ringKeys(HOME_CENTRE, 1) });
+    const api = site.install(); api.attach();
+    api.configure({ radius: 4 });
+    for (let i = 0; i < 12; i++) { await site.tick(api); site.advance(1000); }
+    assert.ok(site.requests().every((r) => r.tiles.length <= 9));
+    assert.equal(site.cachedKeys().size, 81, 'every batch was accepted');
 });
 
 // ---- max tile cache -----------------------------------------------------
@@ -711,7 +768,7 @@ test('never evicts while the site has a sync in flight, and ignores mid-merge en
     assert.ok(site.tileImageCache.has('8000,0'), 'mid-merge entry left for the merge worker');
 });
 
-test('enforces the budget automatically after a sync settles and on moveend', async () => {
+test('enforces the budget automatically on configure, on moveend, and on the periodic timer', async () => {
     // The site's own 3x3 around HOME fully cached (so a partial sync only ever
     // asks for what the test removes), plus four far tiles: 13 tiles.
     const farKeys = ['6000,0', '7000,0', '8000,0', '9000,0'];
@@ -727,11 +784,10 @@ test('enforces the budget automatically after a sync settles and on moveend', as
     assert.equal(api.getStats().tiles, 10, 'moveend evicted the newcomer (it is the farthest)');
     assert.ok(!site.tileImageCache.has('12000,0'));
 
+    // The site's own sync adds tiles without telling us; the 1 s timer catches it.
     site.tileImageCache.set('12000,0', { colorBitmap: makeBitmap(), userBitmap: makeBitmap(), timestamp: 1 });
-    site.tileImageCache.delete('0,0');                            // make the site request a tile so a sync actually runs
-    await site.sync('partial'); await sleep(5);
-    assert.deepEqual(site.lastRequest().tiles.map((t) => `${t.x},${t.y}`), ['0,0'], 'only the site request; radius 1 adds nothing');
-    assert.equal(api.getStats().tiles, 10, 'the pass after the sync settled evicted again');
-    assert.ok(site.tileImageCache.has('0,0'), 'the freshly synced on-screen tile is of course kept');
+    await sleep(1100);
+    assert.equal(api.getStats().tiles, 10, 'the periodic pass evicted again');
     assert.ok(!site.tileImageCache.has('12000,0'));
+    api.detach();
 });

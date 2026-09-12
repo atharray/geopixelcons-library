@@ -32910,19 +32910,17 @@ window.__gpcCanvasToggle = {
     //    - Restore: on every camera move, when some cached tile inside the
     //      site's own draw buffer has no GPU texture, call the site's
     //      drawCachedTilesOnMap(). Zero network requests.
-    //    - Radius: the site's synchronize() posts its 3x3 tile list to the
-    //      sync worker; this hooks syncWorker.postMessage and appends the
-    //      outer ring (nearest first, at most MAX_NEW_TILES_PER_SYNC uncached
-    //      tiles per request so a 9x9 fills progressively instead of decoding
-    //      80 WebP pairs at once). The site's own response loop caches every
-    //      returned tile, so no caching logic is duplicated. A 'partial' sync
-    //      that would have returned early (centre 3x3 already cached) is
-    //      promoted to 'full' while the ring still has unrequested tiles, so
-    //      the ring fills at the 1 s partial cadence rather than the 5 s one.
-    //      Cached ring tiles are included with their timestamps on full syncs
-    //      so they receive updates too.
-    //    - Budget: after each sync settles and on moveend, if the estimated
-    //      decoded size (width x height x 4 bytes x 2 bitmaps per tile) exceeds
+    //    - Radius: the server caps /GetPixelsCached at 9 tiles per request
+    //      (HTTP 413, verified live), so the ring is loaded by a second
+    //      instance of the site's own sync-worker: batches of at most 9,
+    //      nearest first, one in flight at a time, at least 1 s apart, only
+    //      above the render level and only while the tab is visible. Cached
+    //      ring tiles are re-checked for deltas every 15 s x radius. Responses
+    //      are handled with the same four cases as synchronize(), through the
+    //      site's merge worker, so its caches see exactly what its own sync
+    //      would produce. The site's own 3x3 request is never touched.
+    //    - Budget: once a second, on moveend and after each ring batch, if the
+    //      estimated decoded size (width x height x 4 bytes x 2 bitmaps) exceeds
     //      the budget, evict tiles outside BOTH the draw buffer and the fetch
     //      ring, farthest from centre first, closing their ImageBitmaps and
     //      dropping their GPU textures. Tiles on screen are never evicted, so
@@ -32933,7 +32931,7 @@ window.__gpcCanvasToggle = {
     //      (bitmaps undefined rather than null) and re-requested as full tiles.
     //
     //  Everything this needs -- map, pixelTileLayer, tileImageCache, minZoom,
-    //  syncWorker, isSyncing -- is a top-level `let`/`const` in index.js,
+    //  mergeWorker, isSyncing -- is a top-level `let`/`const` in index.js,
     //  invisible to unsafeWindow property access, so the hook runs as a
     //  classic <script> in the page's own lexical scope, the same technique
     //  as ext-canvas-toggle.js and ext-map-movement-lock.js.
@@ -32972,7 +32970,11 @@ window.__gpcCanvasToggle = {
     window.__gpcImprovedMapRenderingBridge = true;
 
     var MIN_RESTORE_GAP_MS = 100;
-    var MAX_NEW_TILES_PER_SYNC = 16;      // uncached ring tiles per request; a 9x9 fills over ~5 syncs
+    var SYNC_WORKER_URL = '/js/sync-worker.js';   // the site's own worker script, run as a second instance
+    var RING_BATCH_SIZE = 9;              // hard server limit per /GetPixelsCached request (HTTP 413 above)
+    var RING_MIN_GAP_MS = 1000;           // pacing between ring batches; one batch in flight at a time
+    var RING_TIMEOUT_MS = 30000;          // give up waiting for a batch that never answers
+    var RING_REFRESH_BASE_MS = 15000;     // x radius: how often cached ring tiles are re-checked for deltas
     var REREQUEST_COOLDOWN_MS = 30000;    // a tile the server did not return is not asked for again sooner
     var MIN_RADIUS = 1, MAX_RADIUS = 4;   // 3x3 .. 9x9
     var state = {
@@ -32985,12 +32987,16 @@ window.__gpcCanvasToggle = {
         lastReason: null,
         radius: 2,                        // 5x5 by default
         maxCacheBytes: 0,                 // 0 = unlimited
-        syncHooked: false,
-        currentSyncType: null,
-        requestedAt: {},                  // tileKey -> Date.now() of the last request we added it to
-        ringFetches: 0,
+        attachedAt: 0,
+        timer: null,
+        ringWorker: null,
+        ringInFlight: null,               // { tiles, at } while a batch is awaiting its response
+        lastRingBatchAt: 0,
+        requestedAt: {},                  // tileKey -> Date.now() of our last fresh request for it
+        refreshedAt: {},                  // tileKey -> Date.now() of our last delta check for it
+        ringBatches: 0,
         ringTilesRequested: 0,
-        promotions: 0,
+        ringTilesCached: 0,
         evictions: 0,
         evictedBytes: 0,
         evictPending: false
@@ -33158,6 +33164,17 @@ window.__gpcCanvasToggle = {
     }
 
     // ---------- tile loading radius ----------
+    //
+    // The server caps /GetPixelsCached at 9 tiles per request (HTTP 413
+    // "Request exceeds the maximum of 9 tiles." -- verified live), so the
+    // ring cannot simply be appended to the site's own request: one oversized
+    // request fails outright and costs the site its 3x3 update for that
+    // cycle. The ring is therefore loaded through a SEPARATE sync-worker
+    // instance, at most 9 tiles per batch, one batch in flight at a time,
+    // with a minimum gap between batches. Responses are handled here with
+    // the same four cases as synchronize() (index.js ~383-465), using the
+    // site's own merge worker for delta application, so the site's caches
+    // see exactly what they would see from its own sync.
 
     // A cache entry the site will keep sending a timestamp for but never
     // re-fetch: CASE 4 in synchronize() stores { timestamp } with no bitmap
@@ -33176,8 +33193,10 @@ window.__gpcCanvasToggle = {
         return typeof at === 'number' && (now - at) < REREQUEST_COOLDOWN_MS;
     }
 
-    // Visits ring tiles nearest-first: distance minD (1 = the site's own 3x3
-    // minus the centre), then the next ring, ... up to state.radius.
+    // Visits ring tiles nearest-first: distance minD, then the next ring, ...
+    // up to state.radius. Distance 1 is the site's own 3x3 (minus the
+    // centre), which its partial sync already fills within a second; the ring
+    // loader therefore starts at distance 2.
     function forEachRingTile(centre, g, fn, minD) {
         for (var d = (minD || 1); d <= state.radius; d++) {
             for (var i = -d; i <= d; i++) {
@@ -33189,106 +33208,185 @@ window.__gpcCanvasToggle = {
         }
     }
 
-    // Does the ring BEYOND the site's 3x3 still contain tiles we have not
-    // asked for? Drives the partial -> full promotion. Missing tiles inside
-    // the 3x3 are the site's own business: its partial sync requests those
-    // itself, and turning that into a full sync would only add traffic.
-    // Below the render level synchronize() bails before requesting anything,
-    // so there is nothing to promote either.
-    function ringHasUnrequestedTiles() {
-        if (state.radius <= 1) return false;
+    function ringRefreshIntervalMs() {
+        // Scales with ring size so refresh traffic stays roughly constant:
+        // 5x5 -> 30 s (2 batches), 9x9 -> 60 s (9 batches).
+        return RING_REFRESH_BASE_MS * state.radius;
+    }
+
+    // Picks the next batch: uncached ring tiles first (fresh requests), then
+    // cached ring tiles whose last refresh is older than the interval (with
+    // their timestamps, so the server answers with deltas only).
+    function nextRingBatch(now) {
+        if (state.radius <= 1) return [];
         var m = getMap(), cache = getCache(), g = getGeometry();
-        if (!m || !cache || !g || typeof m.getCenter !== 'function') return false;
+        if (!m || !cache || !g || typeof m.getCenter !== 'function') return [];
         var threshold = getThreshold();
-        if (threshold !== null && m.getZoom() < threshold) return false;
+        if (threshold !== null && m.getZoom() < threshold) return [];
         var centre = centreTile(m, g);
-        var now = Date.now();
-        var found = false;
+        var batch = [];
         forEachRingTile(centre, g, function (x, y) {
             var key = x + ',' + y;
             if (entryTimestamp(cache.get(key)) > 0) return true;
             if (recentlyRequested(key, now)) return true;
-            found = true;
-            return false;
+            batch.push({ x: x, y: y, timestamp: 0, key: key });
+            return batch.length < RING_BATCH_SIZE;
         }, 2);
-        return found;
+        if (batch.length < RING_BATCH_SIZE) {
+            var interval = ringRefreshIntervalMs();
+            var due = [];
+            forEachRingTile(centre, g, function (x, y) {
+                var key = x + ',' + y;
+                var ts = entryTimestamp(cache.get(key));
+                if (ts === 0) return true;
+                var last = state.refreshedAt[key];
+                if (typeof last !== 'number') last = state.attachedAt;      // tiles loaded by the site itself
+                if (now - last < interval) return true;
+                due.push({ x: x, y: y, timestamp: ts, key: key, last: last });
+                return true;
+            }, 2);
+            due.sort(function (a, b) { return a.last - b.last; });          // stalest first
+            for (var i = 0; i < due.length && batch.length < RING_BATCH_SIZE; i++) batch.push(due[i]);
+        }
+        return batch;
     }
 
-    // Appends the outer ring to the tile list the site is about to post.
-    function expandTiles(tiles) {
-        if (state.radius <= 1 || !Array.isArray(tiles)) return tiles;
-        var m = getMap(), cache = getCache(), g = getGeometry();
-        if (!m || !cache || !g || typeof m.getCenter !== 'function') return tiles;
-        var centre = centreTile(m, g);
-        var isFull = state.currentSyncType === 'full';
-        var present = {};
-        for (var i = 0; i < tiles.length; i++) present[tiles[i].x + ',' + tiles[i].y] = true;
+    function getRingWorker() {
+        if (state.ringWorker) return state.ringWorker;
+        if (typeof Worker !== 'function') return null;
+        try {
+            var w = new Worker(SYNC_WORKER_URL);
+            w.addEventListener('message', onRingWorkerMessage);
+            w.addEventListener('error', function () { finishRingBatch(); });
+            state.ringWorker = w;
+            return w;
+        } catch (e) { return null; }
+    }
+    // A batch that timed out does not count towards pacing: the next tick may
+    // move on immediately rather than wait another gap on top of the timeout.
+    function finishRingBatch(timedOut) {
+        state.ringInFlight = null;
+        if (!timedOut) state.lastRingBatchAt = Date.now();
+    }
+
+    function postRingBatch(batch) {
+        var w = getRingWorker();
+        if (!w) return false;
         var now = Date.now();
-        var extra = [], newCount = 0;
-        forEachRingTile(centre, g, function (x, y) {
-            var key = x + ',' + y;
-            if (present[key]) return;
-            var ts = entryTimestamp(cache.get(key));
-            if (ts === 0) {
-                if (newCount >= MAX_NEW_TILES_PER_SYNC) return;
-                if (recentlyRequested(key, now)) return;
-                newCount++;
-                state.requestedAt[key] = now;
-                extra.push({ x: x, y: y, timestamp: 0 });
-            } else if (isFull) {
-                extra.push({ x: x, y: y, timestamp: ts });
-            }
-        });
-        if (extra.length === 0) return tiles;
-        state.ringFetches++;
-        state.ringTilesRequested += extra.length;
-        return tiles.concat(extra);
+        var tiles = [];
+        for (var i = 0; i < batch.length; i++) {
+            var t = batch[i];
+            tiles.push({ x: t.x, y: t.y, timestamp: t.timestamp });
+            if (t.timestamp === 0) state.requestedAt[t.key] = now;
+            state.refreshedAt[t.key] = now;       // a fresh load is as up to date as a delta check
+        }
+        state.ringInFlight = { tiles: tiles, at: now };
+        state.ringBatches++;
+        state.ringTilesRequested += tiles.length;
+        try {
+            // No userID/tokenUser: the worker then skips its /GetUserData call.
+            w.postMessage({ type: 'sync-delta', tiles: tiles });
+        } catch (e) {
+            finishRingBatch();
+            return false;
+        }
+        return true;
     }
 
-    function hookSync() {
-        if (state.syncHooked) return true;
-        var orig;
-        try { orig = (typeof synchronize === 'function') ? synchronize : null; } catch (e) { orig = null; }
-        if (!orig) return false;
-        try { if (typeof ensureSyncWorker === 'function') ensureSyncWorker(); } catch (e) {}
-        var worker;
-        try { worker = (typeof syncWorker !== 'undefined' && syncWorker && typeof syncWorker.postMessage === 'function') ? syncWorker : null; } catch (e) { worker = null; }
-        if (!worker) return false;
-
-        // The postMessage hook sees every request the site makes; the
-        // synchronize wrapper tells it which kind, and promotes partial
-        // syncs while the ring is incomplete.
-        var origPost = worker.postMessage;
-        worker.postMessage = function (msg) {
+    // Mirrors synchronize()'s response handling (index.js ~383-465) for the
+    // tiles this loader asked for. Deltas go through the site's merge worker,
+    // whose own onmessage handler writes the merged bitmaps back into
+    // tileImageCache and calls drawCachedTilesOnMap().
+    function onRingWorkerMessage(ev) {
+        var data = ev && ev.data;
+        if (!data || data.type === 'log' || data.type === 'worker-error') return;
+        finishRingBatch();
+        if (!data.ok || !data.processedTiles) return;
+        var cache = getCache();
+        if (!cache) return;
+        var mw = null;
+        try { if (typeof ensureMergeWorker === 'function') ensureMergeWorker(); } catch (e) {}
+        try { mw = (typeof mergeWorker !== 'undefined' && mergeWorker && typeof mergeWorker.postMessage === 'function') ? mergeWorker : null; } catch (e) { mw = null; }
+        var cached = 0;
+        var keys = Object.keys(data.processedTiles);
+        for (var i = 0; i < keys.length; i++) {
+            var tileKey = keys[i];
+            var tileData = data.processedTiles[tileKey];
+            if (!tileData) continue;
+            var cacheKey = tileKey.replace('tile_', '').replace('_', ',');
+            var type = tileData.type, colorBitmap = tileData.colorBitmap, userBitmap = tileData.userBitmap;
+            var deltas = tileData.deltas, timestamp = tileData.timestamp;
+            var current = cache.get(cacheKey) || {};
             try {
-                if (msg && msg.type === 'sync-delta' && Array.isArray(msg.tiles)) {
-                    msg.tiles = expandTiles(msg.tiles);
+                if (type === 'full' && colorBitmap && userBitmap) {
+                    closeBitmap(current.colorBitmap);
+                    closeBitmap(current.userBitmap);
+                    if (deltas && deltas.length > 0 && mw) {
+                        // CASE 1: base image + deltas -> merge worker fills the bitmaps in.
+                        cache.set(cacheKey, assign({}, current, { timestamp: timestamp, colorBitmap: null, userBitmap: null }));
+                        mw.postMessage({ tileKey: cacheKey, colorBitmap: colorBitmap, userBitmap: userBitmap, deltas: deltas }, [colorBitmap, userBitmap]);
+                    } else {
+                        // CASE 2: plain full tile.
+                        cache.set(cacheKey, assign({}, current, { timestamp: timestamp, colorBitmap: colorBitmap, userBitmap: userBitmap }));
+                        cached++;
+                    }
+                } else if (type === 'delta' && deltas && deltas.length > 0) {
+                    if (current.colorBitmap && current.userBitmap && mw && typeof createImageBitmap === 'function') {
+                        // CASE 3: apply deltas to the cached bitmaps via the merge worker.
+                        applyDeltasViaMergeWorker(cache, cacheKey, current, deltas, timestamp, mw);
+                    }
+                    // Not cached (e.g. evicted meanwhile): deliberately NOT the site's
+                    // CASE 4 -- writing { timestamp } alone would create a zombie.
                 }
-            } catch (e) { /* fall through with the site's own list */ }
-            return origPost.apply(this, arguments);
-        };
+                // 'delta' with no deltas: nothing changed; nothing to do.
+            } catch (e) { /* one bad tile must not spoil the batch */ }
+        }
+        state.ringTilesCached += cached;
+        if (cached > 0) scheduleRestore('ring');
+        scheduleEvict('ring');
+    }
+    function applyDeltasViaMergeWorker(cache, cacheKey, current, deltas, timestamp, mw) {
+        var oldColor = current.colorBitmap, oldUser = current.userBitmap;
+        // Mark as mid-merge first (bitmaps null), exactly like the site does.
+        cache.set(cacheKey, assign({}, current, { timestamp: timestamp, colorBitmap: null, userBitmap: null }));
+        Promise.all([createImageBitmap(oldColor), createImageBitmap(oldUser)]).then(function (clones) {
+            closeBitmap(oldColor);
+            closeBitmap(oldUser);
+            mw.postMessage({ tileKey: cacheKey, colorBitmap: clones[0], userBitmap: clones[1], deltas: deltas }, [clones[0], clones[1]]);
+        }, function () {
+            // Could not clone: put the originals back untouched.
+            var e = cache.get(cacheKey);
+            if (e && e.colorBitmap === null) cache.set(cacheKey, assign({}, e, { colorBitmap: oldColor, userBitmap: oldUser }));
+        });
+    }
+    function assign(target) {
+        for (var i = 1; i < arguments.length; i++) {
+            var src = arguments[i];
+            if (!src) continue;
+            for (var k in src) if (Object.prototype.hasOwnProperty.call(src, k)) target[k] = src[k];
+        }
+        return target;
+    }
 
-        window.synchronize = function (syncType) {
-            var type = (syncType === undefined) ? 'partial' : syncType;
-            if (type === 'partial') {
-                var promote = false;
-                try { promote = !isSiteSyncing() && ringHasUnrequestedTiles(); } catch (e) { promote = false; }
-                if (promote) { type = 'full'; state.promotions++; }
-            }
-            state.currentSyncType = type;
-            var result;
-            try {
-                result = orig.apply(this, [type]);
-            } finally {
-                state.currentSyncType = null;
-            }
-            if (result && typeof result.then === 'function') {
-                result.then(function () { scheduleEvict('sync'); }, function () {});
-            }
-            return result;
-        };
-        state.syncHooked = true;
-        return true;
+    // One step of the ring loop: post the next batch if nothing is in flight
+    // and the pacing gap has elapsed. Also the periodic home of the cache
+    // budget check. Runs every second while attached (like the site's own
+    // partial-sync timer) and is exposed for diagnostics/tests.
+    function ringTick() {
+        var now = Date.now();
+        try { if (typeof document !== 'undefined' && document && document.hidden) return false; } catch (e) {}
+        if (state.ringInFlight) {
+            if (now - state.ringInFlight.at > RING_TIMEOUT_MS) finishRingBatch(true);   // worker never answered
+            else return false;
+        }
+        if (now - state.lastRingBatchAt < RING_MIN_GAP_MS) return false;
+        var batch = nextRingBatch(now);
+        if (batch.length === 0) return false;
+        return postRingBatch(batch);
+    }
+    function onTimer() {
+        try { ringTick(); } catch (e) {}
+        try { if (!state.evictPending) evict('tick'); } catch (e) {}
     }
 
     // ---------- max tile cache ----------
@@ -33379,7 +33477,7 @@ window.__gpcCanvasToggle = {
     // 'moveend' guarantees a final check after inertia settles, and is the
     // natural moment to enforce the cache budget.
     function onMove() { scheduleRestore('move'); }
-    function onMoveEnd() { scheduleRestore('moveend'); scheduleEvict('moveend'); }
+    function onMoveEnd() { scheduleRestore('moveend'); scheduleEvict('moveend'); try { ringTick(); } catch (e) {} }
 
     function attach() {
         if (state.attached) return true;
@@ -33388,7 +33486,8 @@ window.__gpcCanvasToggle = {
         m.on('move', onMove);
         m.on('moveend', onMoveEnd);
         state.attached = true;
-        hookSync();
+        state.attachedAt = Date.now();
+        state.timer = setInterval(onTimer, 1000);
         return true;
     }
 
@@ -33400,6 +33499,7 @@ window.__gpcCanvasToggle = {
             m.off('moveend', onMoveEnd);
         }
         if (state.trailingTimer) { clearTimeout(state.trailingTimer); state.trailingTimer = null; }
+        if (state.timer) { clearInterval(state.timer); state.timer = null; }
         state.attached = false;
     }
 
@@ -33427,6 +33527,7 @@ window.__gpcCanvasToggle = {
         getConfig: getConfig,
         restore: function () { return restore('manual'); },
         evict: function () { return evict('manual'); },
+        ringTick: function () { return ringTick(); },
         getStats: function () {
             var s = cacheStats();
             return {
@@ -33436,10 +33537,10 @@ window.__gpcCanvasToggle = {
                 maxCacheBytes: state.maxCacheBytes,
                 evictions: state.evictions,
                 evictedBytes: state.evictedBytes,
-                ringFetches: state.ringFetches,
+                ringBatches: state.ringBatches,
                 ringTilesRequested: state.ringTilesRequested,
-                promotions: state.promotions,
-                syncHooked: state.syncHooked
+                ringTilesCached: state.ringTilesCached,
+                ringInFlight: !!state.ringInFlight
             };
         },
         getState: function () {
@@ -33448,8 +33549,7 @@ window.__gpcCanvasToggle = {
                 restores: state.restores,
                 checks: state.checks,
                 lastReason: state.lastReason,
-                lastRestoreAt: state.lastRestoreAt,
-                syncHooked: state.syncHooked
+                lastRestoreAt: state.lastRestoreAt
             };
         }
     };
