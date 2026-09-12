@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.13.1 - readable release bundle */
+/* GeoPixelcons Library v2.13.2 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.13.2'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.13.2';
+    const VERSION = '2.14.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -41,6 +41,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
         { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Fades out canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Per-user opacity slider with one-click Hide and Show buttons at each end', 'Global slider fades every blocked user at once without losing their individual settings', 'Warns before painting over pixels placed by a blocked user', 'Paste in many IDs at once with a live preview, and unblock several at a time', 'Private per-user notes, plus JSON import/export by clipboard or file', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
         { key: 'extCanvasToggle', name: 'Canvas Visibility Toggle', icon: '👁️', desc: 'Adds a button to the Image Tools (🖼️) dropdown that fades or hides the entire pixel canvas, leaving the base map visible.', features: ['Click the button for an opacity slider with Hide and Show buttons at each end', 'Any partial fade works, which is handy for tracing over existing art', 'Costs nothing to change — it sets the tile layer\'s opacity rather than redrawing anything', 'Always starts visible after a reload so a hidden canvas can never be mistaken for a broken site'] },
+        { key: 'extImprovedMapRendering', name: 'Improved Map Rendering', icon: '⚡', desc: 'Brings the pixel canvas back instantly when you zoom in past your Render Level again, instead of leaving it blank until the next server sync.', features: ['Redraws the cached tiles the moment zoom crosses back above your Render Level', 'Uses the tile images the site already holds in memory — no extra server requests', 'Removes the 0–5 second blank-canvas wait after a quick zoom out and back in', 'Changes nothing below the Render Level — pixels still hide there exactly as the site intends'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
@@ -54,7 +55,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const EXTENSION_CATEGORIES = [
         { name: 'Painting', keys: ['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'] },
         { name: 'Ghost Template', keys: ['ghostPlusPlus', 'showSyncGhostBtn'] },
-        { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers', 'extCanvasToggle'] },
+        { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers', 'extCanvasToggle', 'extImprovedMapRendering'] },
         { name: 'Menuing', keys: ['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'] },
         { name: 'Misc', keys: ['extGoToLastLocation'] },
         { name: 'Deprecated', keys: ['ghostPaletteSearch', 'ghostTemplateManager'] },
@@ -1319,6 +1320,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.14.0',
+            date: '2026-09-11',
+            items: [
+                { type: 'added', text: 'Improved Map Rendering (Map, off by default): the pixel canvas comes back instantly when you zoom in past your Render Level again, using the tiles already in memory instead of waiting up to 5 seconds for the next server sync' },
+            ]
+        },
         {
             version: '2.13.2',
             date: '2026-08-29',
@@ -32728,6 +32736,238 @@ window.__gpcCanvasToggle = {
             _featureStatus.extCanvasToggle = 'error';
             dbgPush(`Canvas Visibility Toggle init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Canvas Visibility Toggle' });
             console.error('[GeoPixelcons++] ❌ Canvas Visibility Toggle failed:', err);
+        }
+    }
+
+
+
+    // ============================================================
+    //  EXTENSION: Improved Map Rendering [extImprovedMapRendering]
+    // ============================================================
+    //
+    //  Brings the pixel canvas back the moment you zoom in past your Render
+    //  Level again, instead of leaving it blank until the next server sync.
+    //
+    //  Why the site goes blank (js/index.js, verified against the live page):
+    //    - updateInterfaceState runs on every `zoom` frame and, the instant
+    //      zoom drops below minZoom, calls pixelTileLayer.clear() and
+    //      tileTextureState.clear(). That deletes only the GPU textures --
+    //      tileImageCache, the decoded ImageBitmaps, is never evicted.
+    //    - Zooming back in re-uploads nothing directly. The only code path
+    //      that reaches drawCachedTilesOnMap() afterwards is synchronize():
+    //      the 1 s 'partial' sync finds every nearby tile already cached and
+    //      returns early WITHOUT drawing, so the canvas stays empty until
+    //      the 5 s 'full' sync tick completes a /GetPixelsCached round trip
+    //      (measured: ~2.4 s average wait, then all 9 textures re-uploaded
+    //      from memory in ~13 ms).
+    //
+    //  The fix is therefore not a debounce on the clear -- keeping textures
+    //  resident below the render level would fight the site's own zoom
+    //  prompt and defeat Render Level as a low-spec memory knob. It is a
+    //  missing redraw trigger: when zoom crosses back above the threshold
+    //  and the layer has no textures but the cache has bitmaps, call the
+    //  site's own drawCachedTilesOnMap(). That performs exactly the upload
+    //  the 5 s sync would have done later, with zero network requests
+    //  (measured: first tile in ~7 ms, all 9 in ~25 ms).
+    //
+    //  Everything this needs -- map, pixelTileLayer, tileImageCache, minZoom --
+    //  is a top-level `let`/`const` in index.js, invisible to unsafeWindow
+    //  property access, so the hook runs as a classic <script> in the page's
+    //  own lexical scope, the same technique as ext-canvas-toggle.js and
+    //  ext-map-movement-lock.js. drawCachedTilesOnMap is a top-level function
+    //  declaration and so is a real global, but it is called from inside the
+    //  same page-realm script for consistency.
+    //
+    //  Safety properties:
+    //    - Idempotent and self-limiting: drawCachedTilesOnMap() itself
+    //      early-returns below minZoom, and once tiles.size > 0 the hook is a
+    //      no-op until the site clears the layer again.
+    //    - Never touches tileImageCache, tileTextureState, or clear(); it only
+    //      asks the site to run its own redraw earlier than it otherwise would.
+    //    - Coalesced to one check per event-loop tick and throttled so rapid
+    //      oscillation across the threshold cannot stack uploads. It does not
+    //      use requestAnimationFrame, which is paused in hidden documents and
+    //      some embedded webviews (verified: a rAF-based version never fired
+    //      in the desktop app's browser pane while zoom events still did).
+    //
+    if (_settings.extImprovedMapRendering) {
+        try {
+            (function _ext_improvedMapRendering() {
+
+    const BRIDGE_FLAG = '__gpcImprovedMapRenderingBridge';
+    const BRIDGE_API  = '__gpcImprovedMapRendering';
+    const ATTACH_POLL_MS = 250;
+    const ATTACH_GIVE_UP_MS = 120000;
+
+    const _pw = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
+
+    // Kept as a standalone constant (no interpolation) so tests can extract
+    // and execute the exact page-realm code against fake site globals.
+    const BRIDGE_SOURCE = `
+(function () {
+    if (window.__gpcImprovedMapRenderingBridge) return;
+    window.__gpcImprovedMapRenderingBridge = true;
+
+    var MIN_RESTORE_GAP_MS = 100;
+    var state = {
+        attached: false,
+        checkPending: false,
+        trailingTimer: null,
+        lastRestoreAt: 0,
+        restores: 0,
+        lastReason: null
+    };
+
+    function getMap() {
+        try {
+            return (typeof map !== 'undefined' && map &&
+                typeof map.on === 'function' && typeof map.getZoom === 'function') ? map : null;
+        } catch (e) { return null; }
+    }
+    function getLayer() {
+        try {
+            return (typeof pixelTileLayer !== 'undefined' && pixelTileLayer &&
+                pixelTileLayer.tiles && typeof pixelTileLayer.tiles.size === 'number') ? pixelTileLayer : null;
+        } catch (e) { return null; }
+    }
+    function getCache() {
+        try {
+            return (typeof tileImageCache !== 'undefined' && tileImageCache &&
+                typeof tileImageCache.size === 'number') ? tileImageCache : null;
+        } catch (e) { return null; }
+    }
+    function getThreshold() {
+        try { if (typeof minZoom === 'number' && isFinite(minZoom)) return minZoom; } catch (e) {}
+        try {
+            if (typeof userConfig !== 'undefined' && userConfig &&
+                typeof userConfig.renderLevel === 'number' && isFinite(userConfig.renderLevel)) return userConfig.renderLevel;
+        } catch (e) {}
+        return null;
+    }
+
+    // Returns true only when it actually asked the site to redraw.
+    function restore(reason) {
+        var m = getMap(), layer = getLayer(), cache = getCache();
+        if (!m || !layer || !cache) return false;
+        if (layer.tiles.size > 0) return false;      // textures already resident
+        if (cache.size === 0) return false;           // nothing in memory to bring back
+        var threshold = getThreshold();
+        var zoom = m.getZoom();
+        if (threshold !== null && zoom < threshold) return false;   // still below Render Level
+        if (typeof drawCachedTilesOnMap !== 'function') return false;
+        try {
+            drawCachedTilesOnMap();
+        } catch (e) {
+            return false;
+        }
+        state.lastRestoreAt = Date.now();
+        state.restores++;
+        state.lastReason = reason || null;
+        return true;
+    }
+
+    // Coalesce the synchronous zoom/zoomend pair (and any burst of zoom
+    // frames in one tick) into a single check. Deliberately a macrotask, not
+    // requestAnimationFrame: rAF is paused in hidden/background documents and
+    // some embedded webviews, and a pending flag waiting on a frame that never
+    // comes would silently block every later restore.
+    function scheduleRestore(reason) {
+        if (state.checkPending) return;
+        state.checkPending = true;
+        setTimeout(function () {
+            state.checkPending = false;
+            var sinceLast = Date.now() - state.lastRestoreAt;
+            if (sinceLast >= MIN_RESTORE_GAP_MS) {
+                restore(reason);
+                return;
+            }
+            // Throttled: make sure the final state still gets restored.
+            if (state.trailingTimer) return;
+            state.trailingTimer = setTimeout(function () {
+                state.trailingTimer = null;
+                restore(reason);
+            }, MIN_RESTORE_GAP_MS - sinceLast);
+        }, 0);
+    }
+
+    function onZoom() { scheduleRestore('zoom'); }
+
+    function attach() {
+        if (state.attached) return true;
+        var m = getMap();
+        if (!m) return false;
+        m.on('zoom', onZoom);
+        m.on('zoomend', onZoom);
+        state.attached = true;
+        return true;
+    }
+
+    function detach() {
+        if (!state.attached) return;
+        var m = getMap();
+        if (m && typeof m.off === 'function') {
+            m.off('zoom', onZoom);
+            m.off('zoomend', onZoom);
+        }
+        if (state.trailingTimer) { clearTimeout(state.trailingTimer); state.trailingTimer = null; }
+        state.attached = false;
+    }
+
+    window.__gpcImprovedMapRendering = {
+        attach: attach,
+        detach: detach,
+        restore: function () { return restore('manual'); },
+        getState: function () {
+            return {
+                attached: state.attached,
+                restores: state.restores,
+                lastReason: state.lastReason,
+                lastRestoreAt: state.lastRestoreAt
+            };
+        }
+    };
+})();`;
+
+    function installBridge() {
+        if (_pw[BRIDGE_FLAG]) return;
+        const script = document.createElement('script');
+        script.textContent = BRIDGE_SOURCE;
+        (document.head || document.documentElement).appendChild(script);
+        script.remove();
+    }
+
+    // `map` is created inside the site's async init(), usually well after
+    // this userscript runs, so keep trying to attach until it exists.
+    function attachWhenReady() {
+        const startedAt = Date.now();
+        const tryAttach = () => {
+            try {
+                const api = _pw[BRIDGE_API];
+                if (api && typeof api.attach === 'function' && api.attach()) return true;
+            } catch (err) {
+                dbgPush(`Improved Map Rendering attach failed: ${err && err.message ? err.message : String(err)}`,
+                    { error: err, uiComponent: 'Improved Map Rendering' });
+            }
+            return false;
+        };
+        if (tryAttach()) return;
+        const timer = setInterval(() => {
+            if (tryAttach() || Date.now() - startedAt > ATTACH_GIVE_UP_MS) {
+                clearInterval(timer);
+            }
+        }, ATTACH_POLL_MS);
+    }
+
+    installBridge();
+    attachWhenReady();
+
+            })();
+            _featureStatus.extImprovedMapRendering = 'ok';
+            console.log('[GeoPixelcons++] ✅ Improved Map Rendering loaded');
+        } catch (err) {
+            _featureStatus.extImprovedMapRendering = 'error';
+            dbgPush(`Improved Map Rendering init failed: ${err && err.message ? err.message : String(err)}`, { error: err, uiComponent: 'Improved Map Rendering' });
+            console.error('[GeoPixelcons++] ❌ Improved Map Rendering failed:', err);
         }
     }
 
