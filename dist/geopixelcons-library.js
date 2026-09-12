@@ -765,10 +765,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 const mb = stats.bytes / 1048576;
                 const size = mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : Math.round(mb) + ' MB';
                 const cap = stats.maxCacheBytes > 0 ? ` of ${(stats.maxCacheBytes / 1073741824).toFixed(2)} GB` : ' (no limit)';
-                readout.textContent = `Tile cache now: ${size} in ${stats.tiles} tiles${cap}` + (stats.evictions ? ` · ${stats.evictions} evicted so far` : '');
+                readout.textContent = `Tile cache now: ~${size} decoded (est.) in ${stats.tiles} tiles${cap}` + (stats.evictions ? ` · ${stats.evictions} evicted so far` : '');
             }
 
-            panel.appendChild(makeLine('Max tile cache', 'Estimated decoded size of the tile cache (about 7.6 MB per tile). Once exceeded, the tiles farthest from the view are freed. Tiles currently on screen are never freed, so this is a soft cap while zoomed far out. 0 or blank = no limit (the site\'s own behaviour).', gbWrap));
+            panel.appendChild(makeLine('Max tile cache', 'Estimated decoded size of the tile cache: 2 bitmaps × 1000×1000 × 4 bytes ≈ 7.6 MB per tile. This is an upper bound — the browser and OS usually hold idle tiles more cheaply (compressed or discardable), so Task Manager will show less. Once exceeded, the tiles farthest from the view are freed. Tiles currently on screen are never freed, so this is a soft cap while zoomed far out. 0 or blank = no limit (the site\'s own behaviour).', gbWrap));
             panel.appendChild(makeLine('Tile loading radius', 'How many tiles around the map centre are fetched on each sync. The site itself fetches 3×3. Larger rings fill zoomed-out views faster but download and decode more tiles.', radiusSelect));
             panel.appendChild(readout);
             row.appendChild(panel);
@@ -32919,6 +32919,9 @@ window.__gpcCanvasToggle = {
     //      are handled with the same four cases as synchronize(), through the
     //      site's merge worker, so its caches see exactly what its own sync
     //      would produce. The site's own 3x3 request is never touched.
+    //    - No uploads below the render level: setTile() is guarded so texture
+    //      uploads still queued when a fast zoom-out crosses the threshold are
+    //      dropped instead of landing after the site's clear (see below).
     //    - Budget: once a second, on moveend and after each ring batch, if the
     //      estimated decoded size (width x height x 4 bytes x 2 bitmaps) exceeds
     //      the budget, evict tiles outside BOTH the draw buffer and the fetch
@@ -32999,7 +33002,9 @@ window.__gpcCanvasToggle = {
         ringTilesCached: 0,
         evictions: 0,
         evictedBytes: 0,
-        evictPending: false
+        evictPending: false,
+        uploadGuarded: false,
+        uploadsDropped: 0
     };
 
     function getMap() {
@@ -33385,6 +33390,7 @@ window.__gpcCanvasToggle = {
         return postRingBatch(batch);
     }
     function onTimer() {
+        try { installUploadGuard(); } catch (e) {}
         try { ringTick(); } catch (e) {}
         try { if (!state.evictPending) evict('tick'); } catch (e) {}
     }
@@ -33469,6 +33475,48 @@ window.__gpcCanvasToggle = {
         }, 0);
     }
 
+    // ---------- no uploads below the render level ----------
+    //
+    // drawCachedTilesOnMap() does not upload synchronously: it queues one
+    // task per tile (generationTaskQueue, index.js ~267-295) and the tasks
+    // run on setTimeout(0), one per turn of the event loop. The site's
+    // updateInterfaceState clears the layer on every 'zoom' frame that is
+    // below minZoom -- but a fast wheel zoom is over in a handful of frames,
+    // and any task that runs after the LAST frame uploads a texture nothing
+    // clears until the next zoom event. Result: a few tiles stay visible far
+    // below the render level (reproduced live: 24 queued uploads, zoom
+    // 14 -> 9 in one event, 24 stragglers). The site can hit this on its own
+    // 5 s draw; the restore path and the ring loader make draws more frequent
+    // and queues longer, so it is easy to trigger with them.
+    //
+    // The guard sits at the upload choke point: below the render level,
+    // setTile() is a no-op. drawCachedTilesOnMap() already refuses to START
+    // uploads below minZoom, so this only drops work the site never intended
+    // to do, and tileTextureState was cleared with the layer, so the tiles
+    // are re-uploaded normally the next time they are needed. Chains on
+    // whatever setTile currently is (the Blocked User List wraps it too, in
+    // either order).
+    function installUploadGuard() {
+        if (state.uploadGuarded) return true;
+        var layer = getLayer();
+        if (!layer || typeof layer.setTile !== 'function') return false;
+        if (layer.setTile.__gpcImrGuarded) { state.uploadGuarded = true; return true; }
+        var inner = layer.setTile;
+        var guarded = function (tileKey, source, corners) {
+            var m = getMap(), threshold = getThreshold();
+            if (m && threshold !== null && m.getZoom() < threshold) {
+                state.uploadsDropped++;
+                return;
+            }
+            return inner.apply(this, arguments);
+        };
+        guarded.__gpcImrGuarded = true;
+        guarded.__gpcImrInner = inner;
+        layer.setTile = guarded;
+        state.uploadGuarded = true;
+        return true;
+    }
+
     // ---------- wiring ----------
 
     // MapLibre fires 'move' on every camera frame -- pans AND zooms (a zoom
@@ -33488,6 +33536,7 @@ window.__gpcCanvasToggle = {
         state.attached = true;
         state.attachedAt = Date.now();
         state.timer = setInterval(onTimer, 1000);
+        try { installUploadGuard(); } catch (e) {}
         return true;
     }
 
@@ -33540,7 +33589,9 @@ window.__gpcCanvasToggle = {
                 ringBatches: state.ringBatches,
                 ringTilesRequested: state.ringTilesRequested,
                 ringTilesCached: state.ringTilesCached,
-                ringInFlight: !!state.ringInFlight
+                ringInFlight: !!state.ringInFlight,
+                uploadGuarded: state.uploadGuarded,
+                uploadsDropped: state.uploadsDropped
             };
         },
         getState: function () {

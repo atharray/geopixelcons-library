@@ -98,7 +98,9 @@ test('bridge hygiene: site functions only, no clear(), no bitmap writes, no rAF'
     assert.match(BRIDGE_SOURCE, /function needsDraw\(/);
     assert.doesNotMatch(BRIDGE_SOURCE, /\.clear\(/);
     assert.doesNotMatch(BRIDGE_SOURCE, /tileImageCache\.set/);
-    assert.doesNotMatch(BRIDGE_SOURCE, /setTile\(/);
+    assert.doesNotMatch(BRIDGE_SOURCE, /\.setTile\(/, 'never uploads itself; it only guards the site upload');
+    assert.match(BRIDGE_SOURCE, /function installUploadGuard\(/);
+    assert.match(BRIDGE_SOURCE, /layer\.setTile = guarded;/);
     // The only cache deletion is inside the budgeted eviction, guarded by isSyncing.
     const evictBlock = BRIDGE_SOURCE.slice(BRIDGE_SOURCE.indexOf('function evict('), BRIDGE_SOURCE.indexOf('function scheduleEvict('));
     assert.match(evictBlock, /if \(isSiteSyncing\(\)\) return 0;/);
@@ -193,8 +195,10 @@ function makeFakeSite({ renderLevel = 10.5, zoom = 14, cachedKeys = ROW_KEYS, re
     const tileTextureState = new Map();
     const pixelTileLayer = {
         tiles: new Map(),
+        uploads: [],
         hasTile(k) { return this.tiles.has(k); },
         removeTile(k) { this.tiles.delete(k); },
+        setTile(k, source, corners) { this.uploads.push(k); this.tiles.set(k, { tex: {} }); },
     };
     const tileImageCache = new Map();
     for (const key of cachedKeys) tileImageCache.set(key, { colorBitmap: makeBitmap(), userBitmap: makeBitmap(), timestamp: 1 });
@@ -219,7 +223,7 @@ function makeFakeSite({ renderLevel = 10.5, zoom = 14, cachedKeys = ROW_KEYS, re
             const t = tileMercBox(key);
             const outside = b.minX > t.x1 || b.maxX < t.x0 || b.minY > t.y1 || b.maxY < t.y0;
             if (outside) { pixelTileLayer.tiles.delete(key); tileTextureState.delete(key); }
-            else { pixelTileLayer.tiles.set(key, { tex: {} }); tileTextureState.set(key, { timestamp: e.timestamp }); }
+            else { pixelTileLayer.setTile(key, e.colorBitmap, []); tileTextureState.set(key, { timestamp: e.timestamp }); }
         }
     }
 
@@ -790,4 +794,73 @@ test('enforces the budget automatically on configure, on moveend, and on the per
     assert.equal(api.getStats().tiles, 10, 'the periodic pass evicted again');
     assert.ok(!site.tileImageCache.has('12000,0'));
     api.detach();
+});
+
+// ---- no uploads below the render level ----------------------------------
+
+test('drops texture uploads that land after a fast zoom-out crossed the render level', async () => {
+    // Reproduced live: drawCachedTilesOnMap() queues one upload per tile on
+    // setTimeout(0); the site clears the layer only on `zoom` frames, so a
+    // one-event zoom-out leaves every still-queued upload to land afterwards.
+    const site = makeFakeSite({ resident: [] });
+    const api = site.install(); api.attach(); api.configure({ radius: 1 });
+    assert.equal(api.getStats().uploadGuarded, true, 'installed at attach, since the layer already exists');
+    assert.equal(site.pixelTileLayer.setTile.__gpcImrGuarded, true);
+
+    // Simulate the site's queue: five uploads scheduled while above the threshold...
+    const queued = [...HOME_SET].map((k) => () => site.pixelTileLayer.setTile(k, {}, []));
+    // ...then the zoom-out crosses below the threshold before they run.
+    site.map._zoom = 9.0;
+    for (const task of queued) task();
+    assert.equal(site.pixelTileLayer.tiles.size, 0, 'nothing landed below the render level');
+    assert.equal(api.getStats().uploadsDropped, 5);
+
+    // Above the threshold uploads pass straight through to the site's setTile.
+    site.map._zoom = 14;
+    site.pixelTileLayer.setTile('0,0', {}, []);
+    assert.equal(site.pixelTileLayer.tiles.size, 1);
+    assert.deepEqual(site.pixelTileLayer.uploads, ['0,0']);
+    assert.equal(api.getStats().uploadsDropped, 5);
+});
+
+test('chains with a setTile wrapper that was installed first (Blocked User List style)', () => {
+    const site = makeFakeSite({ resident: [] });
+    const seen = [];
+    const orig = site.pixelTileLayer.setTile;
+    site.pixelTileLayer.setTile = function (k, src, c) { seen.push(k); return orig.call(this, k, src, c); };
+    site.pixelTileLayer.setTile.__gpcBlockedUsersOriginal = orig;
+
+    const api = site.install(); api.attach();
+    assert.equal(site.pixelTileLayer.setTile.__gpcImrGuarded, true);
+    assert.equal(site.pixelTileLayer.setTile.__gpcImrInner.__gpcBlockedUsersOriginal, orig, 'wrapped the existing wrapper, not the bare method');
+
+    site.map._zoom = 14;
+    site.pixelTileLayer.setTile('1000,0', {}, []);
+    assert.deepEqual(seen, ['1000,0'], 'inner wrapper still runs above the threshold');
+    site.map._zoom = 9;
+    site.pixelTileLayer.setTile('2000,0', {}, []);
+    assert.deepEqual(seen, ['1000,0'], 'and is skipped entirely below it');
+});
+
+test('installs the guard later if the tile layer does not exist yet at attach time', async () => {
+    const site = makeFakeSite({ resident: [] });
+    const layer = site.context.pixelTileLayer;
+    site.context.pixelTileLayer = null;                       // index.js: `let pixelTileLayer = null` until map load
+    const api = site.install(); api.attach();
+    assert.equal(api.getStats().uploadGuarded, false);
+    site.context.pixelTileLayer = layer;
+    await sleep(1100);                                        // the bridge's 1 s timer retries
+    assert.equal(api.getStats().uploadGuarded, true);
+    assert.equal(layer.setTile.__gpcImrGuarded, true);
+    api.detach();
+});
+
+test('the guard never blocks the restore path: zooming back in re-uploads normally', async () => {
+    const site = makeFakeSite({ resident: [...HOME_SET] });
+    const api = site.install(); api.attach(); api.configure({ radius: 1 });
+    site.zoomTo(9.0); await sleep(20);
+    assert.equal(site.pixelTileLayer.tiles.size, 0);
+    site.zoomTo(14.0); await sleep(20);
+    assert.ok(setEq(site.gpuKeys(), HOME_SET));
+    assert.equal(api.getStats().uploadsDropped, 0, 'nothing was dropped: every upload happened above the threshold');
 });

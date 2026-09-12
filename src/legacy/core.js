@@ -753,10 +753,10 @@
                 const mb = stats.bytes / 1048576;
                 const size = mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : Math.round(mb) + ' MB';
                 const cap = stats.maxCacheBytes > 0 ? ` of ${(stats.maxCacheBytes / 1073741824).toFixed(2)} GB` : ' (no limit)';
-                readout.textContent = `Tile cache now: ${size} in ${stats.tiles} tiles${cap}` + (stats.evictions ? ` · ${stats.evictions} evicted so far` : '');
+                readout.textContent = `Tile cache now: ~${size} decoded (est.) in ${stats.tiles} tiles${cap}` + (stats.evictions ? ` · ${stats.evictions} evicted so far` : '');
             }
 
-            panel.appendChild(makeLine('Max tile cache', 'Estimated decoded size of the tile cache (about 7.6 MB per tile). Once exceeded, the tiles farthest from the view are freed. Tiles currently on screen are never freed, so this is a soft cap while zoomed far out. 0 or blank = no limit (the site\'s own behaviour).', gbWrap));
+            panel.appendChild(makeLine('Max tile cache', 'Estimated decoded size of the tile cache: 2 bitmaps × 1000×1000 × 4 bytes ≈ 7.6 MB per tile. This is an upper bound — the browser and OS usually hold idle tiles more cheaply (compressed or discardable), so Task Manager will show less. Once exceeded, the tiles farthest from the view are freed. Tiles currently on screen are never freed, so this is a soft cap while zoomed far out. 0 or blank = no limit (the site\'s own behaviour).', gbWrap));
             panel.appendChild(makeLine('Tile loading radius', 'How many tiles around the map centre are fetched on each sync. The site itself fetches 3×3. Larger rings fill zoomed-out views faster but download and decode more tiles.', radiusSelect));
             panel.appendChild(readout);
             row.appendChild(panel);
