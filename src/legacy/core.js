@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.13.2';
+    const VERSION = '2.14.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -29,6 +29,7 @@
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
         { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Fades out canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Per-user opacity slider with one-click Hide and Show buttons at each end', 'Global slider fades every blocked user at once without losing their individual settings', 'Warns before painting over pixels placed by a blocked user', 'Paste in many IDs at once with a live preview, and unblock several at a time', 'Private per-user notes, plus JSON import/export by clipboard or file', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
         { key: 'extCanvasToggle', name: 'Canvas Visibility Toggle', icon: '👁️', desc: 'Adds a button to the Image Tools (🖼️) dropdown that fades or hides the entire pixel canvas, leaving the base map visible.', features: ['Click the button for an opacity slider with Hide and Show buttons at each end', 'Any partial fade works, which is handy for tracing over existing art', 'Costs nothing to change — it sets the tile layer\'s opacity rather than redrawing anything', 'Always starts visible after a reload so a hidden canvas can never be mistaken for a broken site'] },
+        { key: 'extImprovedMapRendering', name: 'Improved Map Rendering', icon: '⚡', desc: 'Brings already-loaded tiles back instantly after zooming or panning, loads a wider ring of tiles around you than the site\'s 3×3, and can cap how much RAM the tile cache uses.', features: ['Redraws cached tiles the moment they come back into view — no waiting for the next server sync', 'Tile loading radius: fetch 5×5 (default), 7×7 or 9×9 tiles around the map centre instead of the site\'s 3×3, so zoomed-out views fill in without panning over every tile', 'Max tile cache (GB): optional budget that evicts the tiles farthest from view once the decoded cache exceeds it — tiles on screen are never evicted', 'Both settings live in this row and apply immediately, with a live readout of the current cache size', 'Changes nothing below the Render Level — pixels still hide there exactly as the site intends'] },
         { key: 'extGuildSearch', name: 'Guild Search Button', icon: '🔎', desc: 'Inserts a search icon button in the guild submenu to open the Guild Search modal — allows searching other guilds without leaving your own.', features: ['Adds a search button directly below the Guild menu button in its submenu', 'Calls the native toggleGuildSearchModal() when clicked'] },
         { key: 'extLogOutButton', name: 'Log Out Button', icon: '🚪', desc: 'Appends a Log Out button to the bottom of the right controls panel. Hides automatically when you are not logged in.', features: ['Exit-icon Log Out button at the bottom of controls-right', 'Calls the native logOut() when clicked', 'Auto-hides while the user is logged out and reappears on login'] },
         { key: 'ghostPaletteSearch', name: 'Ghost Palette Color Search', icon: '🔍', deprecated: true, ghostPlusPlusGray: true, desc: 'Superseded by Ghost++. Adds a searchable color filter to the native ghost image palette — only useful if Ghost++ is disabled.', features: ['Search ghost palette colors by hex code', 'Hide unmatched colors with a toggle', 'Enable filtered: enable matched colors and disable all others in the ghost palette', 'Enable owned and filtered: enable only owned colors currently shown by filters', 'Real-time glow/highlight on matching swatches'] },
@@ -42,13 +43,13 @@
     const EXTENSION_CATEGORIES = [
         { name: 'Painting', keys: ['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'] },
         { name: 'Ghost Template', keys: ['ghostPlusPlus', 'showSyncGhostBtn'] },
-        { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers', 'extCanvasToggle'] },
+        { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers', 'extCanvasToggle', 'extImprovedMapRendering'] },
         { name: 'Menuing', keys: ['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'] },
         { name: 'Misc', keys: ['extGoToLastLocation'] },
         { name: 'Deprecated', keys: ['ghostPaletteSearch', 'ghostTemplateManager'] },
     ];
 
-    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, mobilePaintingManualPalette: false, controlsUiScale: 100, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
+    const DEFAULT_SETTINGS = { useEmojiIcon: false, compactPaintOverflow: true, disableGroupNoise: false, startShiftLock: false, startInspectMode: false, smoothZoomButtons: false, enableDebug: false, modernizeGhostPaletteBtns: false, rememberGhostModalPos: false, mobilePaintingManualPalette: false, controlsUiScale: 100, improvedMapRenderingTileRadius: 2, improvedMapRenderingMaxCacheGB: 2, keybinds: { openSettings: { key: 'P', ctrl: true, shift: true }, mapMovementLock: { key: 'L', ctrl: true, shift: true } } };
     FEATURE_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = true);
     // Ghost++ deliberately opts out of the blanket "every feature defaults on" rule above:
     // it wholesale replaces the native ghost-image tool, which is too large a UX change to
@@ -223,6 +224,7 @@
     let _regionsHighscore = null; // Populated by regions highscore module
     let _mapMarkers = null; // Populated by map markers module
     let _blockedUsers = null; // Populated by blocked user list module
+    let _improvedMapRendering = null; // Populated by improved map rendering module
 
     // ─── Shared coord cache for screenshot/highscore flyouts ────────
     const COORD_CACHE_KEY = 'gpc_cachedCoords';
@@ -648,6 +650,128 @@
         });
 
         const deprecatedSection = extensionCategoryPanels.get('Deprecated');
+
+        // Improved Map Rendering sub-settings. They live INSIDE the same row
+        // div as the feature's toggle, directly below it, and are only shown
+        // while the toggle is on. Changes apply live through the feature's
+        // bridge (no reload needed) and persist with the rest of _settings.
+        (function attachImprovedMapRenderingSettings() {
+            const row = extensionRowsByKey.get('extImprovedMapRendering');
+            if (!row) return;
+            const toggleInput = row.querySelector('input[type="checkbox"]');
+            if (!toggleInput) return;
+            row.style.flexWrap = 'wrap';
+
+            const panel = document.createElement('div');
+            panel.id = 'gpp-imr-settings';
+            panel.style.cssText = `
+                flex-basis: 100%; width: 100%; box-sizing: border-box;
+                display: ${_settings.extImprovedMapRendering ? 'flex' : 'none'}; flex-direction: column; gap: 8px;
+                margin-top: 10px; padding-top: 10px; font-size: 13px;
+                border-top: 1px dashed ${dark ? '#45475a' : '#cbd5e1'};
+            `;
+            const inputCss = `
+                width: 72px; padding: 4px 8px; border-radius: 6px; font-size: 13px; text-align: right;
+                background: ${dark ? '#181825' : '#ffffff'}; color: ${dark ? '#cdd6f4' : '#1e293b'};
+                border: 1px solid ${dark ? '#45475a' : '#cbd5e1'};
+            `;
+
+            function makeLine(labelText, helpText, control) {
+                const line = document.createElement('div');
+                line.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:10px;';
+                const label = document.createElement('div');
+                label.style.cssText = 'display:flex; align-items:center; gap:6px; font-weight:500;';
+                const text = document.createElement('span');
+                text.textContent = labelText;
+                label.appendChild(text);
+                const help = document.createElement('span');
+                help.textContent = '❓';
+                help.style.cssText = 'cursor:help;font-size:12px;flex-shrink:0;opacity:0.6;';
+                help.addEventListener('mouseenter', (ev) => showSimpleTooltip(ev, helpText));
+                help.addEventListener('mouseleave', removeTooltip);
+                label.appendChild(help);
+                line.appendChild(label);
+                line.appendChild(control);
+                return line;
+            }
+
+            // Max tile cache (GB) -- text input; 0 or blank = no limit.
+            const gbWrap = document.createElement('div');
+            gbWrap.style.cssText = 'display:flex; align-items:center; gap:6px;';
+            const gbInput = document.createElement('input');
+            gbInput.id = 'gpp-imr-max-cache-gb';
+            gbInput.type = 'text';
+            gbInput.inputMode = 'decimal';
+            gbInput.autocomplete = 'off';
+            gbInput.value = String(_settings.improvedMapRenderingMaxCacheGB ?? 2);
+            gbInput.style.cssText = inputCss;
+            const gbUnit = document.createElement('span');
+            gbUnit.textContent = 'GB';
+            gbWrap.appendChild(gbInput);
+            gbWrap.appendChild(gbUnit);
+            const commitGb = () => {
+                const raw = gbInput.value.trim().replace(',', '.');
+                let v = raw === '' ? 0 : Number(raw);
+                if (!isFinite(v) || v < 0) { gbInput.value = String(_settings.improvedMapRenderingMaxCacheGB ?? 2); return; }
+                v = Math.round(v * 100) / 100;
+                gbInput.value = String(v);
+                _settings.improvedMapRenderingMaxCacheGB = v;
+                saveSettings(_settings);
+                if (_improvedMapRendering) _improvedMapRendering.applySettings();
+                refreshReadout();
+            };
+            gbInput.addEventListener('change', commitGb);
+            gbInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); gbInput.blur(); } });
+
+            // Tile loading radius: 1 = the site's own 3x3 ... 4 = 9x9.
+            const radiusSelect = document.createElement('select');
+            radiusSelect.id = 'gpp-imr-tile-radius';
+            radiusSelect.style.cssText = inputCss + 'width:auto; text-align:left; cursor:pointer;';
+            [[1, '3×3'], [2, '5×5'], [3, '7×7'], [4, '9×9']].forEach(([r, label]) => {
+                const opt = document.createElement('option');
+                opt.value = String(r);
+                opt.textContent = `${r} — ${label} tiles`;
+                radiusSelect.appendChild(opt);
+            });
+            radiusSelect.value = String(Math.min(4, Math.max(1, Math.round(Number(_settings.improvedMapRenderingTileRadius)) || 2)));
+            radiusSelect.addEventListener('change', () => {
+                _settings.improvedMapRenderingTileRadius = Number(radiusSelect.value);
+                saveSettings(_settings);
+                if (_improvedMapRendering) _improvedMapRendering.applySettings();
+            });
+
+            // Live readout of what the cache currently holds.
+            const readout = document.createElement('div');
+            readout.id = 'gpp-imr-cache-readout';
+            readout.style.cssText = 'font-size:12px; opacity:0.75;';
+            function refreshReadout() {
+                const stats = _improvedMapRendering ? _improvedMapRendering.getStats() : null;
+                if (!stats) {
+                    readout.textContent = _settings.extImprovedMapRendering ? 'Cache stats appear after a reload.' : '';
+                    return;
+                }
+                const mb = stats.bytes / 1048576;
+                const size = mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : Math.round(mb) + ' MB';
+                const cap = stats.maxCacheBytes > 0 ? ` of ${(stats.maxCacheBytes / 1073741824).toFixed(2)} GB` : ' (no limit)';
+                readout.textContent = `Tile cache now: ~${size} decoded (est.) in ${stats.tiles} tiles${cap}` + (stats.evictions ? ` · ${stats.evictions} evicted so far` : '');
+            }
+
+            panel.appendChild(makeLine('Max tile cache', 'Estimated decoded size of the tile cache: 2 bitmaps × 1000×1000 × 4 bytes ≈ 7.6 MB per tile. This is an upper bound — the browser and OS usually hold idle tiles more cheaply (compressed or discardable), so Task Manager will show less. Once exceeded, the tiles farthest from the view are freed. Tiles currently on screen are never freed, so this is a soft cap while zoomed far out. 0 or blank = no limit (the site\'s own behaviour).', gbWrap));
+            panel.appendChild(makeLine('Tile loading radius', 'How many tiles around the map centre are fetched on each sync. The site itself fetches 3×3. Larger rings fill zoomed-out views faster but download and decode more tiles.', radiusSelect));
+            panel.appendChild(readout);
+            row.appendChild(panel);
+
+            refreshReadout();
+            const readoutTimer = setInterval(() => {
+                if (!document.getElementById('gpc-settings-modal')) { clearInterval(readoutTimer); return; }
+                if (panel.style.display !== 'none') refreshReadout();
+            }, 2000);
+
+            toggleInput.addEventListener('change', () => {
+                panel.style.display = toggleInput.checked ? 'flex' : 'none';
+                if (toggleInput.checked) refreshReadout();
+            });
+        })();
 
         tabPanels.push(extPanel);
         modal.appendChild(extPanel);
@@ -1307,6 +1431,15 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.14.0',
+            date: '2026-09-12',
+            items: [
+                { type: 'added', text: 'Improved Map Rendering (Map, off by default): already-loaded pixel tiles come back instantly when you zoom in past your Render Level again or pan back over an area you have visited, using the tiles already in memory instead of waiting up to 5 seconds for the next server sync' },
+                { type: 'added', text: 'Improved Map Rendering: Tile loading radius setting (default 5×5, up to 9×9) fetches a wider ring of tiles around the map centre than the site\'s 3×3, so zoomed-out views fill in without panning over every tile' },
+                { type: 'added', text: 'Improved Map Rendering: Max tile cache (GB) setting evicts the tiles farthest from view once the decoded tile cache exceeds the budget — the site never frees them otherwise; tiles on screen are never evicted' },
+            ]
+        },
         {
             version: '2.13.2',
             date: '2026-08-29',
