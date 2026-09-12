@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.0](https://github.com/atharray/geopixelcons-library/compare/v2.13.2...v2.14.0) (2026-09-12)
+
+
+### Features
+
+* **map:** add Improved Map Rendering extension ([#62](https://github.com/atharray/geopixelcons-library/issues/62)) ([9877ca1](https://github.com/atharray/geopixelcons-library/commit/9877ca17af6c0f3fc6ff0bb0f8c81a74f604f680))
+
 ## [2.13.2](https://github.com/atharray/geopixelcons-library/compare/v2.13.1...v2.13.2) (2026-08-29)
 
 
