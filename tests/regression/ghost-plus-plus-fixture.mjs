@@ -2580,11 +2580,11 @@ function buildDriverScript() {
     // console errors or a pending WebGL error, must have uploaded the states
     // texture and queued bitset (WebGL2) / built a marker cache of exactly 3
     // entries that shrinks to 2 when Show missing is turned off (Canvas2D),
-    // and must have started the native-queue poll. Also checks the two
-    // Error Settings gates that live in the same pass: a custom Render
-    // distance above the current zoom must suppress the pass entirely (no
-    // marker resources built, no poll), and a per-kind Opacity of 0 must
-    // drop only that kind (Canvas2D cache shrinks from 3 to 2). Then swaps focus to the
+    // and must have started the native-queue poll. Also checks the Render
+    // distance gate that lives in the same pass: a custom cutoff above the
+    // current zoom must suppress the pass entirely (no marker resources
+    // built, no poll), and the default (null = follow the site's render
+    // level) must draw again. Then swaps focus to the
     // suite's main template and checks both Show toggles were reset to off,
     // the marker-side resources were released, and the poll stopped -- the
     // "markers never follow a focus change" product rule.
@@ -2612,9 +2612,7 @@ function buildDriverScript() {
     L.push('    gppSettings.hideQueuedCrosses = true;');
     L.push('    markerTemplate._gppShowWrong = true;');
     L.push('    markerTemplate._gppShowMissing = true;');
-    L.push('    var savedMatch = gppSettings.errorRenderMatchLevel, savedZoom = gppSettings.errorRenderZoom;');
-    L.push('    var savedMissingOpacity = gppSettings.missingOpacity;');
-    L.push('    gppSettings.errorRenderMatchLevel = false;');
+    L.push('    var savedZoom = gppSettings.errorRenderZoom;');
     L.push('    gppSettings.errorRenderZoom = map.getZoom() + 1;'); // custom cutoff further in than the current zoom -> markers must NOT draw
     L.push('    var errCountBefore = __consoleErrors.length;');
     L.push('    gppRendererSchedule();');
@@ -2623,7 +2621,7 @@ function buildDriverScript() {
     L.push('    var gated = gppRendererState.resources.get(markerTemplate.id);');
     L.push('    if (gated && (gated.statesTexture || gated.queuedTexture || gated.errorCache)) throw new Error("REGRESSION: a custom Render distance above the current zoom still built marker resources");');
     L.push('    if (gppRendererState.queueTimer) throw new Error("REGRESSION: native-queue poll started while markers are hidden by Render distance");');
-    L.push('    gppSettings.errorRenderMatchLevel = true;'); // back to the default: follow the site's render level (fixture minZoom 10.5 < zoom 15)
+    L.push('    gppSettings.errorRenderZoom = null;'); // back to the default: follow the site's render level (fixture minZoom 10.5 < zoom 15)
     L.push('    gppRendererSchedule();');
     L.push('    await new Promise(function(r) { requestAnimationFrame(function() { requestAnimationFrame(r); }); });');
     L.push('    if (__consoleErrors.length > errCountBefore) throw new Error("marker draw produced console errors: " + __consoleErrors.slice(errCountBefore).join(" | "));');
@@ -2640,11 +2638,6 @@ function buildDriverScript() {
     L.push('    }');
     L.push('    if (!gppRendererState.queueTimer) throw new Error("native-queue poll timer is not running while markers are shown with Hide queued crosshairs on");');
     L.push('');
-    L.push('    gppSettings.missingOpacity = 0;'); // per-kind style: a 0 opacity on Missing alone must drop only the MISSING marker, with no scan
-    L.push('    gppRendererSchedule();');
-    L.push('    await new Promise(function(r) { requestAnimationFrame(function() { requestAnimationFrame(r); }); });');
-    L.push('    if (!gppRendererState.gl && resource.errorCache.count !== 2) throw new Error("Canvas2D marker cache did not drop the missing marker when missingOpacity is 0: expected 2 markers, got " + resource.errorCache.count);');
-    L.push('    gppSettings.missingOpacity = savedMissingOpacity;');
     L.push('    markerTemplate._gppShowMissing = false;'); // a toggle change alone must re-derive the marker set, with no scan
     L.push('    gppRendererSchedule();');
     L.push('    await new Promise(function(r) { requestAnimationFrame(function() { requestAnimationFrame(r); }); });');
@@ -2660,68 +2653,51 @@ function buildDriverScript() {
     L.push('    if (gppRendererState.queueTimer) throw new Error("native-queue poll timer kept running after markers left the map");');
     L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test cleanup: load-time scan triggered by the focus swap never finished");');
     L.push('');
-    L.push('    gppSettings.errorRenderMatchLevel = savedMatch; gppSettings.errorRenderZoom = savedZoom;');
+    L.push('    gppSettings.errorRenderZoom = savedZoom;');
     L.push('    await gppState.deleteTemplate(markerTemplate);');
     L.push('    if (priorFocused !== template.id) await gppState.focusTemplate(priorFocused);');
     L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test cleanup: load-time scan triggered by restoring focus never finished");');
     L.push('    return "marker pass drew a fabricated 2-wrong/1-missing scan on the focused template with no console/WebGL errors (" + (gppRendererState.gl ? "states + queued textures uploaded" : "Canvas2D cache of 3 markers, 2 after Show missing off") + ") and ran the queue poll while shown; swapping focus reset both Show toggles, released the marker resources and stopped the poll; a custom Render distance above the current zoom suppressed the pass entirely";');
     L.push('  });');
     L.push('');
-    // ---- item errorSettings.per-kind-style-and-render-distance ----
-    // Regression guard for the Error Settings section's two newer controls:
-    // the 'Style for' Errors/Missing selector must make the Shape/Color/
-    // Opacity/Size rows read AND write only the selected kind's settings
-    // (error* vs missing* keys), and 'Match render level' must gate the
-    // custom Render distance slider (checked = slider disabled and the
-    // site's own level shown; unchecked = slider live and persisted).
-    // Renders into a detached container exactly like
-    // scan.error-count-alert-on-show-toggle does, so it never depends on
-    // whether the modal happens to be open at this point in the suite.
-    L.push('  await step("errorSettings.per-kind-style-and-render-distance", async function() {');
-    L.push('    var saved = { errorColor: gppSettings.errorColor, missingColor: gppSettings.missingColor, errorRenderMatchLevel: gppSettings.errorRenderMatchLevel, errorRenderZoom: gppSettings.errorRenderZoom, showErrors: gppSettings.showErrors };');
+    // ---- item errorSettings.render-distance-slider-and-reset ----
+    // Regression guard for the Error Settings 'Render distance' row: its
+    // label and slider sit on one row like every other option; with
+    // errorRenderZoom null (the default) the slider shows the site's own
+    // render level with a '(site)' suffix; dragging it persists a number;
+    // and the row's reset button puts it back to null (follow the site
+    // level) rather than to a fixed zoom. Renders into a detached
+    // container exactly like scan.error-count-alert-on-show-toggle does,
+    // so it never depends on whether the modal happens to be open here.
+    L.push('  await step("errorSettings.render-distance-slider-and-reset", async function() {');
+    L.push('    var saved = { errorRenderZoom: gppSettings.errorRenderZoom, showErrors: gppSettings.showErrors };');
     L.push('    gppSettings.showErrors = true;');
-    L.push('    gppSettings.errorColor = "#112233";');
-    L.push('    gppSettings.missingColor = "#445566";');
-    L.push('    gppSettings.errorRenderMatchLevel = true;');
+    L.push('    gppSettings.errorRenderZoom = null;');
     L.push('    var container = document.createElement("div");');
     L.push('    document.body.appendChild(container);');
-    L.push('    function colorInput() { return container.querySelector("input[type=color]"); }');
-    L.push('    function rangeInputs() { return Array.from(container.querySelectorAll("input[type=range]")); }');
     L.push('    gppRenderErrorSettings(container);');
-    L.push('    var errBtn = container.querySelector("#gpp-error-style-target-error");');
-    L.push('    var missBtn = container.querySelector("#gpp-error-style-target-missing");');
-    L.push('    if (!errBtn || !missBtn) throw new Error("Style for selector buttons not rendered");');
-    L.push('    if (!colorInput()) throw new Error("Color input not rendered");');
-    L.push('    if (colorInput().value !== "#112233") throw new Error("with Errors selected (default) the Color row should show errorColor #112233, got " + colorInput().value);');
-    L.push('');
-    L.push('    missBtn.click();'); // re-renders the section for the Missing kind
-    L.push('    if (colorInput().value !== "#445566") throw new Error("after selecting Missing the Color row should show missingColor #445566, got " + colorInput().value);');
-    L.push('    colorInput().value = "#778899";');
-    L.push('    colorInput().dispatchEvent(new Event("input", { bubbles: true }));');
-    L.push('    if (gppSettings.missingColor !== "#778899") throw new Error("editing Color with Missing selected did not write missingColor, got " + gppSettings.missingColor);');
-    L.push('    if (gppSettings.errorColor !== "#112233") throw new Error("REGRESSION: editing Color with Missing selected also changed errorColor to " + gppSettings.errorColor);');
-    L.push('    container.querySelector("#gpp-error-style-target-error").click();'); // back to Errors
-    L.push('    if (colorInput().value !== "#112233") throw new Error("after re-selecting Errors the Color row should show errorColor #112233 again, got " + colorInput().value);');
-    L.push('');
-    L.push('    var matchInput = Array.from(container.querySelectorAll("input[type=checkbox]")).find(function(i) { return i.parentElement && /Match render level/.test(i.parentElement.textContent); });');
-    L.push('    if (!matchInput) throw new Error("Match render level checkbox not rendered");');
-    L.push('    if (!matchInput.checked) throw new Error("Match render level should default to checked");');
-    L.push('    var zoomInput = rangeInputs().find(function(i) { return i.min === "10" && i.max === "20"; });');
-    L.push('    if (!zoomInput) throw new Error("Render distance slider (range 10-20) not rendered");');
-    L.push('    if (!zoomInput.disabled) throw new Error("Render distance slider should be disabled while Match render level is on");');
-    L.push('    if (!/\\(site\\)/.test(container.textContent)) throw new Error("while matched, the section should show the site level with a (site) suffix");');
-    L.push('    matchInput.checked = false;');
-    L.push('    matchInput.dispatchEvent(new Event("change", { bubbles: true }));');
-    L.push('    if (gppSettings.errorRenderMatchLevel !== false) throw new Error("unticking Match render level did not persist errorRenderMatchLevel=false");');
-    L.push('    if (zoomInput.disabled) throw new Error("Render distance slider should be enabled once Match render level is off");');
+    L.push('    if (container.querySelector("#gpp-error-style-target")) throw new Error("REGRESSION: the removed Style for selector is still rendered");');
+    L.push('    var label = Array.from(container.querySelectorAll("label")).find(function(l) { return l.textContent === "Render distance"; });');
+    L.push('    if (!label) throw new Error("Render distance label not rendered");');
+    L.push('    var rowEl = label.parentElement;');
+    L.push('    var zoomInput = rowEl.querySelector("input[type=range]");');
+    L.push('    if (!zoomInput) throw new Error("Render distance slider is not on the same row as its label");');
+    L.push('    var resetBtn = rowEl.querySelector("button");');
+    L.push('    if (!resetBtn) throw new Error("Render distance row has no reset button");');
+    L.push('    if (Array.from(container.querySelectorAll("input[type=checkbox]")).some(function(i) { return /Match render level/.test(i.parentElement.textContent); })) throw new Error("REGRESSION: the removed Match render level checkbox is still rendered");');
+    L.push('    if (Number(zoomInput.value) !== minZoom) throw new Error("with errorRenderZoom null the slider should sit at the site render level " + minZoom + ", got " + zoomInput.value);');
+    L.push('    if (!/\\(site\\)/.test(rowEl.textContent)) throw new Error("with errorRenderZoom null the row should show a (site) suffix, got: " + rowEl.textContent);');
     L.push('    zoomInput.value = "14.5";');
     L.push('    zoomInput.dispatchEvent(new Event("input", { bubbles: true }));');
     L.push('    if (gppSettings.errorRenderZoom !== 14.5) throw new Error("moving the Render distance slider did not persist errorRenderZoom=14.5, got " + gppSettings.errorRenderZoom);');
-    L.push('');
+    L.push('    if (/\\(site\\)/.test(rowEl.textContent)) throw new Error("a pinned custom zoom should not carry the (site) suffix");');
+    L.push('    resetBtn.click();');
+    L.push('    if (gppSettings.errorRenderZoom !== null) throw new Error("the reset button should put errorRenderZoom back to null (follow the site level), got " + gppSettings.errorRenderZoom);');
+    L.push('    if (Number(zoomInput.value) !== minZoom) throw new Error("after reset the slider should sit at the site render level " + minZoom + ", got " + zoomInput.value);');
     L.push('    container.remove();');
     L.push('    Object.assign(gppSettings, saved);');
     L.push('    gppState.saveSettings();');
-    L.push('    return "Style for: Errors is selected by default and the Color row reads errorColor; selecting Missing re-renders with missingColor and edits write ONLY missingColor; Match render level defaults on (slider disabled, site level shown), unticking enables the slider and both settings persist";');
+    L.push('    return "Render distance is one labelled row (label + slider + reset), shows the site render level with a (site) suffix by default, persists a dragged zoom, and its reset returns to following the site level; no Style for selector or Match render level checkbox rendered";');
     L.push('  });');
     L.push('');
     // ---- item palette.complete-swatch-shows-large-checkmark-not-tiny-badge ----

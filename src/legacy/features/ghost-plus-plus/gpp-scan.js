@@ -1027,17 +1027,10 @@
     // ── gpp-init.js render-function contract ───────────────────────────
     // container id: 'gpp-error-settings-section'. Global (applies to every
     // template's error-marker rendering — gpp-renderer.js's marker pass
-    // reads gppSettings.{error,missing}{Shape,Color,Opacity,SizeScale} as
-    // plain uniforms on every draw, and errorRenderMatchLevel/
-    // errorRenderZoom as its zoom cutoff), so `template` is accepted for
-    // signature consistency with the other render hooks but unused.
-    //
-    // Which marker kind the Shape/Color/Opacity/Size rows currently edit
-    // ('error' = wrong-colour cells, 'missing' = not-yet-painted cells).
-    // Session-only UI state, not a setting: it survives this section's
-    // re-renders (gppRenderErrorSettings wipes and rebuilds its DOM on every
-    // refresh) but always starts on Errors after a page load.
-    let gppErrorStyleTarget = 'error';
+    // reads gppSettings.errorShape/errorColor/errorOpacity/errorSizeScale as
+    // plain uniforms on every draw, and errorRenderZoom as its zoom
+    // cutoff), so `template` is accepted for signature consistency with the
+    // other render hooks but unused.
 
     const GPP_ERROR_RENDER_ZOOM_MIN = 10;
     const GPP_ERROR_RENDER_ZOOM_MAX = 20;
@@ -1071,13 +1064,16 @@
             btn.style.cssText = 'border:none; background:transparent; cursor:pointer; font-size:13px; padding:0 2px; flex-shrink:0; color:' + mutedColor + ';';
             btn.addEventListener('click', onClick);
             rowEl.appendChild(btn);
+            return btn;
         }
 
+        // Label column sized for the longest label ("Render distance") so
+        // every row's control starts at the same x.
         function row(labelText) {
             const r = document.createElement('div');
             r.style.cssText = 'display:flex; align-items:center; gap:8px; margin:6px 0;';
             const label = document.createElement('label');
-            label.style.cssText = 'flex:0 0 auto; min-width:70px; font-size:12px; color:' + labelColor + ';';
+            label.style.cssText = 'flex:0 0 auto; min-width:96px; font-size:12px; color:' + labelColor + ';';
             label.textContent = labelText;
             r.appendChild(label);
             body.appendChild(r);
@@ -1131,95 +1127,44 @@
         body.appendChild(showErrorsRow);
 
         // ── Render distance ──
-        // The map zoom below which markers stop drawing. "Match render
-        // level" (default) ties it to the site's own Render Level
+        // The map zoom below which markers stop drawing. errorRenderZoom is
+        // null by default, meaning "the site's own Render Level"
         // (userConfig.renderLevel, read live via gppReadGridConstants().
-        // minZoom), so markers appear at exactly every zoom the site itself
-        // still draws pixels at — no separate, resolution-dependent cutoff.
-        // Unticking exposes a slider for a custom (higher) cutoff instead,
-        // e.g. to declutter a huge template until you're closer in.
+        // minZoom) — markers then appear at exactly every zoom the site
+        // itself still draws pixels at, with no separate, latitude-dependent
+        // cutoff. Dragging the slider pins a custom (higher) cutoff instead,
+        // e.g. to declutter a huge template until you're closer in; the row's
+        // reset puts it back to following the site level. Markers can never
+        // show further out than the site renders pixels either way.
         const siteLevel = gppReadGridConstants().minZoom;
-        const matchLevel = gppSettings.errorRenderMatchLevel !== false;
         const renderRow = row('Render distance');
-        const match = checkbox('Match render level', matchLevel,
-            'Show markers at every zoom the site itself renders pixels at — your Render Level in the site\'s own settings (currently ' + siteLevel + '). Untick to choose your own cutoff with the slider below; markers never show further out than the site renders pixels either way.');
-        renderRow.appendChild(match.label);
-
-        const zoomRow = document.createElement('div');
-        zoomRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin:0 0 6px 78px;';
         const zoomInput = document.createElement('input');
         zoomInput.type = 'range';
-        zoomInput.min = String(GPP_ERROR_RENDER_ZOOM_MIN);
+        zoomInput.min = String(Math.min(GPP_ERROR_RENDER_ZOOM_MIN, Math.floor(siteLevel)));
         zoomInput.max = String(GPP_ERROR_RENDER_ZOOM_MAX);
         zoomInput.step = '0.1';
-        const storedZoom = Number.isFinite(gppSettings.errorRenderZoom) ? gppSettings.errorRenderZoom : 12.5;
-        zoomInput.value = String(Math.min(GPP_ERROR_RENDER_ZOOM_MAX, Math.max(GPP_ERROR_RENDER_ZOOM_MIN, storedZoom)));
         zoomInput.style.flex = '1';
-        zoomInput.title = 'Minimum map zoom at which error/missing markers are drawn';
         const zoomValue = document.createElement('span');
-        zoomValue.style.cssText = 'font-size:11px; min-width:72px; text-align:right; color:' + mutedColor + ';';
-        function refreshZoomLabel() {
-            if (match.input.checked) zoomValue.textContent = 'zoom ' + siteLevel + ' (site)';
-            else zoomValue.textContent = 'zoom ' + Number(zoomInput.value).toFixed(1);
+        zoomValue.style.cssText = 'font-size:11px; min-width:84px; text-align:right;';
+        function refreshZoomRow() {
+            const pinned = Number.isFinite(gppSettings.errorRenderZoom);
+            const shown = pinned ? gppSettings.errorRenderZoom : siteLevel;
+            zoomInput.value = String(shown);
+            zoomValue.textContent = 'zoom ' + Number(shown).toFixed(1) + (pinned ? '' : ' (site)');
         }
-        function applyMatchGate() {
-            const on = match.input.checked;
-            zoomInput.disabled = on;
-            zoomRow.style.opacity = on ? '.45' : '';
-            refreshZoomLabel();
-        }
+        zoomInput.title = 'Markers are hidden when the map is zoomed out further than this level';
         zoomInput.addEventListener('input', () => {
             gppSettings.errorRenderZoom = Number(zoomInput.value);
-            refreshZoomLabel();
+            refreshZoomRow();
             saveAndRedraw();
         });
-        match.input.addEventListener('change', () => {
-            gppSettings.errorRenderMatchLevel = match.input.checked;
-            if (!match.input.checked && !Number.isFinite(gppSettings.errorRenderZoom)) gppSettings.errorRenderZoom = Number(zoomInput.value);
-            applyMatchGate();
+        renderRow.append(zoomInput, zoomValue);
+        addResetButton(renderRow, 'Match the site\'s Render Level (currently ' + siteLevel + '): markers show at every zoom the site renders pixels at', () => {
+            gppSettings.errorRenderZoom = null;
+            refreshZoomRow();
             saveAndRedraw();
         });
-        zoomRow.append(zoomInput, zoomValue);
-        addResetButton(zoomRow, 'Reset to zoom 12.5', () => {
-            zoomInput.value = '12.5';
-            gppSettings.errorRenderZoom = 12.5;
-            refreshZoomLabel();
-            saveAndRedraw();
-        });
-        body.appendChild(zoomRow);
-
-        // ── Per-kind style ──
-        // Wrong-colour ("Errors") and not-yet-painted ("Missing") markers
-        // each have their own shape/colour/opacity/size; the segmented
-        // control picks which kind the four rows below edit. Switching
-        // re-renders this section so every row reads that kind's values.
-        const styleRow = row('Style for');
-        const styleGroup = document.createElement('div');
-        styleGroup.id = 'gpp-error-style-target';
-        styleGroup.style.cssText = 'display:inline-flex; gap:4px;';
-        [['error', 'Errors'], ['missing', 'Missing']].forEach(([target, text]) => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.id = 'gpp-error-style-target-' + target;
-            btn.textContent = text;
-            btn.title = target === 'error'
-                ? 'Edit the style of markers over cells painted the wrong colour'
-                : 'Edit the style of markers over cells not painted yet';
-            gppScanStyleButton(btn, gppErrorStyleTarget === target);
-            btn.addEventListener('click', () => {
-                if (gppErrorStyleTarget === target) return;
-                gppErrorStyleTarget = target;
-                gppRenderErrorSettings(container);
-            });
-            styleGroup.appendChild(btn);
-        });
-        styleRow.appendChild(styleGroup);
-
-        const prefix = gppErrorStyleTarget === 'missing' ? 'missing' : 'error';
-        const keyShape = prefix + 'Shape';
-        const keyColor = prefix + 'Color';
-        const keyOpacity = prefix + 'Opacity';
-        const keySize = prefix + 'SizeScale';
+        refreshZoomRow();
 
         const shapeRow = row('Shape');
         const shapeSelect = document.createElement('select');
@@ -1227,11 +1172,11 @@
             const opt = document.createElement('option');
             opt.value = value;
             opt.textContent = value === 'x' ? 'X mark' : (value === 'circle' ? 'Circle' : 'Square');
-            if ((gppSettings[keyShape] || 'x') === value) opt.selected = true;
+            if ((gppSettings.errorShape || 'x') === value) opt.selected = true;
             shapeSelect.appendChild(opt);
         });
         shapeSelect.addEventListener('change', () => {
-            gppSettings[keyShape] = shapeSelect.value;
+            gppSettings.errorShape = shapeSelect.value;
             saveAndRedraw();
         });
         shapeRow.appendChild(shapeSelect);
@@ -1239,15 +1184,15 @@
         const colorRow = row('Color');
         const colorInput = document.createElement('input');
         colorInput.type = 'color';
-        colorInput.value = gppSettings[keyColor] || '#dc2626';
+        colorInput.value = gppSettings.errorColor || '#dc2626';
         colorInput.addEventListener('input', () => {
-            gppSettings[keyColor] = colorInput.value;
+            gppSettings.errorColor = colorInput.value;
             saveAndRedraw();
         });
         colorRow.appendChild(colorInput);
         addResetButton(colorRow, 'Reset to default color', () => {
             colorInput.value = '#dc2626';
-            gppSettings[keyColor] = '#dc2626';
+            gppSettings.errorColor = '#dc2626';
             saveAndRedraw();
         });
 
@@ -1255,21 +1200,21 @@
         const opacityInput = document.createElement('input');
         opacityInput.type = 'range';
         opacityInput.min = '0'; opacityInput.max = '100'; opacityInput.step = '1';
-        opacityInput.value = String(Math.round((Number.isFinite(gppSettings[keyOpacity]) ? gppSettings[keyOpacity] : 1) * 100));
+        opacityInput.value = String(Math.round((Number.isFinite(gppSettings.errorOpacity) ? gppSettings.errorOpacity : 1) * 100));
         opacityInput.style.flex = '1';
         const opacityValue = document.createElement('span');
         opacityValue.style.cssText = 'font-size:11px; min-width:32px; text-align:right;';
         opacityValue.textContent = opacityInput.value + '%';
         opacityInput.addEventListener('input', () => {
             opacityValue.textContent = opacityInput.value + '%';
-            gppSettings[keyOpacity] = Number(opacityInput.value) / 100;
+            gppSettings.errorOpacity = Number(opacityInput.value) / 100;
             saveAndRedraw();
         });
         opacityRow.append(opacityInput, opacityValue);
         addResetButton(opacityRow, 'Reset to default opacity', () => {
             opacityInput.value = '100';
             opacityValue.textContent = '100%';
-            gppSettings[keyOpacity] = 1;
+            gppSettings.errorOpacity = 1;
             saveAndRedraw();
         });
 
@@ -1277,30 +1222,28 @@
         const sizeInput = document.createElement('input');
         sizeInput.type = 'range';
         sizeInput.min = '25'; sizeInput.max = '250'; sizeInput.step = '5';
-        sizeInput.value = String(Math.round((Number.isFinite(gppSettings[keySize]) ? gppSettings[keySize] : 1) * 100));
+        sizeInput.value = String(Math.round((Number.isFinite(gppSettings.errorSizeScale) ? gppSettings.errorSizeScale : 1) * 100));
         sizeInput.style.flex = '1';
         const sizeValue = document.createElement('span');
         sizeValue.style.cssText = 'font-size:11px; min-width:32px; text-align:right;';
         sizeValue.textContent = sizeInput.value + '%';
         sizeInput.addEventListener('input', () => {
             sizeValue.textContent = sizeInput.value + '%';
-            gppSettings[keySize] = Number(sizeInput.value) / 100;
+            gppSettings.errorSizeScale = Number(sizeInput.value) / 100;
             saveAndRedraw();
         });
         sizeRow.append(sizeInput, sizeValue);
         addResetButton(sizeRow, 'Reset to default size', () => {
             sizeInput.value = '100';
             sizeValue.textContent = '100%';
-            gppSettings[keySize] = 1;
+            gppSettings.errorSizeScale = 1;
             saveAndRedraw();
         });
 
         function applyShowErrorsGate() {
             const on = showErrors.input.checked;
-            [match.input, zoomInput, shapeSelect, colorInput, opacityInput, sizeInput].forEach(el => { el.disabled = !on; });
-            styleGroup.querySelectorAll('button').forEach(btn => { btn.disabled = !on; });
-            [renderRow, zoomRow, styleRow, shapeRow, colorRow, opacityRow, sizeRow].forEach(r => { r.style.opacity = on ? '' : '.45'; });
-            if (on) applyMatchGate();
+            [zoomInput, shapeSelect, colorInput, opacityInput, sizeInput].forEach(el => { el.disabled = !on; });
+            [renderRow, shapeRow, colorRow, opacityRow, sizeRow].forEach(r => { r.style.opacity = on ? '' : '.45'; });
         }
         showErrors.input.addEventListener('change', () => {
             gppSettings.showErrors = showErrors.input.checked;

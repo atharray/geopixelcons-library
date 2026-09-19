@@ -21,19 +21,11 @@
         showErrors: true,
         autoscanEnabled: false,
         hideQueuedCrosses: true,  // crosshairs over an already-queued pixel stop drawing, defaults on
-        // Wrong-colour ("error") and not-yet-painted ("missing") markers are
-        // styled independently (Error Settings > Style for). The error*
-        // keys predate the split and keep their names for stored profiles.
         errorShape: 'x',         // 'x' | 'circle' | 'square'
         errorColor: '#dc2626',
         errorOpacity: 1,          // 0-1
         errorSizeScale: 1,        // multiplier on the base marker size
-        missingShape: 'x',
-        missingColor: '#dc2626',
-        missingOpacity: 1,
-        missingSizeScale: 1,
-        errorRenderMatchLevel: true, // markers show at every zoom the site renders pixels at (userConfig.renderLevel)
-        errorRenderZoom: 12.5,       // custom minimum map zoom for markers, used only when errorRenderMatchLevel is off
+        errorRenderZoom: null,    // minimum map zoom for markers; null = follow the site's own Render Level (userConfig.renderLevel) — see gpp-renderer.js's gppRendererMarkerMinZoom
         autoHideUnfocused: true, // when true, focusing a template hides every other one — see gppApplyAutoHideUnfocused
         grayDisabledSwatches: true, // when false, a disabled palette swatch only gets the diagonal slash, no grayscale/opacity dimming — see gpp-palette.js's .gpp-palette-gray-disabled
         paletteViewMode: 'grid', // 'grid' | 'list' for the full Ghost++ menu
@@ -71,14 +63,13 @@
             // request content-sized height. Migrate that value so a large
             // palette cannot reopen as a screen-filling compact window.
             if (settings.compactHeight == null) settings.compactHeight = GPP_DEFAULT_SETTINGS.compactHeight;
-            // Missing-pixel markers gained their own style in 2.15.0; a
-            // profile saved before that shared one style for both kinds, so
-            // seed the missing style from whatever error style it had and
-            // the map keeps looking exactly as it did.
-            if (stored && typeof stored === 'object' && stored.missingColor === undefined) {
-                for (const key of ['Shape', 'Color', 'Opacity', 'SizeScale']) {
-                    if (stored['error' + key] !== undefined) settings['missing' + key] = stored['error' + key];
-                }
+            // 2.15.0 preview builds briefly stored a separate missing-marker
+            // style and a "match render level" flag; neither shipped. Drop
+            // them, and keep "follow the site's Render Level" (null) unless
+            // that preview had explicitly pinned a custom zoom.
+            if (stored && typeof stored === 'object') {
+                if (stored.errorRenderMatchLevel !== false) settings.errorRenderZoom = null;
+                for (const key of ['errorRenderMatchLevel', 'missingShape', 'missingColor', 'missingOpacity', 'missingSizeScale']) delete settings[key];
             }
             return settings;
         } catch (_) {

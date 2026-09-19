@@ -1450,8 +1450,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'changed', text: 'Ghost++: Show errors / Show missing crosshairs are now drawn on the GPU as a single overlay, so panning and zooming stay smooth no matter how many errors or missing pixels a scan finds — a 20k-pixel project with thousands of markers no longer stutters' },
                 { type: 'changed', text: 'Ghost++: swapping the focused template now removes the error/missing markers of the template you left from the map and switches its Show errors / Show missing buttons back off' },
                 { type: 'changed', text: 'Ghost++: the Error Settings shape, colour, opacity and size sliders update the markers instantly without any recomputation' },
-                { type: 'added', text: 'Ghost++ Error Settings: errors (wrong colour) and missing (not painted yet) markers can now be styled separately — pick Errors or Missing under Style for, then set that kind’s shape, colour, opacity and size' },
-                { type: 'added', text: 'Ghost++ Error Settings: Render distance — markers now show at every zoom the site itself renders pixels at (Match render level, on by default) instead of vanishing around zoom 12.5; untick it to pick your own cutoff with a slider' },
+                { type: 'added', text: 'Ghost++ Error Settings: Render distance slider — markers now show at every zoom the site itself renders pixels at (your site Render Level) instead of vanishing around zoom 12.5; drag it to hide markers until you are zoomed closer in, and its reset snaps back to the site level' },
             ]
         },
         {
@@ -4309,19 +4308,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         showErrors: true,
         autoscanEnabled: false,
         hideQueuedCrosses: true,  // crosshairs over an already-queued pixel stop drawing, defaults on
-        // Wrong-colour ("error") and not-yet-painted ("missing") markers are
-        // styled independently (Error Settings > Style for). The error*
-        // keys predate the split and keep their names for stored profiles.
         errorShape: 'x',         // 'x' | 'circle' | 'square'
         errorColor: '#dc2626',
         errorOpacity: 1,          // 0-1
         errorSizeScale: 1,        // multiplier on the base marker size
-        missingShape: 'x',
-        missingColor: '#dc2626',
-        missingOpacity: 1,
-        missingSizeScale: 1,
-        errorRenderMatchLevel: true, // markers show at every zoom the site renders pixels at (userConfig.renderLevel)
-        errorRenderZoom: 12.5,       // custom minimum map zoom for markers, used only when errorRenderMatchLevel is off
+        errorRenderZoom: null,    // minimum map zoom for markers; null = follow the site's own Render Level (userConfig.renderLevel) — see gpp-renderer.js's gppRendererMarkerMinZoom
         autoHideUnfocused: true, // when true, focusing a template hides every other one — see gppApplyAutoHideUnfocused
         grayDisabledSwatches: true, // when false, a disabled palette swatch only gets the diagonal slash, no grayscale/opacity dimming — see gpp-palette.js's .gpp-palette-gray-disabled
         paletteViewMode: 'grid', // 'grid' | 'list' for the full Ghost++ menu
@@ -4359,14 +4350,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             // request content-sized height. Migrate that value so a large
             // palette cannot reopen as a screen-filling compact window.
             if (settings.compactHeight == null) settings.compactHeight = GPP_DEFAULT_SETTINGS.compactHeight;
-            // Missing-pixel markers gained their own style in 2.15.0; a
-            // profile saved before that shared one style for both kinds, so
-            // seed the missing style from whatever error style it had and
-            // the map keeps looking exactly as it did.
-            if (stored && typeof stored === 'object' && stored.missingColor === undefined) {
-                for (const key of ['Shape', 'Color', 'Opacity', 'SizeScale']) {
-                    if (stored['error' + key] !== undefined) settings['missing' + key] = stored['error' + key];
-                }
+            // 2.15.0 preview builds briefly stored a separate missing-marker
+            // style and a "match render level" flag; neither shipped. Drop
+            // them, and keep "follow the site's Render Level" (null) unless
+            // that preview had explicitly pinned a custom zoom.
+            if (stored && typeof stored === 'object') {
+                if (stored.errorRenderMatchLevel !== false) settings.errorRenderZoom = null;
+                for (const key of ['errorRenderMatchLevel', 'missingShape', 'missingColor', 'missingOpacity', 'missingSizeScale']) delete settings[key];
             }
             return settings;
         } catch (_) {
@@ -6910,11 +6900,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // GPP_RENDERER_QUEUE_POLL_MS) and on gpp-scan.js's placePixelAt hook,
     // never per frame, and rasterised into a per-template bitset texture
     // only when its contents actually changed. Style settings (shape/
-    // colour/opacity/size, independently for wrong and missing markers)
-    // are plain uniforms, so dragging those sliders uploads nothing. The
-    // zoom cutoff follows the site's own Render Level by default or a
-    // user-chosen level (see gppRendererMarkerMinZoom) — never an
-    // on-screen cell-size threshold, which varied with latitude. Swapping
+    // colour/opacity/size) are plain uniforms, so dragging those sliders
+    // uploads nothing. The zoom cutoff follows the site's own Render Level
+    // by default or a user-chosen level (see gppRendererMarkerMinZoom) —
+    // never an on-screen cell-size threshold, which varied with latitude. Swapping
     // the focused template releases the previous template's marker
     // textures (gpp-runtime.js's gppFocusTemplate also resets its Show
     // errors/Show missing toggles).
@@ -6986,10 +6975,6 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // cap the marker is drawn very slightly smaller than its pixel floor.
     const GPP_RENDERER_MAX_MARKER_HALF_CELLS = 3.4;
     const GPP_RENDERER_MAX_MARKER_REACH = 3;
-    const GPP_RENDERER_MARKER_KINDS = Object.freeze([
-        { prefix: 'error', state: 2, flag: '_gppShowWrong' },     // ERROR_STATE.WRONG
-        { prefix: 'missing', state: 3, flag: '_gppShowMissing' }, // ERROR_STATE.MISSING
-    ]);
 
     // One shared, stateless core instance — cheap to build, but no reason to
     // rebuild it per template per frame when a single instance works for the
@@ -7325,13 +7310,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         // the dot pass; each fragment looks up the scan state of its own
         // cell and of the cells within u_reach of it (a marker's half-extent
         // can exceed half a cell — see GPP_RENDERER_MAX_MARKER_HALF_CELLS)
-        // and draws the wrong/missing marker shapes as signed-distance
-        // fields, antialiased over ~1 screen pixel via fwidth(). Wrong and
-        // missing markers carry independent shape/size/colour/opacity
-        // uniforms (the user's Error Settings style each kind separately);
-        // where the two overlap, wrong is composited over missing. States:
-        // 2 = WRONG, 3 = MISSING (core.constants.ERROR_STATE); 0 below means
-        // "no marker in this cell".
+        // and draws the marker shape as a signed-distance field, antialiased
+        // over ~1 screen pixel via fwidth(). States: 2 = WRONG, 3 = MISSING
+        // (core.constants.ERROR_STATE).
         const errorFragmentSource = `#version 300 es
             precision highp float;
             precision highp int;
@@ -7347,38 +7328,34 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             uniform int u_show_missing;
             uniform int u_hide_queued;
             uniform int u_reach;
-            uniform int u_wrong_shape;
-            uniform float u_wrong_half;
-            uniform float u_wrong_line;
-            uniform vec4 u_wrong_color;
-            uniform int u_missing_shape;
-            uniform float u_missing_half;
-            uniform float u_missing_line;
-            uniform vec4 u_missing_color;
+            uniform int u_shape;
+            uniform float u_half;
+            uniform float u_line;
+            uniform vec4 u_color;
             out vec4 out_color;
-            uint markerStateAt(ivec2 cell) {
-                if (cell.x < 0 || cell.y < 0 || cell.x >= u_template_size.x || cell.y >= u_template_size.y) return 0u;
+            bool markerAt(ivec2 cell) {
+                if (cell.x < 0 || cell.y < 0 || cell.x >= u_template_size.x || cell.y >= u_template_size.y) return false;
                 uint state = texelFetch(u_states, cell, 0).r;
-                if (state == 2u) { if (u_show_wrong == 0) return 0u; }
-                else if (state == 3u) { if (u_show_missing == 0) return 0u; }
-                else return 0u;
+                if (state == 2u) { if (u_show_wrong == 0) return false; }
+                else if (state == 3u) { if (u_show_missing == 0) return false; }
+                else return false;
                 uint palette_index = texelFetch(u_indices, cell, 0).r;
-                if (palette_index == u_empty) return 0u;
+                if (palette_index == u_empty) return false;
                 uint word = texelFetch(u_mask, ivec2(int(palette_index >> 5u), 0), 0).r;
-                if ((word & (1u << (palette_index & 31u))) == 0u) return 0u;
+                if ((word & (1u << (palette_index & 31u))) == 0u) return false;
                 if (u_hide_queued != 0) {
                     uint qword = texelFetch(u_queued, ivec2(cell.x >> 5, cell.y), 0).r;
-                    if (((qword >> uint(cell.x & 31)) & 1u) != 0u) return 0u;
+                    if (((qword >> uint(cell.x & 31)) & 1u) != 0u) return false;
                 }
-                return state;
+                return true;
             }
-            float markerDistance(vec2 p, int shape, float half_extent, float line) {
-                if (shape == 1) return length(p) - half_extent;
-                if (shape == 2) { vec2 q = abs(p) - vec2(half_extent); return max(q.x, q.y); }
+            float markerDistance(vec2 p) {
+                if (u_shape == 1) return length(p) - u_half;
+                if (u_shape == 2) { vec2 q = abs(p) - vec2(u_half); return max(q.x, q.y); }
                 float d1 = abs(p.x - p.y) * 0.70710678;
                 float d2 = abs(p.x + p.y) * 0.70710678;
-                float dline = min(d1, d2) - line;
-                float dbox = max(abs(p.x), abs(p.y)) - half_extent;
+                float dline = min(d1, d2) - u_line;
+                float dbox = max(abs(p.x), abs(p.y)) - u_half;
                 return max(dline, dbox);
             }
             void main() {
@@ -7386,24 +7363,17 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 vec2 cellf = safe_uv * vec2(u_template_size);
                 ivec2 cell = ivec2(floor(cellf));
                 float aa = max(fwidth(cellf.x), fwidth(cellf.y));
-                float dWrong = 1e9;
-                float dMissing = 1e9;
+                float d = 1e9;
                 for (int dy = -u_reach; dy <= u_reach; dy++) {
                     for (int dx = -u_reach; dx <= u_reach; dx++) {
                         ivec2 c = cell + ivec2(dx, dy);
-                        uint s = markerStateAt(c);
-                        if (s == 0u) continue;
-                        vec2 p = cellf - (vec2(c) + 0.5);
-                        if (s == 2u) dWrong = min(dWrong, markerDistance(p, u_wrong_shape, u_wrong_half, u_wrong_line));
-                        else dMissing = min(dMissing, markerDistance(p, u_missing_shape, u_missing_half, u_missing_line));
+                        if (!markerAt(c)) continue;
+                        d = min(d, markerDistance(cellf - (vec2(c) + 0.5)));
                     }
                 }
-                float aWrong = u_wrong_color.a * (1.0 - smoothstep(-aa * 0.5, aa * 0.5, dWrong));
-                float aMissing = u_missing_color.a * (1.0 - smoothstep(-aa * 0.5, aa * 0.5, dMissing));
-                float alpha = aWrong + aMissing * (1.0 - aWrong);
-                if (alpha <= 0.0) discard;
-                vec3 rgb = (u_wrong_color.rgb * aWrong + u_missing_color.rgb * aMissing * (1.0 - aWrong)) / alpha;
-                out_color = vec4(rgb, alpha);
+                float coverage = 1.0 - smoothstep(-aa * 0.5, aa * 0.5, d);
+                if (coverage <= 0.0) discard;
+                out_color = vec4(u_color.rgb, u_color.a * coverage);
             }`;
 
         // Both programs link or neither does: a marker-shader failure is
@@ -7999,22 +7969,22 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         resource.statesRef = states;
     }
 
-    // The map zoom below which markers are not drawn. By default this is
-    // the site's own Render Level (userConfig.renderLevel, mirrored live
-    // into the page's `minZoom` — see gppReadGridConstants), so markers
-    // appear at every zoom the site itself renders pixels at; the user can
-    // instead pin a custom cutoff (Error Settings > Render distance). The
-    // custom value can never reach below the site's level, because
-    // gppRendererDraw already hides the whole overlay there.
+    // The map zoom below which markers are not drawn. errorRenderZoom is
+    // null by default (Error Settings > Render distance's reset puts it
+    // back), meaning "the site's own Render Level" — userConfig.renderLevel,
+    // mirrored live into the page's `minZoom` (see gppReadGridConstants) —
+    // so markers appear at every zoom the site itself renders pixels at. A
+    // number pins a custom cutoff instead; it can never reach below the
+    // site's level, because gppRendererDraw already hides the whole overlay
+    // there.
     function gppRendererMarkerMinZoom(settings, grid) {
-        if (settings.errorRenderMatchLevel !== false) return grid.minZoom;
-        const custom = Number.isFinite(settings.errorRenderZoom) ? settings.errorRenderZoom : grid.minZoom;
-        return Math.max(grid.minZoom, custom);
+        const custom = settings.errorRenderZoom;
+        return Number.isFinite(custom) ? Math.max(grid.minZoom, custom) : grid.minZoom;
     }
 
     // Applies every gate the retired gpp-scan.js crosshair loop applied
     // (master switch, FOCUSED template only, visible, positioned, scanned,
-    // at least one kind toggled on with a non-zero opacity, zoomed in past
+    // at least one Show toggle on, non-zero marker opacity, zoomed in past
     // the marker render distance) and owns the two pieces of lifecycle
     // that hang off "is a marker overlay on screen": releasing the
     // previously focused template's marker resources the moment focus
@@ -8030,21 +8000,15 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             }
             state.errorFocusId = focusedId;
         }
+        const opacity = Number.isFinite(settings.errorOpacity) ? settings.errorOpacity : 1;
         const resource = focused ? state.resources.get(focused.id) : null;
-        let active = !!(settings.showErrors && focused && resource && focused.opacity > 0 && focused.position
-            && focused.scanSummary && zoom >= gppRendererMarkerMinZoom(settings, grid));
-        const show = {};
-        let anyKind = false;
-        for (const kind of GPP_RENDERER_MARKER_KINDS) {
-            const opacity = settings[kind.prefix + 'Opacity'];
-            show[kind.prefix] = !!(focused && focused[kind.flag] && (Number.isFinite(opacity) ? opacity : 1) > 0);
-            if (show[kind.prefix]) anyKind = true;
-        }
-        if (!anyKind) active = false;
+        const active = !!(settings.showErrors && focused && resource && focused.opacity > 0 && focused.position
+            && focused.scanSummary && (focused._gppShowWrong || focused._gppShowMissing) && opacity > 0
+            && zoom >= gppRendererMarkerMinZoom(settings, grid));
         const hideQueued = settings.hideQueuedCrosses !== false;
         if (active && hideQueued) gppRendererEnsureQueueTimer(state);
         else gppRendererStopQueueTimer(state);
-        return active ? { template: focused, resource, show, hideQueued } : null;
+        return active ? { template: focused, resource, opacity, hideQueued } : null;
     }
 
     function gppRendererDrawErrors(state, viewport, grid, turf, settings, zoom) {
@@ -8060,33 +8024,18 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 
     // Same pixel-space formulas as the retired Canvas2D loop: the marker
     // half-extent floors at 1.5px and the X stroke width is clamped to
-    // [1, 2]px, both in CSS pixels. One call per marker kind (`prefix` is
-    // 'error' for wrong-colour cells or 'missing'), reading that kind's own
-    // shape/colour/opacity/size settings. Shared by both backends.
-    function gppRendererMarkerMetrics(cellPx, settings, prefix) {
-        const sizeScale = settings[prefix + 'SizeScale'];
-        const opacity = settings[prefix + 'Opacity'];
-        const halfPx = Math.max(1.5, cellPx * 0.32 * (Number.isFinite(sizeScale) ? sizeScale : 1));
+    // [1, 2]px, both in CSS pixels. Shared by both backends.
+    function gppRendererMarkerMetrics(cellPx, settings) {
+        const sizeScale = Number.isFinite(settings.errorSizeScale) ? settings.errorSizeScale : 1;
+        const halfPx = Math.max(1.5, cellPx * 0.32 * sizeScale);
         const halfCells = Math.min(GPP_RENDERER_MAX_MARKER_HALF_CELLS, halfPx / cellPx);
         return {
             halfPx: halfCells * cellPx,
             halfCells,
             linePx: Math.max(1, Math.min(2, cellPx / 4)),
-            shape: settings[prefix + 'Shape'] || 'x',
-            color: settings[prefix + 'Color'] || '#dc2626',
-            opacity: Number.isFinite(opacity) ? opacity : 1,
+            shape: settings.errorShape || 'x',
+            color: settings.errorColor || '#dc2626',
         };
-    }
-
-    function gppRendererSetMarkerStyleUniforms(gl, program, name, metrics, cellPx, visible) {
-        const loc = suffix => gl.getUniformLocation(program, 'u_' + name + '_' + suffix);
-        const shapeCode = GPP_RENDERER_ERROR_SHAPES[metrics.shape];
-        const packed = gppRendererCore.hexToPacked(metrics.color);
-        const rgb = packed === null ? 0xdc2626 : packed;
-        gl.uniform1i(loc('shape'), shapeCode === undefined ? 0 : shapeCode);
-        gl.uniform1f(loc('half'), metrics.halfCells);
-        gl.uniform1f(loc('line'), (metrics.linePx * 0.5) / cellPx);
-        gl.uniform4f(loc('color'), ((rgb >> 16) & 255) / 255, ((rgb >> 8) & 255) / 255, (rgb & 255) / 255, visible ? metrics.opacity : 0);
     }
 
     function gppRendererDrawErrorsWebGl(state, viewport, grid, turf, settings, target) {
@@ -8101,10 +8050,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         gppRendererSyncStatesGl(state, template, resource);
         if (target.hideQueued) gppRendererSyncQueuedBits(state, template, resource);
 
-        const wrong = gppRendererMarkerMetrics(cellPx, settings, 'error');
-        const missing = gppRendererMarkerMetrics(cellPx, settings, 'missing');
-        const maxHalf = Math.max(target.show.error ? wrong.halfCells : 0, target.show.missing ? missing.halfCells : 0);
-        const reach = Math.min(GPP_RENDERER_MAX_MARKER_REACH, Math.floor(maxHalf + 0.5));
+        // Converted to cell units for the shader; the neighbourhood reach
+        // follows the half-extent (see GPP_RENDERER_MAX_MARKER_HALF_CELLS).
+        const metrics = gppRendererMarkerMetrics(cellPx, settings);
+        const reach = Math.min(GPP_RENDERER_MAX_MARKER_REACH, Math.floor(metrics.halfCells + 0.5));
+        const packed = gppRendererCore.hexToPacked(metrics.color);
+        const rgb = packed === null ? 0xdc2626 : packed;
+        const shapeCode = GPP_RENDERER_ERROR_SHAPES[metrics.shape];
 
         const program = state.errorProgram;
         gl.useProgram(program);
@@ -8113,12 +8065,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         gl.uniform4f(loc('u_rect'), rect.x, rect.y, rect.width, rect.height);
         gl.uniform2i(loc('u_template_size'), template.width, template.height);
         gl.uniform1ui(loc('u_empty'), gppRendererCore.emptyValue(template.indexType));
-        gl.uniform1i(loc('u_show_wrong'), target.show.error ? 1 : 0);
-        gl.uniform1i(loc('u_show_missing'), target.show.missing ? 1 : 0);
+        gl.uniform1i(loc('u_show_wrong'), template._gppShowWrong ? 1 : 0);
+        gl.uniform1i(loc('u_show_missing'), template._gppShowMissing ? 1 : 0);
         gl.uniform1i(loc('u_hide_queued'), target.hideQueued ? 1 : 0);
         gl.uniform1i(loc('u_reach'), reach);
-        gppRendererSetMarkerStyleUniforms(gl, program, 'wrong', wrong, cellPx, target.show.error);
-        gppRendererSetMarkerStyleUniforms(gl, program, 'missing', missing, cellPx, target.show.missing);
+        gl.uniform1i(loc('u_shape'), shapeCode === undefined ? 0 : shapeCode);
+        gl.uniform1f(loc('u_half'), metrics.halfCells);
+        gl.uniform1f(loc('u_line'), (metrics.linePx * 0.5) / cellPx);
+        gl.uniform4f(loc('u_color'), ((rgb >> 16) & 255) / 255, ((rgb >> 8) & 255) / 255, (rgb & 255) / 255, target.opacity);
         gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, resource.indexTexture);
         gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, resource.maskTexture);
         gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, resource.statesTexture);
@@ -8127,25 +8081,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     }
 
     // Canvas2D fallback. The marker set is still never re-derived per frame:
-    // one row-indexed list of marker cell x-coordinates per kind (wrong /
-    // missing, so each can be stroked in its own style) is built once per
+    // a row-indexed list of marker cell x-coordinates is built once per
     // (scan, mask, toggles, queue, position) and each frame transforms and
     // strokes only the rows intersecting the viewport — O(visible markers),
     // with no per-cell walk and no per-cell string allocation.
-    function gppRendererNewMarkerList(height) {
-        return { rowStart: new Int32Array(height + 1), cells: new Int32Array(1024), count: 0 };
-    }
-
-    function gppRendererPushMarker(list, x) {
-        if (list.count === list.cells.length) {
-            const grown = new Int32Array(list.cells.length * 2);
-            grown.set(list.cells);
-            list.cells = grown;
-        }
-        list.cells[list.count++] = x;
-    }
-
-    function gppRendererBuildErrorCache(template, resource, show, hideQueued) {
+    function gppRendererBuildErrorCache(template, resource, hideQueued) {
         const ERROR_STATE = gppRendererCore.constants.ERROR_STATE;
         const width = template.width;
         const height = template.height;
@@ -8153,72 +8093,45 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         const states = template.scanSummary.states;
         const mask = template.mask;
         const empty = gppRendererCore.emptyValue(template.indexType);
+        const showWrong = !!template._gppShowWrong;
+        const showMissing = !!template._gppShowMissing;
         const bits = hideQueued ? resource.queuedBits : null;
         const wordsPerRow = Math.ceil(width / 32);
-        const wrong = gppRendererNewMarkerList(height);
-        const missing = gppRendererNewMarkerList(height);
+        const rowStart = new Int32Array(height + 1);
+        let cells = new Int32Array(1024);
+        let count = 0;
         let pixel = 0;
         for (let y = 0; y < height; y++) {
-            wrong.rowStart[y] = wrong.count;
-            missing.rowStart[y] = missing.count;
+            rowStart[y] = count;
             const rowWord = y * wordsPerRow;
             for (let x = 0; x < width; x++, pixel++) {
                 const state = states[pixel];
-                let list;
-                if (state === ERROR_STATE.WRONG) { if (!show.error) continue; list = wrong; }
-                else if (state === ERROR_STATE.MISSING) { if (!show.missing) continue; list = missing; }
+                if (state === ERROR_STATE.WRONG) { if (!showWrong) continue; }
+                else if (state === ERROR_STATE.MISSING) { if (!showMissing) continue; }
                 else continue;
                 const index = indices[pixel];
                 if (index === empty || !gppRendererCore.maskHas(mask, index)) continue;
                 if (bits && ((bits[rowWord + (x >> 5)] >>> (x & 31)) & 1)) continue;
-                gppRendererPushMarker(list, x);
+                if (count === cells.length) {
+                    const grown = new Int32Array(cells.length * 2);
+                    grown.set(cells);
+                    cells = grown;
+                }
+                cells[count++] = x;
             }
         }
-        wrong.rowStart[height] = wrong.count;
-        missing.rowStart[height] = missing.count;
+        rowStart[height] = count;
         return {
             statesRef: states,
             maskSig: gppRendererMaskSignature(mask),
-            showWrong: show.error,
-            showMissing: show.missing,
+            showWrong,
+            showMissing,
             hideQueued,
             queuedSig: hideQueued ? resource.queuedSig : -1,
-            wrong,
-            missing,
-            count: wrong.count + missing.count,
+            rowStart,
+            cells,
+            count,
         };
-    }
-
-    function gppRendererStrokeMarkerList(ctx, list, rect, cellWidth, cellHeight, minY, maxY, cssWidth, metrics) {
-        if (!list.count) return;
-        const half = metrics.halfPx;
-        const shape = metrics.shape;
-        ctx.globalAlpha = metrics.opacity;
-        ctx.strokeStyle = metrics.color;
-        ctx.fillStyle = metrics.color;
-        ctx.lineWidth = metrics.linePx;
-        ctx.beginPath();
-        for (let y = minY; y < maxY; y++) {
-            const cy = rect.y + (y + 0.5) * cellHeight;
-            for (let i = list.rowStart[y], end = list.rowStart[y + 1]; i < end; i++) {
-                const cx = rect.x + (list.cells[i] + 0.5) * cellWidth;
-                if (cx + half < 0 || cx - half > cssWidth) continue;
-                if (shape === 'circle') {
-                    ctx.moveTo(cx + half, cy);
-                    ctx.arc(cx, cy, half, 0, Math.PI * 2);
-                } else if (shape === 'square') {
-                    ctx.rect(cx - half, cy - half, half * 2, half * 2);
-                } else {
-                    ctx.moveTo(cx - half, cy - half);
-                    ctx.lineTo(cx + half, cy + half);
-                    ctx.moveTo(cx + half, cy - half);
-                    ctx.lineTo(cx - half, cy + half);
-                }
-            }
-        }
-        if (shape === 'x') ctx.stroke();
-        else ctx.fill();
-        ctx.globalAlpha = 1;
     }
 
     function gppRendererDrawErrorsCanvas2d(state, viewport, grid, turf, settings, target) {
@@ -8237,19 +8150,46 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         if (!cache
             || cache.statesRef !== template.scanSummary.states
             || cache.maskSig !== gppRendererMaskSignature(template.mask)
-            || cache.showWrong !== target.show.error
-            || cache.showMissing !== target.show.missing
+            || cache.showWrong !== !!template._gppShowWrong
+            || cache.showMissing !== !!template._gppShowMissing
             || cache.hideQueued !== target.hideQueued
             || (target.hideQueued && cache.queuedSig !== resource.queuedSig)) {
-            cache = resource.errorCache = gppRendererBuildErrorCache(template, resource, target.show, target.hideQueued);
+            cache = resource.errorCache = gppRendererBuildErrorCache(template, resource, target.hideQueued);
         }
         if (!cache.count) return;
 
         const minY = gppRendererClamp(Math.floor((0 - rect.y) / cellHeight), 0, template.height - 1);
         const maxY = gppRendererClamp(Math.ceil((viewport.cssHeight - rect.y) / cellHeight), 0, template.height);
-        // Missing first, wrong on top — same stacking as the WebGL2 shader's compositing.
-        gppRendererStrokeMarkerList(ctx, cache.missing, rect, cellWidth, cellHeight, minY, maxY, viewport.cssWidth, gppRendererMarkerMetrics(cellPx, settings, 'missing'));
-        gppRendererStrokeMarkerList(ctx, cache.wrong, rect, cellWidth, cellHeight, minY, maxY, viewport.cssWidth, gppRendererMarkerMetrics(cellPx, settings, 'error'));
+        const metrics = gppRendererMarkerMetrics(cellPx, settings);
+        const half = metrics.halfPx;
+        const shape = metrics.shape;
+
+        ctx.globalAlpha = target.opacity;
+        ctx.strokeStyle = metrics.color;
+        ctx.fillStyle = metrics.color;
+        ctx.lineWidth = metrics.linePx;
+        ctx.beginPath();
+        for (let y = minY; y < maxY; y++) {
+            const cy = rect.y + (y + 0.5) * cellHeight;
+            for (let i = cache.rowStart[y], end = cache.rowStart[y + 1]; i < end; i++) {
+                const cx = rect.x + (cache.cells[i] + 0.5) * cellWidth;
+                if (cx + half < 0 || cx - half > viewport.cssWidth) continue;
+                if (shape === 'circle') {
+                    ctx.moveTo(cx + half, cy);
+                    ctx.arc(cx, cy, half, 0, Math.PI * 2);
+                } else if (shape === 'square') {
+                    ctx.rect(cx - half, cy - half, half * 2, half * 2);
+                } else {
+                    ctx.moveTo(cx - half, cy - half);
+                    ctx.lineTo(cx + half, cy + half);
+                    ctx.moveTo(cx + half, cy - half);
+                    ctx.lineTo(cx - half, cy + half);
+                }
+            }
+        }
+        if (shape === 'x') ctx.stroke();
+        else ctx.fill();
+        ctx.globalAlpha = 1;
     }
 
     // ── auto-mount ───────────────────────────────────────────────────
@@ -10600,17 +10540,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // ── gpp-init.js render-function contract ───────────────────────────
     // container id: 'gpp-error-settings-section'. Global (applies to every
     // template's error-marker rendering — gpp-renderer.js's marker pass
-    // reads gppSettings.{error,missing}{Shape,Color,Opacity,SizeScale} as
-    // plain uniforms on every draw, and errorRenderMatchLevel/
-    // errorRenderZoom as its zoom cutoff), so `template` is accepted for
-    // signature consistency with the other render hooks but unused.
-    //
-    // Which marker kind the Shape/Color/Opacity/Size rows currently edit
-    // ('error' = wrong-colour cells, 'missing' = not-yet-painted cells).
-    // Session-only UI state, not a setting: it survives this section's
-    // re-renders (gppRenderErrorSettings wipes and rebuilds its DOM on every
-    // refresh) but always starts on Errors after a page load.
-    let gppErrorStyleTarget = 'error';
+    // reads gppSettings.errorShape/errorColor/errorOpacity/errorSizeScale as
+    // plain uniforms on every draw, and errorRenderZoom as its zoom
+    // cutoff), so `template` is accepted for signature consistency with the
+    // other render hooks but unused.
 
     const GPP_ERROR_RENDER_ZOOM_MIN = 10;
     const GPP_ERROR_RENDER_ZOOM_MAX = 20;
@@ -10644,13 +10577,16 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             btn.style.cssText = 'border:none; background:transparent; cursor:pointer; font-size:13px; padding:0 2px; flex-shrink:0; color:' + mutedColor + ';';
             btn.addEventListener('click', onClick);
             rowEl.appendChild(btn);
+            return btn;
         }
 
+        // Label column sized for the longest label ("Render distance") so
+        // every row's control starts at the same x.
         function row(labelText) {
             const r = document.createElement('div');
             r.style.cssText = 'display:flex; align-items:center; gap:8px; margin:6px 0;';
             const label = document.createElement('label');
-            label.style.cssText = 'flex:0 0 auto; min-width:70px; font-size:12px; color:' + labelColor + ';';
+            label.style.cssText = 'flex:0 0 auto; min-width:96px; font-size:12px; color:' + labelColor + ';';
             label.textContent = labelText;
             r.appendChild(label);
             body.appendChild(r);
@@ -10704,95 +10640,44 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         body.appendChild(showErrorsRow);
 
         // ── Render distance ──
-        // The map zoom below which markers stop drawing. "Match render
-        // level" (default) ties it to the site's own Render Level
+        // The map zoom below which markers stop drawing. errorRenderZoom is
+        // null by default, meaning "the site's own Render Level"
         // (userConfig.renderLevel, read live via gppReadGridConstants().
-        // minZoom), so markers appear at exactly every zoom the site itself
-        // still draws pixels at — no separate, resolution-dependent cutoff.
-        // Unticking exposes a slider for a custom (higher) cutoff instead,
-        // e.g. to declutter a huge template until you're closer in.
+        // minZoom) — markers then appear at exactly every zoom the site
+        // itself still draws pixels at, with no separate, latitude-dependent
+        // cutoff. Dragging the slider pins a custom (higher) cutoff instead,
+        // e.g. to declutter a huge template until you're closer in; the row's
+        // reset puts it back to following the site level. Markers can never
+        // show further out than the site renders pixels either way.
         const siteLevel = gppReadGridConstants().minZoom;
-        const matchLevel = gppSettings.errorRenderMatchLevel !== false;
         const renderRow = row('Render distance');
-        const match = checkbox('Match render level', matchLevel,
-            'Show markers at every zoom the site itself renders pixels at — your Render Level in the site\'s own settings (currently ' + siteLevel + '). Untick to choose your own cutoff with the slider below; markers never show further out than the site renders pixels either way.');
-        renderRow.appendChild(match.label);
-
-        const zoomRow = document.createElement('div');
-        zoomRow.style.cssText = 'display:flex; align-items:center; gap:8px; margin:0 0 6px 78px;';
         const zoomInput = document.createElement('input');
         zoomInput.type = 'range';
-        zoomInput.min = String(GPP_ERROR_RENDER_ZOOM_MIN);
+        zoomInput.min = String(Math.min(GPP_ERROR_RENDER_ZOOM_MIN, Math.floor(siteLevel)));
         zoomInput.max = String(GPP_ERROR_RENDER_ZOOM_MAX);
         zoomInput.step = '0.1';
-        const storedZoom = Number.isFinite(gppSettings.errorRenderZoom) ? gppSettings.errorRenderZoom : 12.5;
-        zoomInput.value = String(Math.min(GPP_ERROR_RENDER_ZOOM_MAX, Math.max(GPP_ERROR_RENDER_ZOOM_MIN, storedZoom)));
         zoomInput.style.flex = '1';
-        zoomInput.title = 'Minimum map zoom at which error/missing markers are drawn';
         const zoomValue = document.createElement('span');
-        zoomValue.style.cssText = 'font-size:11px; min-width:72px; text-align:right; color:' + mutedColor + ';';
-        function refreshZoomLabel() {
-            if (match.input.checked) zoomValue.textContent = 'zoom ' + siteLevel + ' (site)';
-            else zoomValue.textContent = 'zoom ' + Number(zoomInput.value).toFixed(1);
+        zoomValue.style.cssText = 'font-size:11px; min-width:84px; text-align:right;';
+        function refreshZoomRow() {
+            const pinned = Number.isFinite(gppSettings.errorRenderZoom);
+            const shown = pinned ? gppSettings.errorRenderZoom : siteLevel;
+            zoomInput.value = String(shown);
+            zoomValue.textContent = 'zoom ' + Number(shown).toFixed(1) + (pinned ? '' : ' (site)');
         }
-        function applyMatchGate() {
-            const on = match.input.checked;
-            zoomInput.disabled = on;
-            zoomRow.style.opacity = on ? '.45' : '';
-            refreshZoomLabel();
-        }
+        zoomInput.title = 'Markers are hidden when the map is zoomed out further than this level';
         zoomInput.addEventListener('input', () => {
             gppSettings.errorRenderZoom = Number(zoomInput.value);
-            refreshZoomLabel();
+            refreshZoomRow();
             saveAndRedraw();
         });
-        match.input.addEventListener('change', () => {
-            gppSettings.errorRenderMatchLevel = match.input.checked;
-            if (!match.input.checked && !Number.isFinite(gppSettings.errorRenderZoom)) gppSettings.errorRenderZoom = Number(zoomInput.value);
-            applyMatchGate();
+        renderRow.append(zoomInput, zoomValue);
+        addResetButton(renderRow, 'Match the site\'s Render Level (currently ' + siteLevel + '): markers show at every zoom the site renders pixels at', () => {
+            gppSettings.errorRenderZoom = null;
+            refreshZoomRow();
             saveAndRedraw();
         });
-        zoomRow.append(zoomInput, zoomValue);
-        addResetButton(zoomRow, 'Reset to zoom 12.5', () => {
-            zoomInput.value = '12.5';
-            gppSettings.errorRenderZoom = 12.5;
-            refreshZoomLabel();
-            saveAndRedraw();
-        });
-        body.appendChild(zoomRow);
-
-        // ── Per-kind style ──
-        // Wrong-colour ("Errors") and not-yet-painted ("Missing") markers
-        // each have their own shape/colour/opacity/size; the segmented
-        // control picks which kind the four rows below edit. Switching
-        // re-renders this section so every row reads that kind's values.
-        const styleRow = row('Style for');
-        const styleGroup = document.createElement('div');
-        styleGroup.id = 'gpp-error-style-target';
-        styleGroup.style.cssText = 'display:inline-flex; gap:4px;';
-        [['error', 'Errors'], ['missing', 'Missing']].forEach(([target, text]) => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.id = 'gpp-error-style-target-' + target;
-            btn.textContent = text;
-            btn.title = target === 'error'
-                ? 'Edit the style of markers over cells painted the wrong colour'
-                : 'Edit the style of markers over cells not painted yet';
-            gppScanStyleButton(btn, gppErrorStyleTarget === target);
-            btn.addEventListener('click', () => {
-                if (gppErrorStyleTarget === target) return;
-                gppErrorStyleTarget = target;
-                gppRenderErrorSettings(container);
-            });
-            styleGroup.appendChild(btn);
-        });
-        styleRow.appendChild(styleGroup);
-
-        const prefix = gppErrorStyleTarget === 'missing' ? 'missing' : 'error';
-        const keyShape = prefix + 'Shape';
-        const keyColor = prefix + 'Color';
-        const keyOpacity = prefix + 'Opacity';
-        const keySize = prefix + 'SizeScale';
+        refreshZoomRow();
 
         const shapeRow = row('Shape');
         const shapeSelect = document.createElement('select');
@@ -10800,11 +10685,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             const opt = document.createElement('option');
             opt.value = value;
             opt.textContent = value === 'x' ? 'X mark' : (value === 'circle' ? 'Circle' : 'Square');
-            if ((gppSettings[keyShape] || 'x') === value) opt.selected = true;
+            if ((gppSettings.errorShape || 'x') === value) opt.selected = true;
             shapeSelect.appendChild(opt);
         });
         shapeSelect.addEventListener('change', () => {
-            gppSettings[keyShape] = shapeSelect.value;
+            gppSettings.errorShape = shapeSelect.value;
             saveAndRedraw();
         });
         shapeRow.appendChild(shapeSelect);
@@ -10812,15 +10697,15 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         const colorRow = row('Color');
         const colorInput = document.createElement('input');
         colorInput.type = 'color';
-        colorInput.value = gppSettings[keyColor] || '#dc2626';
+        colorInput.value = gppSettings.errorColor || '#dc2626';
         colorInput.addEventListener('input', () => {
-            gppSettings[keyColor] = colorInput.value;
+            gppSettings.errorColor = colorInput.value;
             saveAndRedraw();
         });
         colorRow.appendChild(colorInput);
         addResetButton(colorRow, 'Reset to default color', () => {
             colorInput.value = '#dc2626';
-            gppSettings[keyColor] = '#dc2626';
+            gppSettings.errorColor = '#dc2626';
             saveAndRedraw();
         });
 
@@ -10828,21 +10713,21 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         const opacityInput = document.createElement('input');
         opacityInput.type = 'range';
         opacityInput.min = '0'; opacityInput.max = '100'; opacityInput.step = '1';
-        opacityInput.value = String(Math.round((Number.isFinite(gppSettings[keyOpacity]) ? gppSettings[keyOpacity] : 1) * 100));
+        opacityInput.value = String(Math.round((Number.isFinite(gppSettings.errorOpacity) ? gppSettings.errorOpacity : 1) * 100));
         opacityInput.style.flex = '1';
         const opacityValue = document.createElement('span');
         opacityValue.style.cssText = 'font-size:11px; min-width:32px; text-align:right;';
         opacityValue.textContent = opacityInput.value + '%';
         opacityInput.addEventListener('input', () => {
             opacityValue.textContent = opacityInput.value + '%';
-            gppSettings[keyOpacity] = Number(opacityInput.value) / 100;
+            gppSettings.errorOpacity = Number(opacityInput.value) / 100;
             saveAndRedraw();
         });
         opacityRow.append(opacityInput, opacityValue);
         addResetButton(opacityRow, 'Reset to default opacity', () => {
             opacityInput.value = '100';
             opacityValue.textContent = '100%';
-            gppSettings[keyOpacity] = 1;
+            gppSettings.errorOpacity = 1;
             saveAndRedraw();
         });
 
@@ -10850,30 +10735,28 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         const sizeInput = document.createElement('input');
         sizeInput.type = 'range';
         sizeInput.min = '25'; sizeInput.max = '250'; sizeInput.step = '5';
-        sizeInput.value = String(Math.round((Number.isFinite(gppSettings[keySize]) ? gppSettings[keySize] : 1) * 100));
+        sizeInput.value = String(Math.round((Number.isFinite(gppSettings.errorSizeScale) ? gppSettings.errorSizeScale : 1) * 100));
         sizeInput.style.flex = '1';
         const sizeValue = document.createElement('span');
         sizeValue.style.cssText = 'font-size:11px; min-width:32px; text-align:right;';
         sizeValue.textContent = sizeInput.value + '%';
         sizeInput.addEventListener('input', () => {
             sizeValue.textContent = sizeInput.value + '%';
-            gppSettings[keySize] = Number(sizeInput.value) / 100;
+            gppSettings.errorSizeScale = Number(sizeInput.value) / 100;
             saveAndRedraw();
         });
         sizeRow.append(sizeInput, sizeValue);
         addResetButton(sizeRow, 'Reset to default size', () => {
             sizeInput.value = '100';
             sizeValue.textContent = '100%';
-            gppSettings[keySize] = 1;
+            gppSettings.errorSizeScale = 1;
             saveAndRedraw();
         });
 
         function applyShowErrorsGate() {
             const on = showErrors.input.checked;
-            [match.input, zoomInput, shapeSelect, colorInput, opacityInput, sizeInput].forEach(el => { el.disabled = !on; });
-            styleGroup.querySelectorAll('button').forEach(btn => { btn.disabled = !on; });
-            [renderRow, zoomRow, styleRow, shapeRow, colorRow, opacityRow, sizeRow].forEach(r => { r.style.opacity = on ? '' : '.45'; });
-            if (on) applyMatchGate();
+            [zoomInput, shapeSelect, colorInput, opacityInput, sizeInput].forEach(el => { el.disabled = !on; });
+            [renderRow, shapeRow, colorRow, opacityRow, sizeRow].forEach(r => { r.style.opacity = on ? '' : '.45'; });
         }
         showErrors.input.addEventListener('change', () => {
             gppSettings.showErrors = showErrors.input.checked;
