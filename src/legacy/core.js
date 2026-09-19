@@ -1438,6 +1438,8 @@
                 { type: 'changed', text: 'Ghost++: Show errors / Show missing crosshairs are now drawn on the GPU as a single overlay, so panning and zooming stay smooth no matter how many errors or missing pixels a scan finds — a 20k-pixel project with thousands of markers no longer stutters' },
                 { type: 'changed', text: 'Ghost++: swapping the focused template now removes the error/missing markers of the template you left from the map and switches its Show errors / Show missing buttons back off' },
                 { type: 'changed', text: 'Ghost++: the Error Settings shape, colour, opacity and size sliders update the markers instantly without any recomputation' },
+                { type: 'added', text: 'Ghost++ Error Settings: errors (wrong colour) and missing (not painted yet) markers can now be styled separately — pick Errors or Missing under Style for, then set that kind’s shape, colour, opacity and size' },
+                { type: 'added', text: 'Ghost++ Error Settings: Render distance — markers now show at every zoom the site itself renders pixels at (Match render level, on by default) instead of vanishing around zoom 12.5; untick it to pick your own cutoff with a slider' },
             ]
         },
         {

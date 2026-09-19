@@ -33,10 +33,14 @@
     // GPP_RENDERER_QUEUE_POLL_MS) and on gpp-scan.js's placePixelAt hook,
     // never per frame, and rasterised into a per-template bitset texture
     // only when its contents actually changed. Style settings (shape/
-    // colour/opacity/size) are plain uniforms, so dragging those sliders
-    // uploads nothing. Swapping the focused template releases the previous
-    // template's marker textures (gpp-runtime.js's gppFocusTemplate also
-    // resets its Show errors/Show missing toggles).
+    // colour/opacity/size, independently for wrong and missing markers)
+    // are plain uniforms, so dragging those sliders uploads nothing. The
+    // zoom cutoff follows the site's own Render Level by default or a
+    // user-chosen level (see gppRendererMarkerMinZoom) — never an
+    // on-screen cell-size threshold, which varied with latitude. Swapping
+    // the focused template releases the previous template's marker
+    // textures (gpp-runtime.js's gppFocusTemplate also resets its Show
+    // errors/Show missing toggles).
     //
     // There is no automatic zoom-based "completed template" preview swap —
     // that system was removed in favour of a manual "Preview" button
@@ -96,8 +100,19 @@
     const GPP_RENDERER_MAP_POLL_MS = 100;
     const GPP_RENDERER_MAP_POLL_MAX_ATTEMPTS = 300; // ~30s
     const GPP_RENDERER_QUEUE_POLL_MS = 250; // native queuedPixels re-read cadence while markers are shown
-    const GPP_RENDERER_MIN_MARKER_CELL_PX = 2; // below this on-screen cell size markers are not drawn (matches the old Canvas2D cutoff)
     const GPP_RENDERER_ERROR_SHAPES = Object.freeze({ x: 0, circle: 1, square: 2 });
+    // A marker's half-extent in CELL units grows as cells shrink on screen
+    // (its 1.5px floor never does), so at far zoom one marker spills over
+    // several neighbouring cells and the shader must search that many cells
+    // around each fragment (reach = floor(half + 0.5)). Capped so the
+    // neighbourhood never exceeds 7x7 texel probes per fragment; beyond the
+    // cap the marker is drawn very slightly smaller than its pixel floor.
+    const GPP_RENDERER_MAX_MARKER_HALF_CELLS = 3.4;
+    const GPP_RENDERER_MAX_MARKER_REACH = 3;
+    const GPP_RENDERER_MARKER_KINDS = Object.freeze([
+        { prefix: 'error', state: 2, flag: '_gppShowWrong' },     // ERROR_STATE.WRONG
+        { prefix: 'missing', state: 3, flag: '_gppShowMissing' }, // ERROR_STATE.MISSING
+    ]);
 
     // One shared, stateless core instance — cheap to build, but no reason to
     // rebuild it per template per frame when a single instance works for the
@@ -430,15 +445,16 @@
                 out_color = vec4(rgb, u_opacity);
             }`;
         // Error-marker pass (see the file banner). Same quad/vertex shader as
-        // the dot pass; each fragment looks up its own cell's scan state and
-        // draws the marker shape as a signed-distance field, antialiased
-        // over ~1 screen pixel via fwidth(). Markers whose half-extent
-        // exceeds half a cell (tiny on-screen cells, where the 1.5px minimum
-        // dominates, or a Size setting above ~156%) spill into neighbouring
-        // cells exactly as the old Canvas2D strokes did, so the 3x3
-        // neighbourhood is searched in that case; u_half is < 1.5 cells by
-        // construction (see gppRendererDrawErrorsWebGl), so one ring always
-        // suffices. States: 2 = WRONG, 3 = MISSING (core.constants.ERROR_STATE).
+        // the dot pass; each fragment looks up the scan state of its own
+        // cell and of the cells within u_reach of it (a marker's half-extent
+        // can exceed half a cell — see GPP_RENDERER_MAX_MARKER_HALF_CELLS)
+        // and draws the wrong/missing marker shapes as signed-distance
+        // fields, antialiased over ~1 screen pixel via fwidth(). Wrong and
+        // missing markers carry independent shape/size/colour/opacity
+        // uniforms (the user's Error Settings style each kind separately);
+        // where the two overlap, wrong is composited over missing. States:
+        // 2 = WRONG, 3 = MISSING (core.constants.ERROR_STATE); 0 below means
+        // "no marker in this cell".
         const errorFragmentSource = `#version 300 es
             precision highp float;
             precision highp int;
@@ -453,34 +469,39 @@
             uniform int u_show_wrong;
             uniform int u_show_missing;
             uniform int u_hide_queued;
-            uniform int u_shape;
-            uniform float u_half;
-            uniform float u_line;
-            uniform vec4 u_color;
+            uniform int u_reach;
+            uniform int u_wrong_shape;
+            uniform float u_wrong_half;
+            uniform float u_wrong_line;
+            uniform vec4 u_wrong_color;
+            uniform int u_missing_shape;
+            uniform float u_missing_half;
+            uniform float u_missing_line;
+            uniform vec4 u_missing_color;
             out vec4 out_color;
-            bool markerAt(ivec2 cell) {
-                if (cell.x < 0 || cell.y < 0 || cell.x >= u_template_size.x || cell.y >= u_template_size.y) return false;
+            uint markerStateAt(ivec2 cell) {
+                if (cell.x < 0 || cell.y < 0 || cell.x >= u_template_size.x || cell.y >= u_template_size.y) return 0u;
                 uint state = texelFetch(u_states, cell, 0).r;
-                if (state == 2u) { if (u_show_wrong == 0) return false; }
-                else if (state == 3u) { if (u_show_missing == 0) return false; }
-                else return false;
+                if (state == 2u) { if (u_show_wrong == 0) return 0u; }
+                else if (state == 3u) { if (u_show_missing == 0) return 0u; }
+                else return 0u;
                 uint palette_index = texelFetch(u_indices, cell, 0).r;
-                if (palette_index == u_empty) return false;
+                if (palette_index == u_empty) return 0u;
                 uint word = texelFetch(u_mask, ivec2(int(palette_index >> 5u), 0), 0).r;
-                if ((word & (1u << (palette_index & 31u))) == 0u) return false;
+                if ((word & (1u << (palette_index & 31u))) == 0u) return 0u;
                 if (u_hide_queued != 0) {
                     uint qword = texelFetch(u_queued, ivec2(cell.x >> 5, cell.y), 0).r;
-                    if (((qword >> uint(cell.x & 31)) & 1u) != 0u) return false;
+                    if (((qword >> uint(cell.x & 31)) & 1u) != 0u) return 0u;
                 }
-                return true;
+                return state;
             }
-            float markerDistance(vec2 p) {
-                if (u_shape == 1) return length(p) - u_half;
-                if (u_shape == 2) { vec2 q = abs(p) - vec2(u_half); return max(q.x, q.y); }
+            float markerDistance(vec2 p, int shape, float half_extent, float line) {
+                if (shape == 1) return length(p) - half_extent;
+                if (shape == 2) { vec2 q = abs(p) - vec2(half_extent); return max(q.x, q.y); }
                 float d1 = abs(p.x - p.y) * 0.70710678;
                 float d2 = abs(p.x + p.y) * 0.70710678;
-                float dline = min(d1, d2) - u_line;
-                float dbox = max(abs(p.x), abs(p.y)) - u_half;
+                float dline = min(d1, d2) - line;
+                float dbox = max(abs(p.x), abs(p.y)) - half_extent;
                 return max(dline, dbox);
             }
             void main() {
@@ -488,18 +509,24 @@
                 vec2 cellf = safe_uv * vec2(u_template_size);
                 ivec2 cell = ivec2(floor(cellf));
                 float aa = max(fwidth(cellf.x), fwidth(cellf.y));
-                int reach = (u_half > 0.5) ? 1 : 0;
-                float d = 1e9;
-                for (int dy = -reach; dy <= reach; dy++) {
-                    for (int dx = -reach; dx <= reach; dx++) {
+                float dWrong = 1e9;
+                float dMissing = 1e9;
+                for (int dy = -u_reach; dy <= u_reach; dy++) {
+                    for (int dx = -u_reach; dx <= u_reach; dx++) {
                         ivec2 c = cell + ivec2(dx, dy);
-                        if (!markerAt(c)) continue;
-                        d = min(d, markerDistance(cellf - (vec2(c) + 0.5)));
+                        uint s = markerStateAt(c);
+                        if (s == 0u) continue;
+                        vec2 p = cellf - (vec2(c) + 0.5);
+                        if (s == 2u) dWrong = min(dWrong, markerDistance(p, u_wrong_shape, u_wrong_half, u_wrong_line));
+                        else dMissing = min(dMissing, markerDistance(p, u_missing_shape, u_missing_half, u_missing_line));
                     }
                 }
-                float coverage = 1.0 - smoothstep(-aa * 0.5, aa * 0.5, d);
-                if (coverage <= 0.0) discard;
-                out_color = vec4(u_color.rgb, u_color.a * coverage);
+                float aWrong = u_wrong_color.a * (1.0 - smoothstep(-aa * 0.5, aa * 0.5, dWrong));
+                float aMissing = u_missing_color.a * (1.0 - smoothstep(-aa * 0.5, aa * 0.5, dMissing));
+                float alpha = aWrong + aMissing * (1.0 - aWrong);
+                if (alpha <= 0.0) discard;
+                vec3 rgb = (u_wrong_color.rgb * aWrong + u_missing_color.rgb * aMissing * (1.0 - aWrong)) / alpha;
+                out_color = vec4(rgb, alpha);
             }`;
 
         // Both programs link or neither does: a marker-shader failure is
@@ -869,7 +896,7 @@
         else if (state.ctx2d) gppRendererDrawCanvas2d(state, viewport, templates, grid, turf, settings);
 
         // Markers go on top of every template's dots, in the same frame.
-        gppRendererDrawErrors(state, viewport, grid, turf, settings);
+        gppRendererDrawErrors(state, viewport, grid, turf, settings, zoom);
     }
 
     function gppRendererDrawWebGl(state, viewport, templates, grid, turf, settings) {
@@ -1095,15 +1122,29 @@
         resource.statesRef = states;
     }
 
+    // The map zoom below which markers are not drawn. By default this is
+    // the site's own Render Level (userConfig.renderLevel, mirrored live
+    // into the page's `minZoom` — see gppReadGridConstants), so markers
+    // appear at every zoom the site itself renders pixels at; the user can
+    // instead pin a custom cutoff (Error Settings > Render distance). The
+    // custom value can never reach below the site's level, because
+    // gppRendererDraw already hides the whole overlay there.
+    function gppRendererMarkerMinZoom(settings, grid) {
+        if (settings.errorRenderMatchLevel !== false) return grid.minZoom;
+        const custom = Number.isFinite(settings.errorRenderZoom) ? settings.errorRenderZoom : grid.minZoom;
+        return Math.max(grid.minZoom, custom);
+    }
+
     // Applies every gate the retired gpp-scan.js crosshair loop applied
     // (master switch, FOCUSED template only, visible, positioned, scanned,
-    // at least one Show toggle on, non-zero marker opacity) and owns the two
-    // pieces of lifecycle that hang off "is a marker overlay on screen":
-    // releasing the previously focused template's marker resources the
-    // moment focus moves elsewhere (its dots stay; its markers unload), and
-    // running the queue poll timer only while markers are actually shown
-    // with Hide queued crosshairs on.
-    function gppRendererErrorTarget(state, settings) {
+    // at least one kind toggled on with a non-zero opacity, zoomed in past
+    // the marker render distance) and owns the two pieces of lifecycle
+    // that hang off "is a marker overlay on screen": releasing the
+    // previously focused template's marker resources the moment focus
+    // moves elsewhere (its dots stay; its markers unload), and running the
+    // queue poll timer only while markers are actually shown with Hide
+    // queued crosshairs on.
+    function gppRendererErrorTarget(state, settings, grid, zoom) {
         const focused = gppState.getFocusedTemplate();
         const focusedId = focused ? focused.id : null;
         if (state.errorFocusId !== focusedId) {
@@ -1112,18 +1153,25 @@
             }
             state.errorFocusId = focusedId;
         }
-        const opacity = Number.isFinite(settings.errorOpacity) ? settings.errorOpacity : 1;
         const resource = focused ? state.resources.get(focused.id) : null;
-        const active = !!(settings.showErrors && focused && resource && focused.opacity > 0 && focused.position
-            && focused.scanSummary && (focused._gppShowWrong || focused._gppShowMissing) && opacity > 0);
+        let active = !!(settings.showErrors && focused && resource && focused.opacity > 0 && focused.position
+            && focused.scanSummary && zoom >= gppRendererMarkerMinZoom(settings, grid));
+        const show = {};
+        let anyKind = false;
+        for (const kind of GPP_RENDERER_MARKER_KINDS) {
+            const opacity = settings[kind.prefix + 'Opacity'];
+            show[kind.prefix] = !!(focused && focused[kind.flag] && (Number.isFinite(opacity) ? opacity : 1) > 0);
+            if (show[kind.prefix]) anyKind = true;
+        }
+        if (!anyKind) active = false;
         const hideQueued = settings.hideQueuedCrosses !== false;
         if (active && hideQueued) gppRendererEnsureQueueTimer(state);
         else gppRendererStopQueueTimer(state);
-        return active ? { template: focused, resource, opacity, hideQueued } : null;
+        return active ? { template: focused, resource, show, hideQueued } : null;
     }
 
-    function gppRendererDrawErrors(state, viewport, grid, turf, settings) {
-        const target = gppRendererErrorTarget(state, settings);
+    function gppRendererDrawErrors(state, viewport, grid, turf, settings, zoom) {
+        const target = gppRendererErrorTarget(state, settings, grid, zoom);
         if (!target) return;
         try {
             if (state.gl) gppRendererDrawErrorsWebGl(state, viewport, grid, turf, settings, target);
@@ -1135,15 +1183,33 @@
 
     // Same pixel-space formulas as the retired Canvas2D loop: the marker
     // half-extent floors at 1.5px and the X stroke width is clamped to
-    // [1, 2]px, both in CSS pixels. Shared by both backends.
-    function gppRendererMarkerMetrics(cellPx, settings) {
-        const sizeScale = Number.isFinite(settings.errorSizeScale) ? settings.errorSizeScale : 1;
+    // [1, 2]px, both in CSS pixels. One call per marker kind (`prefix` is
+    // 'error' for wrong-colour cells or 'missing'), reading that kind's own
+    // shape/colour/opacity/size settings. Shared by both backends.
+    function gppRendererMarkerMetrics(cellPx, settings, prefix) {
+        const sizeScale = settings[prefix + 'SizeScale'];
+        const opacity = settings[prefix + 'Opacity'];
+        const halfPx = Math.max(1.5, cellPx * 0.32 * (Number.isFinite(sizeScale) ? sizeScale : 1));
+        const halfCells = Math.min(GPP_RENDERER_MAX_MARKER_HALF_CELLS, halfPx / cellPx);
         return {
-            halfPx: Math.max(1.5, cellPx * 0.32 * sizeScale),
+            halfPx: halfCells * cellPx,
+            halfCells,
             linePx: Math.max(1, Math.min(2, cellPx / 4)),
-            shape: settings.errorShape || 'x',
-            color: settings.errorColor || '#dc2626',
+            shape: settings[prefix + 'Shape'] || 'x',
+            color: settings[prefix + 'Color'] || '#dc2626',
+            opacity: Number.isFinite(opacity) ? opacity : 1,
         };
+    }
+
+    function gppRendererSetMarkerStyleUniforms(gl, program, name, metrics, cellPx, visible) {
+        const loc = suffix => gl.getUniformLocation(program, 'u_' + name + '_' + suffix);
+        const shapeCode = GPP_RENDERER_ERROR_SHAPES[metrics.shape];
+        const packed = gppRendererCore.hexToPacked(metrics.color);
+        const rgb = packed === null ? 0xdc2626 : packed;
+        gl.uniform1i(loc('shape'), shapeCode === undefined ? 0 : shapeCode);
+        gl.uniform1f(loc('half'), metrics.halfCells);
+        gl.uniform1f(loc('line'), (metrics.linePx * 0.5) / cellPx);
+        gl.uniform4f(loc('color'), ((rgb >> 16) & 255) / 255, ((rgb >> 8) & 255) / 255, (rgb & 255) / 255, visible ? metrics.opacity : 0);
     }
 
     function gppRendererDrawErrorsWebGl(state, viewport, grid, turf, settings, target) {
@@ -1153,18 +1219,15 @@
         const rect = gppRendererProjectTemplate(state.map, turf, grid, template);
         if (!gppRendererViewportIntersects(rect, viewport.cssWidth, viewport.cssHeight)) return;
         const cellPx = Math.abs(rect.width / template.width);
-        if (!(cellPx >= GPP_RENDERER_MIN_MARKER_CELL_PX)) return;
+        if (!(cellPx > 0)) return;
 
         gppRendererSyncStatesGl(state, template, resource);
         if (target.hideQueued) gppRendererSyncQueuedBits(state, template, resource);
 
-        // Converted to cell units for the shader. With cellPx >= 2 and the
-        // Size setting capped at 250%, u_half is at most max(0.75, 0.8) = 0.8
-        // cells — inside the shader's one-ring neighbourhood search.
-        const metrics = gppRendererMarkerMetrics(cellPx, settings);
-        const packed = gppRendererCore.hexToPacked(metrics.color);
-        const rgb = packed === null ? 0xdc2626 : packed;
-        const shapeCode = GPP_RENDERER_ERROR_SHAPES[metrics.shape];
+        const wrong = gppRendererMarkerMetrics(cellPx, settings, 'error');
+        const missing = gppRendererMarkerMetrics(cellPx, settings, 'missing');
+        const maxHalf = Math.max(target.show.error ? wrong.halfCells : 0, target.show.missing ? missing.halfCells : 0);
+        const reach = Math.min(GPP_RENDERER_MAX_MARKER_REACH, Math.floor(maxHalf + 0.5));
 
         const program = state.errorProgram;
         gl.useProgram(program);
@@ -1173,13 +1236,12 @@
         gl.uniform4f(loc('u_rect'), rect.x, rect.y, rect.width, rect.height);
         gl.uniform2i(loc('u_template_size'), template.width, template.height);
         gl.uniform1ui(loc('u_empty'), gppRendererCore.emptyValue(template.indexType));
-        gl.uniform1i(loc('u_show_wrong'), template._gppShowWrong ? 1 : 0);
-        gl.uniform1i(loc('u_show_missing'), template._gppShowMissing ? 1 : 0);
+        gl.uniform1i(loc('u_show_wrong'), target.show.error ? 1 : 0);
+        gl.uniform1i(loc('u_show_missing'), target.show.missing ? 1 : 0);
         gl.uniform1i(loc('u_hide_queued'), target.hideQueued ? 1 : 0);
-        gl.uniform1i(loc('u_shape'), shapeCode === undefined ? 0 : shapeCode);
-        gl.uniform1f(loc('u_half'), metrics.halfPx / cellPx);
-        gl.uniform1f(loc('u_line'), (metrics.linePx * 0.5) / cellPx);
-        gl.uniform4f(loc('u_color'), ((rgb >> 16) & 255) / 255, ((rgb >> 8) & 255) / 255, (rgb & 255) / 255, target.opacity);
+        gl.uniform1i(loc('u_reach'), reach);
+        gppRendererSetMarkerStyleUniforms(gl, program, 'wrong', wrong, cellPx, target.show.error);
+        gppRendererSetMarkerStyleUniforms(gl, program, 'missing', missing, cellPx, target.show.missing);
         gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, resource.indexTexture);
         gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, resource.maskTexture);
         gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, resource.statesTexture);
@@ -1188,11 +1250,25 @@
     }
 
     // Canvas2D fallback. The marker set is still never re-derived per frame:
-    // a row-indexed list of marker cell x-coordinates is built once per
+    // one row-indexed list of marker cell x-coordinates per kind (wrong /
+    // missing, so each can be stroked in its own style) is built once per
     // (scan, mask, toggles, queue, position) and each frame transforms and
     // strokes only the rows intersecting the viewport — O(visible markers),
     // with no per-cell walk and no per-cell string allocation.
-    function gppRendererBuildErrorCache(template, resource, hideQueued) {
+    function gppRendererNewMarkerList(height) {
+        return { rowStart: new Int32Array(height + 1), cells: new Int32Array(1024), count: 0 };
+    }
+
+    function gppRendererPushMarker(list, x) {
+        if (list.count === list.cells.length) {
+            const grown = new Int32Array(list.cells.length * 2);
+            grown.set(list.cells);
+            list.cells = grown;
+        }
+        list.cells[list.count++] = x;
+    }
+
+    function gppRendererBuildErrorCache(template, resource, show, hideQueued) {
         const ERROR_STATE = gppRendererCore.constants.ERROR_STATE;
         const width = template.width;
         const height = template.height;
@@ -1200,87 +1276,56 @@
         const states = template.scanSummary.states;
         const mask = template.mask;
         const empty = gppRendererCore.emptyValue(template.indexType);
-        const showWrong = !!template._gppShowWrong;
-        const showMissing = !!template._gppShowMissing;
         const bits = hideQueued ? resource.queuedBits : null;
         const wordsPerRow = Math.ceil(width / 32);
-        const rowStart = new Int32Array(height + 1);
-        let cells = new Int32Array(1024);
-        let count = 0;
+        const wrong = gppRendererNewMarkerList(height);
+        const missing = gppRendererNewMarkerList(height);
         let pixel = 0;
         for (let y = 0; y < height; y++) {
-            rowStart[y] = count;
+            wrong.rowStart[y] = wrong.count;
+            missing.rowStart[y] = missing.count;
             const rowWord = y * wordsPerRow;
             for (let x = 0; x < width; x++, pixel++) {
                 const state = states[pixel];
-                if (state === ERROR_STATE.WRONG) { if (!showWrong) continue; }
-                else if (state === ERROR_STATE.MISSING) { if (!showMissing) continue; }
+                let list;
+                if (state === ERROR_STATE.WRONG) { if (!show.error) continue; list = wrong; }
+                else if (state === ERROR_STATE.MISSING) { if (!show.missing) continue; list = missing; }
                 else continue;
                 const index = indices[pixel];
                 if (index === empty || !gppRendererCore.maskHas(mask, index)) continue;
                 if (bits && ((bits[rowWord + (x >> 5)] >>> (x & 31)) & 1)) continue;
-                if (count === cells.length) {
-                    const grown = new Int32Array(cells.length * 2);
-                    grown.set(cells);
-                    cells = grown;
-                }
-                cells[count++] = x;
+                gppRendererPushMarker(list, x);
             }
         }
-        rowStart[height] = count;
+        wrong.rowStart[height] = wrong.count;
+        missing.rowStart[height] = missing.count;
         return {
             statesRef: states,
             maskSig: gppRendererMaskSignature(mask),
-            showWrong,
-            showMissing,
+            showWrong: show.error,
+            showMissing: show.missing,
             hideQueued,
             queuedSig: hideQueued ? resource.queuedSig : -1,
-            rowStart,
-            cells,
-            count,
+            wrong,
+            missing,
+            count: wrong.count + missing.count,
         };
     }
 
-    function gppRendererDrawErrorsCanvas2d(state, viewport, grid, turf, settings, target) {
-        const ctx = state.ctx2d;
-        const template = target.template;
-        const resource = target.resource;
-        const rect = gppRendererProjectTemplate(state.map, turf, grid, template);
-        if (!gppRendererViewportIntersects(rect, viewport.cssWidth, viewport.cssHeight)) return;
-        const cellWidth = rect.width / template.width;
-        const cellHeight = rect.height / template.height;
-        const cellPx = Math.abs(cellWidth);
-        if (!(cellPx >= GPP_RENDERER_MIN_MARKER_CELL_PX)) return;
-
-        if (target.hideQueued) gppRendererSyncQueuedBits(state, template, resource);
-        let cache = resource.errorCache;
-        if (!cache
-            || cache.statesRef !== template.scanSummary.states
-            || cache.maskSig !== gppRendererMaskSignature(template.mask)
-            || cache.showWrong !== !!template._gppShowWrong
-            || cache.showMissing !== !!template._gppShowMissing
-            || cache.hideQueued !== target.hideQueued
-            || (target.hideQueued && cache.queuedSig !== resource.queuedSig)) {
-            cache = resource.errorCache = gppRendererBuildErrorCache(template, resource, target.hideQueued);
-        }
-        if (!cache.count) return;
-
-        const minY = gppRendererClamp(Math.floor((0 - rect.y) / cellHeight), 0, template.height - 1);
-        const maxY = gppRendererClamp(Math.ceil((viewport.cssHeight - rect.y) / cellHeight), 0, template.height);
-        const metrics = gppRendererMarkerMetrics(cellPx, settings);
+    function gppRendererStrokeMarkerList(ctx, list, rect, cellWidth, cellHeight, minY, maxY, cssWidth, metrics) {
+        if (!list.count) return;
         const half = metrics.halfPx;
         const shape = metrics.shape;
-
-        ctx.globalAlpha = target.opacity;
+        ctx.globalAlpha = metrics.opacity;
         ctx.strokeStyle = metrics.color;
         ctx.fillStyle = metrics.color;
         ctx.lineWidth = metrics.linePx;
         ctx.beginPath();
         for (let y = minY; y < maxY; y++) {
             const cy = rect.y + (y + 0.5) * cellHeight;
-            for (let i = cache.rowStart[y], end = cache.rowStart[y + 1]; i < end; i++) {
-                const cx = rect.x + (cache.cells[i] + 0.5) * cellWidth;
-                if (cx + half < 0 || cx - half > viewport.cssWidth) continue;
+            for (let i = list.rowStart[y], end = list.rowStart[y + 1]; i < end; i++) {
+                const cx = rect.x + (list.cells[i] + 0.5) * cellWidth;
+                if (cx + half < 0 || cx - half > cssWidth) continue;
                 if (shape === 'circle') {
                     ctx.moveTo(cx + half, cy);
                     ctx.arc(cx, cy, half, 0, Math.PI * 2);
@@ -1297,6 +1342,37 @@
         if (shape === 'x') ctx.stroke();
         else ctx.fill();
         ctx.globalAlpha = 1;
+    }
+
+    function gppRendererDrawErrorsCanvas2d(state, viewport, grid, turf, settings, target) {
+        const ctx = state.ctx2d;
+        const template = target.template;
+        const resource = target.resource;
+        const rect = gppRendererProjectTemplate(state.map, turf, grid, template);
+        if (!gppRendererViewportIntersects(rect, viewport.cssWidth, viewport.cssHeight)) return;
+        const cellWidth = rect.width / template.width;
+        const cellHeight = rect.height / template.height;
+        const cellPx = Math.abs(cellWidth);
+        if (!(cellPx > 0)) return;
+
+        if (target.hideQueued) gppRendererSyncQueuedBits(state, template, resource);
+        let cache = resource.errorCache;
+        if (!cache
+            || cache.statesRef !== template.scanSummary.states
+            || cache.maskSig !== gppRendererMaskSignature(template.mask)
+            || cache.showWrong !== target.show.error
+            || cache.showMissing !== target.show.missing
+            || cache.hideQueued !== target.hideQueued
+            || (target.hideQueued && cache.queuedSig !== resource.queuedSig)) {
+            cache = resource.errorCache = gppRendererBuildErrorCache(template, resource, target.show, target.hideQueued);
+        }
+        if (!cache.count) return;
+
+        const minY = gppRendererClamp(Math.floor((0 - rect.y) / cellHeight), 0, template.height - 1);
+        const maxY = gppRendererClamp(Math.ceil((viewport.cssHeight - rect.y) / cellHeight), 0, template.height);
+        // Missing first, wrong on top — same stacking as the WebGL2 shader's compositing.
+        gppRendererStrokeMarkerList(ctx, cache.missing, rect, cellWidth, cellHeight, minY, maxY, viewport.cssWidth, gppRendererMarkerMetrics(cellPx, settings, 'missing'));
+        gppRendererStrokeMarkerList(ctx, cache.wrong, rect, cellWidth, cellHeight, minY, maxY, viewport.cssWidth, gppRendererMarkerMetrics(cellPx, settings, 'error'));
     }
 
     // ── auto-mount ───────────────────────────────────────────────────
