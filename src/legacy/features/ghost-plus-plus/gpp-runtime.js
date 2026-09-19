@@ -25,6 +25,7 @@
         errorColor: '#dc2626',
         errorOpacity: 1,          // 0-1
         errorSizeScale: 1,        // multiplier on the base marker size
+        errorRenderZoom: null,    // minimum map zoom for markers; null = follow the site's own Render Level (userConfig.renderLevel) — see gpp-renderer.js's gppRendererMarkerMinZoom
         autoHideUnfocused: true, // when true, focusing a template hides every other one — see gppApplyAutoHideUnfocused
         grayDisabledSwatches: true, // when false, a disabled palette swatch only gets the diagonal slash, no grayscale/opacity dimming — see gpp-palette.js's .gpp-palette-gray-disabled
         paletteViewMode: 'grid', // 'grid' | 'list' for the full Ghost++ menu
@@ -56,11 +57,20 @@
         try {
             const raw = localStorage.getItem(GPP_SETTINGS_KEY);
             if (!raw) return { ...GPP_DEFAULT_SETTINGS };
-            const settings = { ...GPP_DEFAULT_SETTINGS, ...JSON.parse(raw) };
+            const stored = JSON.parse(raw);
+            const settings = { ...GPP_DEFAULT_SETTINGS, ...stored };
             // Preview builds before the compact-height setting used null to
             // request content-sized height. Migrate that value so a large
             // palette cannot reopen as a screen-filling compact window.
             if (settings.compactHeight == null) settings.compactHeight = GPP_DEFAULT_SETTINGS.compactHeight;
+            // 2.15.0 preview builds briefly stored a separate missing-marker
+            // style and a "match render level" flag; neither shipped. Drop
+            // them, and keep "follow the site's Render Level" (null) unless
+            // that preview had explicitly pinned a custom zoom.
+            if (stored && typeof stored === 'object') {
+                if (stored.errorRenderMatchLevel !== false) settings.errorRenderZoom = null;
+                for (const key of ['errorRenderMatchLevel', 'missingShape', 'missingColor', 'missingOpacity', 'missingSizeScale']) delete settings[key];
+            }
             return settings;
         } catch (_) {
             return { ...GPP_DEFAULT_SETTINGS };
@@ -1103,6 +1113,12 @@
     async function gppFocusTemplate(id) {
         const previousId = gppFocusedTemplateId;
         gppFocusedTemplateId = id;
+        // Error/missing markers never follow a focus change: the previous
+        // template's Show errors/Show missing toggles are switched off here
+        // (before the guild early-return below, so it holds for every kind
+        // of template) and gpp-renderer.js unloads its marker textures on
+        // the next draw. See gpp-scan.js's gppScanResetErrorDisplay.
+        if (id !== previousId && typeof gppScanResetErrorDisplay === 'function') gppScanResetErrorDisplay();
         // A guild/ephemeral template (gpp-guild-templates.js, or the guild
         // menu's "Set as Ghost") never touches localStorage, the recency
         // order, or an auto-scan — none of those make sense for something

@@ -2570,6 +2570,136 @@ function buildDriverScript() {
     L.push('    return "Show errors/Show missing each push exactly one alert when their respective toggle turns ON (title=\'Info\', message containing the independently-computed, mask-filtered wrong/missing count and the phrase \'currently enabled colors\' -- correctly excluding a disabled 3rd colour\'s own nonzero wrong/missing pixels), and push no additional alert when toggled back OFF";');
     L.push('  });');
     L.push('');
+    // ---- item renderer.gpu-error-markers-and-focus-swap-reset ----
+    // Regression guard for the error-marker pass having moved from
+    // gpp-scan.js's per-frame Canvas2D loop into gpp-renderer.js (WebGL2
+    // states texture + analytic marker shader, with a row-indexed Canvas2D
+    // fallback). Fabricates a scanSummary with two WRONG and one MISSING
+    // cell on a freshly ingested, positioned, focused template, turns both
+    // Show toggles on, and drives one real draw: the pass must run without
+    // console errors or a pending WebGL error, must have uploaded the states
+    // texture and queued bitset (WebGL2) / built a marker cache of exactly 3
+    // entries that shrinks to 2 when Show missing is turned off (Canvas2D),
+    // and must have started the native-queue poll. Also checks the Render
+    // distance gate that lives in the same pass: a custom cutoff above the
+    // current zoom must suppress the pass entirely (no marker resources
+    // built, no poll), and the default (null = follow the site's render
+    // level) must draw again. Then swaps focus to the
+    // suite's main template and checks both Show toggles were reset to off,
+    // the marker-side resources were released, and the poll stopped -- the
+    // "markers never follow a focus change" product rule.
+    L.push('  await step("renderer.gpu-error-markers-and-focus-swap-reset", async function() {');
+    L.push('    var priorFocused = gppState.focusedTemplateId;');
+    L.push('    var w = 4, h = 2;');
+    L.push('    var c = document.createElement("canvas");');
+    L.push('    c.width = w; c.height = h;');
+    L.push('    var ctx = c.getContext("2d");');
+    L.push('    ctx.fillStyle = "rgb(255,0,0)"; ctx.fillRect(0, 0, 2, 2);');
+    L.push('    ctx.fillStyle = "rgb(0,0,255)"; ctx.fillRect(2, 0, 2, 2);');
+    L.push('    var blob = await new Promise(function(r) { c.toBlob(r, "image/png"); });');
+    L.push('    var markerTemplate = await gppState.ingestImageFile(new File([blob], "gpp-fixture-gpu-markers.png", { type: "image/png" }));');
+    L.push('    markerTemplate.position = { gridX: 0, gridY: 0 };');
+    L.push('    markerTemplate.opacity = 1;');
+    L.push('    await gppState.persistTemplateState(markerTemplate);');
+    L.push('    await gppState.focusTemplate(markerTemplate.id);');
+    L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test setup: load-time scan triggered by focusTemplate never finished");'); // it would otherwise overwrite the fabricated scanSummary below
+    L.push('    var ERROR_STATE = core.constants.ERROR_STATE;');
+    L.push('    var states = new Uint8Array(w * h);');
+    L.push('    states.fill(ERROR_STATE.CORRECT);');
+    L.push('    states[0] = ERROR_STATE.WRONG; states[5] = ERROR_STATE.WRONG; states[7] = ERROR_STATE.MISSING;');
+    L.push('    markerTemplate.scanSummary = { scannedAt: new Date().toISOString(), total: w * h, correct: w * h - 3, wrong: 2, missing: 1, unknown: 0, perColour: [], states: states };');
+    L.push('    gppSettings.showErrors = true;');
+    L.push('    gppSettings.hideQueuedCrosses = true;');
+    L.push('    markerTemplate._gppShowWrong = true;');
+    L.push('    markerTemplate._gppShowMissing = true;');
+    L.push('    var savedZoom = gppSettings.errorRenderZoom;');
+    L.push('    gppSettings.errorRenderZoom = map.getZoom() + 1;'); // custom cutoff further in than the current zoom -> markers must NOT draw
+    L.push('    var errCountBefore = __consoleErrors.length;');
+    L.push('    gppRendererSchedule();');
+    L.push('    await new Promise(function(r) { requestAnimationFrame(function() { requestAnimationFrame(r); }); });');
+    L.push('    if (__consoleErrors.length > errCountBefore) throw new Error("marker draw (render distance gated) produced console errors: " + __consoleErrors.slice(errCountBefore).join(" | "));');
+    L.push('    var gated = gppRendererState.resources.get(markerTemplate.id);');
+    L.push('    if (gated && (gated.statesTexture || gated.queuedTexture || gated.errorCache)) throw new Error("REGRESSION: a custom Render distance above the current zoom still built marker resources");');
+    L.push('    if (gppRendererState.queueTimer) throw new Error("REGRESSION: native-queue poll started while markers are hidden by Render distance");');
+    L.push('    gppSettings.errorRenderZoom = null;'); // back to the default: follow the site's render level (fixture minZoom 10.5 < zoom 15)
+    L.push('    gppRendererSchedule();');
+    L.push('    await new Promise(function(r) { requestAnimationFrame(function() { requestAnimationFrame(r); }); });');
+    L.push('    if (__consoleErrors.length > errCountBefore) throw new Error("marker draw produced console errors: " + __consoleErrors.slice(errCountBefore).join(" | "));');
+    L.push('    var resource = gppRendererState.resources.get(markerTemplate.id);');
+    L.push('    if (!resource) throw new Error("focused, visible, positioned template has no renderer resource after a draw");');
+    L.push('    if (gppRendererState.gl) {');
+    L.push('      var glErr = gppRendererState.gl.getError();');
+    L.push('      if (glErr !== gppRendererState.gl.NO_ERROR) throw new Error("WebGL error pending after the marker pass: 0x" + glErr.toString(16));');
+    L.push('      if (!resource.statesTexture || resource.statesRef !== states) throw new Error("WebGL2 marker pass did not upload scanSummary.states as the states texture");');
+    L.push('      if (!resource.queuedTexture) throw new Error("WebGL2 marker pass did not build the queued-pixel bitset texture while Hide queued crosshairs is on");');
+    L.push('    } else {');
+    L.push('      if (!resource.errorCache) throw new Error("Canvas2D marker pass did not build its marker cache");');
+    L.push('      if (resource.errorCache.count !== 3) throw new Error("Canvas2D marker cache should hold exactly 3 markers (2 wrong + 1 missing), got " + resource.errorCache.count);');
+    L.push('    }');
+    L.push('    if (!gppRendererState.queueTimer) throw new Error("native-queue poll timer is not running while markers are shown with Hide queued crosshairs on");');
+    L.push('');
+    L.push('    markerTemplate._gppShowMissing = false;'); // a toggle change alone must re-derive the marker set, with no scan
+    L.push('    gppRendererSchedule();');
+    L.push('    await new Promise(function(r) { requestAnimationFrame(function() { requestAnimationFrame(r); }); });');
+    L.push('    if (!gppRendererState.gl && resource.errorCache.count !== 2) throw new Error("Canvas2D marker cache did not rebuild after Show missing was turned off: expected 2 markers, got " + resource.errorCache.count);');
+    L.push('    markerTemplate._gppShowMissing = true;');
+    L.push('');
+    L.push('    await gppState.focusTemplate(template.id);');
+    L.push('    if (markerTemplate._gppShowWrong || markerTemplate._gppShowMissing) throw new Error("REGRESSION: swapping the focused template left the previous template\'s Show errors/Show missing toggles on (wrong=" + markerTemplate._gppShowWrong + ", missing=" + markerTemplate._gppShowMissing + ")");');
+    L.push('    gppRendererSchedule();');
+    L.push('    await new Promise(function(r) { requestAnimationFrame(function() { requestAnimationFrame(r); }); });');
+    L.push('    var after = gppRendererState.resources.get(markerTemplate.id);');
+    L.push('    if (after && (after.statesTexture || after.queuedTexture || after.errorCache)) throw new Error("REGRESSION: previous template\'s marker resources were not released after a focus swap");');
+    L.push('    if (gppRendererState.queueTimer) throw new Error("native-queue poll timer kept running after markers left the map");');
+    L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test cleanup: load-time scan triggered by the focus swap never finished");');
+    L.push('');
+    L.push('    gppSettings.errorRenderZoom = savedZoom;');
+    L.push('    await gppState.deleteTemplate(markerTemplate);');
+    L.push('    if (priorFocused !== template.id) await gppState.focusTemplate(priorFocused);');
+    L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test cleanup: load-time scan triggered by restoring focus never finished");');
+    L.push('    return "marker pass drew a fabricated 2-wrong/1-missing scan on the focused template with no console/WebGL errors (" + (gppRendererState.gl ? "states + queued textures uploaded" : "Canvas2D cache of 3 markers, 2 after Show missing off") + ") and ran the queue poll while shown; swapping focus reset both Show toggles, released the marker resources and stopped the poll; a custom Render distance above the current zoom suppressed the pass entirely";');
+    L.push('  });');
+    L.push('');
+    // ---- item errorSettings.render-distance-slider-and-reset ----
+    // Regression guard for the Error Settings 'Render distance' row: its
+    // label and slider sit on one row like every other option; with
+    // errorRenderZoom null (the default) the slider shows the site's own
+    // render level with a '(site)' suffix; dragging it persists a number;
+    // and the row's reset button puts it back to null (follow the site
+    // level) rather than to a fixed zoom. Renders into a detached
+    // container exactly like scan.error-count-alert-on-show-toggle does,
+    // so it never depends on whether the modal happens to be open here.
+    L.push('  await step("errorSettings.render-distance-slider-and-reset", async function() {');
+    L.push('    var saved = { errorRenderZoom: gppSettings.errorRenderZoom, showErrors: gppSettings.showErrors };');
+    L.push('    gppSettings.showErrors = true;');
+    L.push('    gppSettings.errorRenderZoom = null;');
+    L.push('    var container = document.createElement("div");');
+    L.push('    document.body.appendChild(container);');
+    L.push('    gppRenderErrorSettings(container);');
+    L.push('    if (container.querySelector("#gpp-error-style-target")) throw new Error("REGRESSION: the removed Style for selector is still rendered");');
+    L.push('    var label = Array.from(container.querySelectorAll("label")).find(function(l) { return l.textContent === "Render distance"; });');
+    L.push('    if (!label) throw new Error("Render distance label not rendered");');
+    L.push('    var rowEl = label.parentElement;');
+    L.push('    var zoomInput = rowEl.querySelector("input[type=range]");');
+    L.push('    if (!zoomInput) throw new Error("Render distance slider is not on the same row as its label");');
+    L.push('    var resetBtn = rowEl.querySelector("button");');
+    L.push('    if (!resetBtn) throw new Error("Render distance row has no reset button");');
+    L.push('    if (Array.from(container.querySelectorAll("input[type=checkbox]")).some(function(i) { return /Match render level/.test(i.parentElement.textContent); })) throw new Error("REGRESSION: the removed Match render level checkbox is still rendered");');
+    L.push('    if (Number(zoomInput.value) !== minZoom) throw new Error("with errorRenderZoom null the slider should sit at the site render level " + minZoom + ", got " + zoomInput.value);');
+    L.push('    if (!/\\(site\\)/.test(rowEl.textContent)) throw new Error("with errorRenderZoom null the row should show a (site) suffix, got: " + rowEl.textContent);');
+    L.push('    zoomInput.value = "14.5";');
+    L.push('    zoomInput.dispatchEvent(new Event("input", { bubbles: true }));');
+    L.push('    if (gppSettings.errorRenderZoom !== 14.5) throw new Error("moving the Render distance slider did not persist errorRenderZoom=14.5, got " + gppSettings.errorRenderZoom);');
+    L.push('    if (/\\(site\\)/.test(rowEl.textContent)) throw new Error("a pinned custom zoom should not carry the (site) suffix");');
+    L.push('    resetBtn.click();');
+    L.push('    if (gppSettings.errorRenderZoom !== null) throw new Error("the reset button should put errorRenderZoom back to null (follow the site level), got " + gppSettings.errorRenderZoom);');
+    L.push('    if (Number(zoomInput.value) !== minZoom) throw new Error("after reset the slider should sit at the site render level " + minZoom + ", got " + zoomInput.value);');
+    L.push('    container.remove();');
+    L.push('    Object.assign(gppSettings, saved);');
+    L.push('    gppState.saveSettings();');
+    L.push('    return "Render distance is one labelled row (label + slider + reset), shows the site render level with a (site) suffix by default, persists a dragged zoom, and its reset returns to following the site level; no Style for selector or Match render level checkbox rendered";');
+    L.push('  });');
+    L.push('');
     // ---- item palette.complete-swatch-shows-large-checkmark-not-tiny-badge ----
     // Regression guard for the '.gpp-swatch-progress-complete' CSS rewrite: a
     // large SVG checkmark background-image spanning the whole swatch instead

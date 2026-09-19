@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.14.0';
+    const VERSION = '2.15.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1431,6 +1431,16 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.15.0',
+            date: '2026-09-18',
+            items: [
+                { type: 'changed', text: 'Ghost++: Show errors / Show missing crosshairs are now drawn on the GPU as a single overlay, so panning and zooming stay smooth no matter how many errors or missing pixels a scan finds — a 20k-pixel project with thousands of markers no longer stutters' },
+                { type: 'changed', text: 'Ghost++: swapping the focused template now removes the error/missing markers of the template you left from the map and switches its Show errors / Show missing buttons back off' },
+                { type: 'changed', text: 'Ghost++: the Error Settings shape, colour, opacity and size sliders update the markers instantly without any recomputation' },
+                { type: 'added', text: 'Ghost++ Error Settings: Render distance slider — markers now show at every zoom the site itself renders pixels at (your site Render Level) instead of vanishing around zoom 12.5; drag it to hide markers until you are zoomed closer in, and its reset snaps back to the site level' },
+            ]
+        },
         {
             version: '2.14.0',
             date: '2026-09-12',
