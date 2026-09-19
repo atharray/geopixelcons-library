@@ -1103,6 +1103,12 @@
     async function gppFocusTemplate(id) {
         const previousId = gppFocusedTemplateId;
         gppFocusedTemplateId = id;
+        // Error/missing markers never follow a focus change: the previous
+        // template's Show errors/Show missing toggles are switched off here
+        // (before the guild early-return below, so it holds for every kind
+        // of template) and gpp-renderer.js unloads its marker textures on
+        // the next draw. See gpp-scan.js's gppScanResetErrorDisplay.
+        if (id !== previousId && typeof gppScanResetErrorDisplay === 'function') gppScanResetErrorDisplay();
         // A guild/ephemeral template (gpp-guild-templates.js, or the guild
         // menu's "Set as Ghost") never touches localStorage, the recency
         // order, or an auto-scan — none of those make sense for something

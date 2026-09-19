@@ -38,21 +38,23 @@
     //   never depend on the current mask, so they never need re-deriving.
     //
     // ── Error-visualization integration shape ─────────────────────────
-    // gpp-renderer.js (the WebGL2/Canvas2D template overlay) does not exist yet
-    // at the time this file was written, so there is no gppRendererSchedule()
-    // to hook into (guarded with a typeof check below in case it lands later —
-    // this file will additionally nudge it on every redraw request). Until then,
-    // and as a permanent Canvas2D fallback either way, this file owns a small
-    // dedicated transparent <canvas> layered inside the map container
-    // (#gpp-scan-error-layer) that draws an X mark over each on-screen wrong/
-    // missing cell, recomputed from template.scanSummary.states every redraw —
-    // never from an accumulating array. If/when the WebGL2 renderer lands, it
-    // can instead upload `states` as a per-cell error texture and skip this
-    // canvas entirely; `states` (not this drawing code) is the authoritative,
-    // documented contract. Redraws are requestAnimationFrame-coalesced and
-    // triggered by: map 'move'/'zoom'/'resize', a completed scan, clear-errors,
-    // and every gppRenderProgressBar call (so switching the focused template
-    // updates the on-map markers even without moving the map).
+    // The wrong/missing crosshairs themselves are drawn by gpp-renderer.js's
+    // error-marker pass (see that file's banner): `states` is uploaded once
+    // per scan as a per-cell GPU texture and the marker shape is evaluated
+    // per fragment, so the on-map cost is one draw call per frame however
+    // many markers the scan found. `states` (not any drawing code) is the
+    // authoritative, documented contract. This file still owns a small
+    // dedicated transparent <canvas> inside the map container
+    // (#gpp-scan-error-layer), but only for the two transient, animated
+    // "nearest error" glow rings — a handful of arcs per frame. Redraws of
+    // that layer are requestAnimationFrame-coalesced and triggered by map
+    // 'move'/'zoom'/'resize'; every gppScanScheduleErrorRedraw() call also
+    // nudges gppRendererSchedule() so the marker pass reflects a completed
+    // scan, a toggle change, or a focus change without moving the map.
+    // Markers are shown for the FOCUSED template only; swapping focus
+    // resets both Show toggles (gppScanResetErrorDisplay, called from
+    // gpp-runtime.js's gppFocusTemplate) and the renderer unloads the
+    // previous template's marker textures.
 
     const GPP_SCAN_BAND_HEIGHT = 128; // rows per getImageData batch, matches the perf-tested GTM prototype
 
@@ -133,10 +135,12 @@
             // Unconditional (not gated on autoscanEnabled), unlike the scan
             // trigger above: Hide queued crosshairs needs the on-screen
             // markers to refresh promptly after each placement/queue call,
-            // not just after a full rescan. gppScanScheduleErrorRedraw() is
-            // already requestAnimationFrame-coalesced, so calling it on every
-            // pixel during a bulk queue run still only redraws once per frame.
-            gppScanScheduleErrorRedraw();
+            // not just after a full rescan. The renderer only re-reads the
+            // native queue when told it changed (or on its slow poll), and
+            // its redraw is requestAnimationFrame-coalesced, so calling this
+            // on every pixel during a bulk queue run still only re-reads and
+            // redraws once per frame.
+            if (typeof gppRendererMarkQueueDirty === 'function') gppRendererMarkQueueDirty();
             return result;
         };
     }
@@ -479,27 +483,28 @@
         gppScanScheduleErrorRedraw();
     }
 
-    // ── Viewport-bounded error-marker overlay (Canvas2D) ───────────────
-    // North-up, zero-pitch projection is assumed (the site disables rotation
-    // and pitch), so the viewport is a simple axis-aligned grid rectangle.
-
-    function gppScanComputeViewportGridBounds() {
-        const map = gppGetMap();
-        const turf = gppGetTurf();
-        if (!map || !turf || typeof map.getBounds !== 'function') return null;
-        const grid = gppReadGridConstants();
-        const mapBounds = map.getBounds();
-        const nw = mapBounds.getNorthWest();
-        const se = mapBounds.getSouthEast();
-        const nwMercator = turf.toMercator([nw.lng, nw.lat]);
-        const seMercator = turf.toMercator([se.lng, se.lat]);
-        return {
-            left: Math.floor((nwMercator[0] - grid.offsetMetersX) / grid.gridSize) - 1,
-            right: Math.ceil((seMercator[0] - grid.offsetMetersX) / grid.gridSize) + 1,
-            bottom: Math.floor((seMercator[1] - grid.offsetMetersY) / grid.gridSize) - 1,
-            top: Math.ceil((nwMercator[1] - grid.offsetMetersY) / grid.gridSize) + 1,
-        };
+    // Markers only ever show for the focused template, and by explicit
+    // product decision swapping focus must not carry a previous template's
+    // Show errors/Show missing state along: the markers leave the map and
+    // both buttons read "Show …" again. Called from gpp-runtime.js's
+    // gppFocusTemplate whenever the focused id actually changes (guild
+    // templates included) — clearing every template rather than just the
+    // previous one also tidies any flag left behind by a focus change that
+    // did not go through gppFocusTemplate (e.g. a fresh ingest).
+    function gppScanResetErrorDisplay() {
+        const all = gppState.templates.concat(gppState.guildTemplates);
+        let changed = false;
+        for (const template of all) {
+            if (template._gppShowWrong || template._gppShowMissing) changed = true;
+            template._gppShowWrong = false;
+            template._gppShowMissing = false;
+        }
+        if (changed) gppScanScheduleErrorRedraw();
     }
+
+    // ── Glow overlay (Canvas2D) ────────────────────────────────────────
+    // Only the two transient "nearest error" glow rings live here now; the
+    // wrong/missing markers are gpp-renderer.js's error-marker pass.
 
     let gppScanOverlayCanvas = null;
     let gppScanMapWired = false;
@@ -508,9 +513,10 @@
     // ── "Nearest error" target glow ─────────────────────────────────────
     // A short pulsing ring drawn over the exact cell gppFlyToNearestError
     // just teleported to — deliberately independent of gppSettings.showErrors
-    // and the per-template showWrong/showMissing toggles (gppScanRedrawErrors
-    // draws this before any of those gates), since it's a direct response to
-    // the button click rather than the passive crosshair overlay.
+    // and the per-template showWrong/showMissing toggles (it lives on this
+    // file's own glow canvas, not in the renderer's gated marker pass), since
+    // it's a direct response to the button click rather than the passive
+    // crosshair overlay.
     let gppNearestErrorGlow = null; // { templateId, gridX, gridY, startTime } | null
     let gppNearestErrorGlowRafId = 0;
     const GPP_NEAREST_ERROR_GLOW_DURATION_MS = 2200;
@@ -720,130 +726,6 @@
                 }
             } catch (_) { /* map/turf not ready this frame — try again next tick */ }
         }
-
-        if (!gppSettings.showErrors) return; // master switch — see gpp-scan.js's Error Settings section
-        const showWrong = !!(template && template._gppShowWrong);
-        const showMissing = !!(template && template._gppShowMissing);
-        if (!template || template.opacity <= 0 || !template.position || !template.scanSummary) return;
-        if (!showWrong && !showMissing) return; // nothing toggled on — Clear leaves scanSummary intact but stops here
-        if (!map || !turf) return;
-
-        const core = gppCreateCore();
-        const ERROR_STATE = core.constants.ERROR_STATE;
-        const empty = core.emptyValue(template.indexType);
-        const grid = gppReadGridConstants();
-        const bounds = core.computeGridBounds(template.position, template.width, template.height);
-        const viewport = gppScanComputeViewportGridBounds();
-        if (!bounds || !viewport) return;
-
-        const left = Math.max(bounds.left, viewport.left);
-        const right = Math.min(bounds.right, viewport.right);
-        const bottom = Math.max(bounds.bottom, viewport.bottom);
-        const top = Math.min(bounds.top, viewport.top);
-        if (left > right || bottom > top) return; // template isn't on screen at all
-
-        // Extreme-zoom-out guard: bail rather than iterate a huge cell grid.
-        if ((right - left + 1) * (top - bottom + 1) > 400000) return;
-
-        // Affine grid->screen transform, computed ONCE from 3 projected
-        // reference points (origin + one step along each grid axis) instead
-        // of calling turf.toWgs84()+map.project() per cell inside the loop
-        // below — those do real trig work (Mercator inverse projection,
-        // etc.), and doing it per error cell was the actual "atrocious
-        // performance with thousands of errors" bottleneck: thousands of
-        // trig-heavy calls, every single animation frame while panning.
-        // North-up/zero-pitch is already assumed elsewhere in this file (see
-        // gppScanComputeViewportGridBounds), so grid->screen is a plain
-        // linear map — this mirrors gpp-renderer.js's own
-        // gppRendererProjectTemplate, which uses the identical technique for
-        // the per-cell dot overlay.
-        const originWorld = turf.toWgs84([left * grid.gridSize + grid.offsetMetersX, top * grid.gridSize + grid.offsetMetersY]);
-        const stepXWorld = turf.toWgs84([(left + 1) * grid.gridSize + grid.offsetMetersX, top * grid.gridSize + grid.offsetMetersY]);
-        const stepYWorld = turf.toWgs84([left * grid.gridSize + grid.offsetMetersX, (top - 1) * grid.gridSize + grid.offsetMetersY]);
-        const originPx = map.project(originWorld);
-        const stepXPx = map.project(stepXWorld);
-        const stepYPx = map.project(stepYWorld);
-        const stepXdx = stepXPx.x - originPx.x;
-        const stepXdy = stepXPx.y - originPx.y;
-        const stepYdx = stepYPx.x - originPx.x;
-        const stepYdy = stepYPx.y - originPx.y;
-        const cellPx = Math.abs(stepXdx);
-        if (!(cellPx >= 2)) return;
-
-        const settings = gppState.settings || {};
-        const shape = settings.errorShape || 'x';
-        const opacity = Number.isFinite(settings.errorOpacity) ? settings.errorOpacity : 1;
-        if (opacity <= 0) return;
-        const sizeScale = Number.isFinite(settings.errorSizeScale) ? settings.errorSizeScale : 1;
-        const half = Math.max(1.5, cellPx * 0.32 * sizeScale);
-
-        const states = template.scanSummary.states;
-
-        // One bulk read of the native queue rather than one page-realm call
-        // per on-screen cell (see gpp-bridge.js's gppReadQueuedPixelKeys).
-        // Only fetched when the setting is on — an empty Set is a no-op skip
-        // check below, so this stays free when the feature isn't in use.
-        const queuedKeys = gppSettings.hideQueuedCrosses !== false
-            ? new Set(gppReadQueuedPixelKeys())
-            : null;
-
-        // Collect screen positions first, then draw each shape type as ONE
-        // batched path (single beginPath/stroke or fill call) instead of one
-        // stroke() per marker — this is the actual performance win when a
-        // scan surfaces thousands of markers; per-call canvas overhead, not
-        // the cell-iteration itself, was the bottleneck.
-        const points = [];
-        for (let gridY = top; gridY >= bottom; gridY--) {
-            const localY = template.position.gridY - gridY;
-            if (localY < 0 || localY >= template.height) continue;
-            const dGridY = top - gridY;
-            for (let gridX = left; gridX <= right; gridX++) {
-                const localX = gridX - template.position.gridX;
-                if (localX < 0 || localX >= template.width) continue;
-                const pixel = localY * template.width + localX;
-                const expectedIndex = template.indices[pixel];
-                if (expectedIndex === empty) continue;
-                if (!core.maskHas(template.mask, expectedIndex)) continue; // respect current filter
-                const state = states[pixel];
-                if (state === ERROR_STATE.WRONG && !showWrong) continue;
-                if (state === ERROR_STATE.MISSING && !showMissing) continue;
-                if (state !== ERROR_STATE.WRONG && state !== ERROR_STATE.MISSING) continue;
-                if (queuedKeys && queuedKeys.has(gridX + ',' + gridY)) continue; // already queued — see Hide queued crosshairs
-                const dGridX = gridX - left;
-                points.push(originPx.x + dGridX * stepXdx + dGridY * stepYdx, originPx.y + dGridX * stepXdy + dGridY * stepYdy);
-            }
-        }
-        if (!points.length) return;
-
-        ctx.globalAlpha = opacity;
-        ctx.strokeStyle = settings.errorColor || '#dc2626';
-        ctx.fillStyle = settings.errorColor || '#dc2626';
-        ctx.lineWidth = Math.max(1, Math.min(2, cellPx / 4));
-
-        if (shape === 'circle') {
-            ctx.beginPath();
-            for (let i = 0; i < points.length; i += 2) {
-                ctx.moveTo(points[i] + half, points[i + 1]);
-                ctx.arc(points[i], points[i + 1], half, 0, Math.PI * 2);
-            }
-            ctx.fill();
-        } else if (shape === 'square') {
-            ctx.beginPath();
-            for (let i = 0; i < points.length; i += 2) {
-                ctx.rect(points[i] - half, points[i + 1] - half, half * 2, half * 2);
-            }
-            ctx.fill();
-        } else { // 'x'
-            ctx.beginPath();
-            for (let i = 0; i < points.length; i += 2) {
-                ctx.moveTo(points[i] - half, points[i + 1] - half);
-                ctx.lineTo(points[i] + half, points[i + 1] + half);
-                ctx.moveTo(points[i] + half, points[i + 1] - half);
-                ctx.lineTo(points[i] - half, points[i + 1] + half);
-            }
-            ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
     }
 
     function gppScanFormatRelativeTime(iso) {
@@ -872,7 +754,7 @@
     // Sums scanSummary.perColour[i].wrong/missing only for palette indices
     // CURRENTLY enabled in template.mask (the live mask, not each entry's own
     // possibly-stale `enabled` snapshot from scan time) — matching exactly
-    // what gppScanRedrawErrors draws on the map right now.
+    // what gpp-renderer.js's error-marker pass draws on the map right now.
     function gppScanCountEnabledErrors(template, kind) {
         const summary = template.scanSummary;
         if (!summary || !Array.isArray(summary.perColour)) return 0;
@@ -1077,7 +959,7 @@
                 // Always shown whenever there's something to report — no
                 // longer gated on the per-template Show errors/Show missing
                 // toggles (those now only control the on-map crosshairs,
-                // via gppScanRedrawErrors, same as always). Whole-template
+                // via gpp-renderer.js's marker pass, same as always). Whole-template
                 // counts (summary.wrong/summary.missing directly), matching
                 // the "X completed of Y total" statement immediately above,
                 // not the mask-filtered currently-enabled-colours-only
@@ -1144,9 +1026,9 @@
 
     // ── gpp-init.js render-function contract ───────────────────────────
     // container id: 'gpp-error-settings-section'. Global (applies to every
-    // template's error-marker rendering — see gppScanRedrawErrors above,
-    // which reads gppSettings.errorShape/errorColor/errorOpacity/errorSizeScale
-    // fresh on every redraw), so `template` is accepted for signature
+    // template's error-marker rendering — gpp-renderer.js's marker pass
+    // reads gppSettings.errorShape/errorColor/errorOpacity/errorSizeScale as
+    // plain uniforms on every draw), so `template` is accepted for signature
     // consistency with the other render hooks but unused.
     function gppRenderErrorSettings(container) {
         if (!container) return;
@@ -1189,7 +1071,7 @@
 
         // Master switch — moved here (was in View Settings' template
         // subsection) so it lives alongside the settings it actually gates.
-        // gppScanRedrawErrors() reads gppSettings.showErrors directly, so
+        // gpp-renderer.js's marker pass reads gppSettings.showErrors directly, so
         // unchecking this hides every error/missing marker on the map
         // regardless of any individual template's own Show errors/Show
         // missing toggle state — the rows below only affect HOW markers

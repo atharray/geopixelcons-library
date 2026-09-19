@@ -2570,6 +2570,82 @@ function buildDriverScript() {
     L.push('    return "Show errors/Show missing each push exactly one alert when their respective toggle turns ON (title=\'Info\', message containing the independently-computed, mask-filtered wrong/missing count and the phrase \'currently enabled colors\' -- correctly excluding a disabled 3rd colour\'s own nonzero wrong/missing pixels), and push no additional alert when toggled back OFF";');
     L.push('  });');
     L.push('');
+    // ---- item renderer.gpu-error-markers-and-focus-swap-reset ----
+    // Regression guard for the error-marker pass having moved from
+    // gpp-scan.js's per-frame Canvas2D loop into gpp-renderer.js (WebGL2
+    // states texture + analytic marker shader, with a row-indexed Canvas2D
+    // fallback). Fabricates a scanSummary with two WRONG and one MISSING
+    // cell on a freshly ingested, positioned, focused template, turns both
+    // Show toggles on, and drives one real draw: the pass must run without
+    // console errors or a pending WebGL error, must have uploaded the states
+    // texture and queued bitset (WebGL2) / built a marker cache of exactly 3
+    // entries that shrinks to 2 when Show missing is turned off (Canvas2D),
+    // and must have started the native-queue poll. Then swaps focus to the
+    // suite's main template and checks both Show toggles were reset to off,
+    // the marker-side resources were released, and the poll stopped -- the
+    // "markers never follow a focus change" product rule.
+    L.push('  await step("renderer.gpu-error-markers-and-focus-swap-reset", async function() {');
+    L.push('    var priorFocused = gppState.focusedTemplateId;');
+    L.push('    var w = 4, h = 2;');
+    L.push('    var c = document.createElement("canvas");');
+    L.push('    c.width = w; c.height = h;');
+    L.push('    var ctx = c.getContext("2d");');
+    L.push('    ctx.fillStyle = "rgb(255,0,0)"; ctx.fillRect(0, 0, 2, 2);');
+    L.push('    ctx.fillStyle = "rgb(0,0,255)"; ctx.fillRect(2, 0, 2, 2);');
+    L.push('    var blob = await new Promise(function(r) { c.toBlob(r, "image/png"); });');
+    L.push('    var markerTemplate = await gppState.ingestImageFile(new File([blob], "gpp-fixture-gpu-markers.png", { type: "image/png" }));');
+    L.push('    markerTemplate.position = { gridX: 0, gridY: 0 };');
+    L.push('    markerTemplate.opacity = 1;');
+    L.push('    await gppState.persistTemplateState(markerTemplate);');
+    L.push('    await gppState.focusTemplate(markerTemplate.id);');
+    L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test setup: load-time scan triggered by focusTemplate never finished");'); // it would otherwise overwrite the fabricated scanSummary below
+    L.push('    var ERROR_STATE = core.constants.ERROR_STATE;');
+    L.push('    var states = new Uint8Array(w * h);');
+    L.push('    states.fill(ERROR_STATE.CORRECT);');
+    L.push('    states[0] = ERROR_STATE.WRONG; states[5] = ERROR_STATE.WRONG; states[7] = ERROR_STATE.MISSING;');
+    L.push('    markerTemplate.scanSummary = { scannedAt: new Date().toISOString(), total: w * h, correct: w * h - 3, wrong: 2, missing: 1, unknown: 0, perColour: [], states: states };');
+    L.push('    gppSettings.showErrors = true;');
+    L.push('    gppSettings.hideQueuedCrosses = true;');
+    L.push('    markerTemplate._gppShowWrong = true;');
+    L.push('    markerTemplate._gppShowMissing = true;');
+    L.push('    var errCountBefore = __consoleErrors.length;');
+    L.push('    gppRendererSchedule();');
+    L.push('    await new Promise(function(r) { requestAnimationFrame(function() { requestAnimationFrame(r); }); });');
+    L.push('    if (__consoleErrors.length > errCountBefore) throw new Error("marker draw produced console errors: " + __consoleErrors.slice(errCountBefore).join(" | "));');
+    L.push('    var resource = gppRendererState.resources.get(markerTemplate.id);');
+    L.push('    if (!resource) throw new Error("focused, visible, positioned template has no renderer resource after a draw");');
+    L.push('    if (gppRendererState.gl) {');
+    L.push('      var glErr = gppRendererState.gl.getError();');
+    L.push('      if (glErr !== gppRendererState.gl.NO_ERROR) throw new Error("WebGL error pending after the marker pass: 0x" + glErr.toString(16));');
+    L.push('      if (!resource.statesTexture || resource.statesRef !== states) throw new Error("WebGL2 marker pass did not upload scanSummary.states as the states texture");');
+    L.push('      if (!resource.queuedTexture) throw new Error("WebGL2 marker pass did not build the queued-pixel bitset texture while Hide queued crosshairs is on");');
+    L.push('    } else {');
+    L.push('      if (!resource.errorCache) throw new Error("Canvas2D marker pass did not build its marker cache");');
+    L.push('      if (resource.errorCache.count !== 3) throw new Error("Canvas2D marker cache should hold exactly 3 markers (2 wrong + 1 missing), got " + resource.errorCache.count);');
+    L.push('    }');
+    L.push('    if (!gppRendererState.queueTimer) throw new Error("native-queue poll timer is not running while markers are shown with Hide queued crosshairs on");');
+    L.push('');
+    L.push('    markerTemplate._gppShowMissing = false;'); // a toggle change alone must re-derive the marker set, with no scan
+    L.push('    gppRendererSchedule();');
+    L.push('    await new Promise(function(r) { requestAnimationFrame(function() { requestAnimationFrame(r); }); });');
+    L.push('    if (!gppRendererState.gl && resource.errorCache.count !== 2) throw new Error("Canvas2D marker cache did not rebuild after Show missing was turned off: expected 2 markers, got " + resource.errorCache.count);');
+    L.push('    markerTemplate._gppShowMissing = true;');
+    L.push('');
+    L.push('    await gppState.focusTemplate(template.id);');
+    L.push('    if (markerTemplate._gppShowWrong || markerTemplate._gppShowMissing) throw new Error("REGRESSION: swapping the focused template left the previous template\'s Show errors/Show missing toggles on (wrong=" + markerTemplate._gppShowWrong + ", missing=" + markerTemplate._gppShowMissing + ")");');
+    L.push('    gppRendererSchedule();');
+    L.push('    await new Promise(function(r) { requestAnimationFrame(function() { requestAnimationFrame(r); }); });');
+    L.push('    var after = gppRendererState.resources.get(markerTemplate.id);');
+    L.push('    if (after && (after.statesTexture || after.queuedTexture || after.errorCache)) throw new Error("REGRESSION: previous template\'s marker resources were not released after a focus swap");');
+    L.push('    if (gppRendererState.queueTimer) throw new Error("native-queue poll timer kept running after markers left the map");');
+    L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test cleanup: load-time scan triggered by the focus swap never finished");');
+    L.push('');
+    L.push('    await gppState.deleteTemplate(markerTemplate);');
+    L.push('    if (priorFocused !== template.id) await gppState.focusTemplate(priorFocused);');
+    L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test cleanup: load-time scan triggered by restoring focus never finished");');
+    L.push('    return "marker pass drew a fabricated 2-wrong/1-missing scan on the focused template with no console/WebGL errors (" + (gppRendererState.gl ? "states + queued textures uploaded" : "Canvas2D cache of 3 markers, 2 after Show missing off") + ") and ran the queue poll while shown; swapping focus reset both Show toggles, released the marker resources and stopped the poll";');
+    L.push('  });');
+    L.push('');
     // ---- item palette.complete-swatch-shows-large-checkmark-not-tiny-badge ----
     // Regression guard for the '.gpp-swatch-progress-complete' CSS rewrite: a
     // large SVG checkmark background-image spanning the whole swatch instead
