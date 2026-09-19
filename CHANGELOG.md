@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.15.0](https://github.com/atharray/geopixelcons-library/compare/v2.14.0...v2.15.0) (2026-09-19)
+
+
+### Features
+
+* **ghost-plus-plus:** render error/missing markers on the GPU ([#64](https://github.com/atharray/geopixelcons-library/issues/64)) ([13d148d](https://github.com/atharray/geopixelcons-library/commit/13d148d81cd25d3823b01226cece8ed11ba86068))
+
 ## [2.14.0](https://github.com/atharray/geopixelcons-library/compare/v2.13.2...v2.14.0) (2026-09-12)
 
 
