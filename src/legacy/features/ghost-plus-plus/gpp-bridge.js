@@ -153,6 +153,22 @@
         return bitmap || null;
     }
 
+    // Same cache entry's `userBitmap`: the painter of every pixel, encoded
+    // as userId = (r << 16) | (g << 8) | b in a bitmap laid out exactly like
+    // colorBitmap (see regions-highscore.js, which reads the same field).
+    // null while the tile is unsynced or mid-merge (the site briefly nulls
+    // it while swapping bitmaps) — callers fall back to fetching the tile.
+    function gppGetTileUserBitmap(tileX, tileY) {
+        const bitmap = gppEvalPageExpr(
+            '(function(){' +
+            'if (typeof tileImageCache === "undefined") return null;' +
+            'var entry = tileImageCache.get("' + tileX + ',' + tileY + '");' +
+            'return (entry && entry.userBitmap) ? entry.userBitmap : null;' +
+            '})()'
+        );
+        return bitmap || null;
+    }
+
     // Returns the native guild menu's `userGuildData` object (or null),
     // freshly re-read every call — same "must be re-read, never cached"
     // reasoning as gppReadGamePalette, since `userGuildData` is reassigned

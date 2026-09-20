@@ -282,8 +282,8 @@
                 background: ${t2('#2563eb', '#89b4fa')}; color: ${t2('#ffffff', '#1e1e2e')};
             }
             .gpc-preview-modal-buy-btn:hover { opacity: .9; }
-            /* Palette view toggle (Grid/List), borrowed from gpp-view-
-               settings.js -- see borrowPaletteViewToggle's own comment.
+            /* Palette view toggle (Grid/List), MIRRORED from gpp-view-
+               settings.js -- see mirrorPaletteViewToggle's own comment.
                Ghost++'s own .gpp-vs-row is a horizontal label-then-toggle
                row (display:flex, no direction set); per explicit product
                decision this reads better stacked (label above the toggle)
@@ -291,15 +291,15 @@
                flex-direction is overridden to column here -- the row's own
                child order (label, then the toggle div) already puts the
                label first, so no DOM reordering is needed, just a re-flow.
-               Same pitfall as every other borrowed-into-mobile-view element
+               Same pitfall as every other mirrored-into-mobile-view element
                (see the #gpc-pmo-placeholder-group CSS comment further
                below): Ghost++'s own .gpp-vs-label/.gpp-vs-view-btn/-active
                are styled via t2()/isDarkMode(), correct for their normal
                home inside the real, independently-themed Ghost++ modal but
                wrong here for the same reason -- #bottomControls' own
                wrapper never itself goes dark. Re-themed with tc() instead,
-               scoped to this row's own marker class (added by
-               borrowPaletteViewToggle, so the real settings panel's normal
+               scoped to this row's own marker class (added to the MIRROR by
+               mirrorPaletteViewToggle, so the real settings panel's normal
                appearance is untouched) and !important, matching that same
                block's own precedent (two separate <style> tags whose
                relative order in <head> isn't guaranteed, so specificity
@@ -310,16 +310,15 @@
                "Visible rows" row below it (see ensureViewControlsColumn) --
                THIS is what actually sits in .gpc-pmo-palette-wrap, not
                the toggle row directly. Matters for more than just stacking
-               the two: borrowNode always APPENDS at the end of whatever
-               parent it's given, so re-borrowing the toggle row straight
-               into .gpc-pmo-palette-wrap on a live-sync tick (which by
-               then already holds the grid AND the preview frame) landed it
-               AFTER the preview frame instead of back between the grid and
-               the frame where it started -- a real, reported drift bug.
-               This container persists across live-sync ticks unchanged
-               (only the real row inside it gets returned+reborrowed), so
-               its own position in the wrap -- set once, correctly, when the
-               wrap itself is built -- never drifts. */
+               the two: an earlier version re-inserted the toggle row
+               straight into .gpc-pmo-palette-wrap on a live-sync tick
+               (which by then already holds the grid AND the preview frame)
+               and so landed it AFTER the preview frame instead of back
+               between the grid and the frame where it started -- a real,
+               reported drift bug. This container persists across live-sync
+               ticks unchanged (only the mirror row inside it gets
+               replaced), so its own position in the wrap -- set once,
+               correctly, when the wrap itself is built -- never drifts. */
             .gpc-pmo-view-controls-col {
                 flex: 0 0 auto; display: flex; flex-direction: column;
                 align-items: center; justify-content: center; gap: 5px;
@@ -330,8 +329,8 @@
                 align-items: center !important; justify-content: center !important;
                 gap: 3px !important; margin: 0 !important;
             }
-            /* Our own control, never Ghost++'s -- no borrow/restore
-               discipline needed, unlike everything else in this column. */
+            /* Our own control, never Ghost++'s -- not a mirror, nothing
+               to keep in sync, unlike everything else in this column. */
             .gpc-pmo-visible-rows-row {
                 display: flex; flex-direction: column; align-items: center; gap: 2px;
             }
@@ -380,10 +379,11 @@
                row once the preview-thumbnail canvas is tapped -- see
                toggleNativeControlsForPlaceholders. Three equal-width columns
                (#gpc-pmo-scan-panel / -upload-panel / -placement-panel),
-               each holding real Ghost++ panels BORROWED (moved, not cloned
-               -- see borrowNode) from their real locations in the (hidden)
-               Ghost++ modal for as long as this view is showing, and
-               returned when switching back. Single shared parent for the
+               each holding MIRRORS (cloned, not moved -- see mirrorNode) of
+               real Ghost++ controls for as long as this view is showing,
+               discarded when switching back; the originals stay put in the
+               Ghost++ modal, which may well be open alongside this view.
+               Single shared parent for the
                same reason established for the two-panel version this
                replaced: innerWrapper (their parent once inserted) is a flex
                column with its own gap-4 (16px) between children -- one
@@ -425,7 +425,7 @@
             .gpc-pmo-p3-checkboxes {
                 display: flex; flex-direction: column; gap: 4px;
             }
-            /* "Use manual palette" -- our own control (not borrowed from
+            /* "Use manual palette" -- our own control (not mirrored from
                Ghost++), living in the upload placeholder column alongside
                the drop zone / manage-templates button. Inherits
                .gpc-pmo-placeholder's own tc()-themed color/font-size, but
@@ -439,11 +439,11 @@
             .gpc-pmo-manual-palette-option input { width: 13px; height: 13px; cursor: pointer; flex-shrink: 0; }
             /* Lock Position/Group noise (.gpc-pmo-p3-checkboxes) on the
                left, the real nudge-arrow cluster (#gpp-pt-nudge-row,
-               borrowed wholesale -- its own inline flex-wrap:wrap;gap:6px
+               mirrored wholesale -- its own inline flex-wrap:wrap;gap:6px
                already arranges the 4 arrows the way Ghost++ itself designed
                them) to the right, per explicit product decision. wrap: if
                this column gets too narrow for both side by side, the
-               (single, since it's borrowed as one unit) nudge cluster drops
+               (single, since it's mirrored as one unit) nudge cluster drops
                to its own line below the checkboxes rather than overflowing. */
             .gpc-pmo-p3-checkbox-nudge-row {
                 display: flex; flex-direction: row; align-items: center;
@@ -456,11 +456,11 @@
                checkboxes next to it) in this side-by-side layout, so it's
                zeroed out here. !important since it's overriding an inline
                style. */
-            #gpc-pmo-placeholder-group #gpp-pt-nudge-row {
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-pt-nudge-row {
                 margin-bottom: 0 !important;
             }
             /* Same pitfall as .gpc-pmo-controls-row's own buttons (see
-               that comment above), now on the elements borrowed into p1/p2/
+               that comment above), now on the elements mirrored into p1/p2/
                p3: they're styled by their OWN real Ghost++ code (gpp-scan.js,
                gpp-placement.js, gpp-library.js, gpp-ui-shell.js) via
                t2()/isDarkMode(), which -- correctly, for their normal home
@@ -497,11 +497,21 @@
             }
             #gpc-pmo-placeholder-group label,
             #gpc-pmo-placeholder-group .gpp-pt-lock,
-            #gpc-pmo-placeholder-group #gpp-drop-zone {
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-drop-zone {
                 color: ${tc('#111827', '#f5f5f5')} !important;
             }
-            #gpc-pmo-placeholder-group #gpp-drop-zone {
-                border-color: ${tc('#d1d5db', '#45475a')} !important;
+            /* Base box styling too (not just the colour override): Ghost++
+               scopes its own drop-zone rule to #gpp-drop-zone (gpp-ui-
+               shell.js), which a prefixed-id mirror can't match. */
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-drop-zone {
+                border: 2px dashed ${tc('#d1d5db', '#45475a')} !important; border-radius: 8px;
+                padding: 14px; text-align: center; cursor: pointer;
+                transition: border-color .1s, background .1s;
+            }
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-drop-zone:hover,
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-drop-zone.gpp-dragging {
+                border-color: ${tc('#2563eb', '#89b4fa')} !important;
+                background: ${tc('rgba(37,99,235,.06)', 'rgba(137,180,250,.08)')};
             }
             #gpc-pmo-placeholder-group .gpp-muted,
             #gpc-pmo-placeholder-group .gpp-pt-opacity-value {
@@ -518,13 +528,15 @@
                matching specificity (2 IDs, same as the color rule below)
                rather than just adding a color override alongside the
                generic rule. */
-            #gpc-pmo-placeholder-group #gpp-url-upload-btn {
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-url-upload-btn {
                 color: ${tc('#64748b', '#a6adc8')} !important;
                 background: none !important;
                 border: none !important;
                 padding: 0 !important;
+                display: inline-block; margin-top: 6px; font: inherit; font-size: 11px;
+                text-decoration: underline; cursor: pointer;
             }
-            #gpc-pmo-placeholder-group #gpp-url-upload-btn:hover {
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-url-upload-btn:hover {
                 background: none !important;
                 color: ${tc('#2563eb', '#89b4fa')} !important;
             }
@@ -537,19 +549,19 @@
                together on line one, the slider gets the full second line
                (flex-basis 100% forces the wrap). order values are just
                sequence numbers, not meaningful outside this rule. */
-            #gpc-pmo-placeholder-group #gpp-pt-opacity-row {
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-pt-opacity-row {
                 flex-wrap: wrap;
             }
-            #gpc-pmo-placeholder-group #gpp-pt-opacity-row label {
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-pt-opacity-row label {
                 order: 1; min-width: 0 !important; flex: 1 1 auto !important;
             }
-            #gpc-pmo-placeholder-group #gpp-pt-opacity-row .gpp-pt-opacity-value {
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-pt-opacity-row .gpp-pt-opacity-value {
                 order: 2;
             }
-            #gpc-pmo-placeholder-group #gpp-pt-opacity-row .gpp-pt-reset-btn {
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-pt-opacity-row .gpp-pt-reset-btn {
                 order: 3;
             }
-            #gpc-pmo-placeholder-group #gpp-pt-opacity-row #gpp-pt-opacity {
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-pt-opacity-row #gpc-pmo-mirror-gpp-pt-opacity {
                 order: 4; flex: 1 1 100% !important;
             }
             /* .gpp-pt-reset-btn is a <button>, so it'd otherwise also match
@@ -563,8 +575,12 @@
                 border: none !important; background: transparent !important;
                 color: ${tc('#64748b', '#a6adc8')} !important;
             }
-            #gpc-pmo-placeholder-group #gpp-scan-bar-outer {
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-scan-bar-outer {
                 background: ${tc('#e5e7eb', '#313244')} !important;
+            }
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-scan-bar-outer.gpp-scan-bar-clickable:hover,
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-scan-bar-outer.gpp-scan-bar-clickable:focus-visible {
+                box-shadow: 0 0 0 2px ${tc('#2563eb', '#89b4fa')} !important;
             }
             .gpp-swatch {
                 position: relative; aspect-ratio: 1 / 1; min-height: 15px; border-radius: 4px;
@@ -592,7 +608,7 @@
                that used to defeat it means this grid naturally inherits
                Ghost++'s own ungated .gpp-swatch.gpp-swatch-off::after rule
                (gpp-palette.js's gppInjectPaletteStyle()) the same way
-               every other piece of borrowed styling in this file already
+               every other piece of mirrored styling in this file already
                relies on shared, unscoped Ghost++ CSS. The grayscale/
                opacity half is gated behind the SAME .gpp-palette-gray-
                disabled ancestor class Ghost++'s own grid uses (also an
@@ -1114,51 +1130,208 @@
         return previewCanvasEl;
     }
 
-    // Relocates (not clones) a real, singleton Ghost++ DOM node into
-    // `newParent` while placeholder mode is active, remembering exactly
-    // where it came from so returnBorrowedNodes() can put it back. These
-    // are the SAME elements the real Ghost++ modal needs in place if it's
-    // ever opened normally -- cloning would produce a visual copy with none
-    // of the original's live wiring/state, so borrowing (moving) is the
-    // only option that keeps every button/checkbox genuinely functional
-    // without reimplementing any of Ghost++'s own logic a second time.
+    // ── Mirroring real Ghost++ controls into this file's own panels ──────
+    // A mirror is a cloneNode(true) copy of a real, singleton Ghost++
+    // element, shown here for as long as the panel holding it is showing,
+    // while the ORIGINAL stays exactly where Ghost++ rendered it. Every
+    // interaction on a mirror is forwarded to the live original (a button
+    // click becomes original.click(); a checkbox change toggles the
+    // original through its own click(); a slider/select edit copies the
+    // value across and re-dispatches the same event; a file drop
+    // re-dispatches a synthetic 'drop' carrying the same dataTransfer --
+    // see wireMirror), so Ghost++'s own handlers run, unchanged, against
+    // Ghost++'s own DOM. The mirror is then kept looking like the original
+    // by the shared live-sync observer below (which re-mirrors the whole
+    // panel on any change inside #gpp-modal) plus syncMirrorState for the
+    // one case that observer deliberately defers (a live slider drag).
     //
-    // Both functions take an optional `list` to track against, defaulting
-    // to `borrowedNodes` (p1/p2/p3's own, returned only while placeholder
-    // mode is showing). The palette-view toggle below uses its OWN separate
-    // list instead -- its lifecycle is genuinely independent (borrowed for
-    // as long as the compact grid exists at all, not scoped to placeholder
-    // mode), so a plain "return everything" call for one must never also
-    // catch the other.
-    let borrowedNodes = []; // [{ node, originalParent, originalNextSibling }]
-    function borrowNode(node, newParent, list) {
-        if (!node) return;
-        (list || borrowedNodes).push({ node, originalParent: node.parentElement, originalNextSibling: node.nextElementSibling });
-        newParent.appendChild(node);
-    }
-    // Restored in reverse borrow order, each via insertBefore its recorded
-    // next-sibling (falling back to appendChild if that sibling itself
-    // moved/vanished in the meantime) -- puts every borrowed node back
-    // exactly where Ghost++ itself put it, not just back into the right
-    // parent.
-    function returnBorrowedNodes(list) {
-        const target = list || borrowedNodes;
-        for (let i = target.length - 1; i >= 0; i--) {
-            const { node, originalParent, originalNextSibling } = target[i];
-            if (!originalParent) continue;
-            if (originalNextSibling && originalNextSibling.parentElement === originalParent) {
-                originalParent.insertBefore(node, originalNextSibling);
-            } else {
-                originalParent.appendChild(node);
-            }
-        }
-        target.length = 0;
+    // This replaced an earlier borrow/return design that MOVED the real
+    // nodes here and put them back later. That assumed the real Ghost++
+    // modal was always closed while these panels showed, which was never
+    // enforced: with both open at once every moved control was simply
+    // missing from the Ghost++ modal (a reported bug -- Progress left with
+    // only Clear/Autoscan, Template Settings with only X/Y). A bare clone
+    // wasn't an option either, since it has none of the original's
+    // listeners and those are closures inside Ghost++'s own render
+    // functions; forwarding to the still-present original is what makes a
+    // mirror genuinely functional without re-implementing any of that
+    // logic here.
+    //
+    // Ids: a clone would otherwise carry the original's id, and both files
+    // resolve several of these with a global getElementById --
+    // #bottomControls precedes #gpp-modal in the document, so a same-id
+    // mirror would win every one of those lookups. Every id inside a mirror
+    // is therefore prefixed (MIRROR_ID_PREFIX) and the original id kept in
+    // data-gpc-mirror-of, which is also how a mirror finds its live
+    // original at event time -- by id, so it keeps working across Ghost++'s
+    // own re-renders, which replace the original element wholesale.
+    const MIRROR_ID_PREFIX = 'gpc-pmo-mirror-';
+    const MIRROR_ATTR = 'data-gpc-mirror-of';
+
+    function mirrorOriginalOf(el) {
+        const id = el && typeof el.getAttribute === 'function' ? el.getAttribute(MIRROR_ATTR) : null;
+        return id ? document.getElementById(id) : null;
     }
 
-    // Palette view toggle (Grid/List, gpp-view-settings.js), borrowed into
+    function mirrorNode(original, newParent, insertFirst) {
+        if (!original || !newParent) return null;
+        const clone = original.cloneNode(true);
+        const stamp = (el) => {
+            if (!el.id) return;
+            el.setAttribute(MIRROR_ATTR, el.id);
+            el.id = MIRROR_ID_PREFIX + el.id;
+        };
+        stamp(clone);
+        clone.querySelectorAll('[id]').forEach(stamp);
+        // Any label->control association inside the clone keeps pointing at
+        // the clone's own (renamed) control, never at the original's.
+        clone.querySelectorAll('label[for]').forEach((label) => { label.htmlFor = MIRROR_ID_PREFIX + label.htmlFor; });
+        clone.classList.add('gpc-pmo-mirror');
+        wireMirror(clone);
+        if (insertFirst) newParent.insertBefore(clone, newParent.firstChild);
+        else newParent.appendChild(clone);
+        return clone;
+    }
+
+    function wireMirror(clone) {
+        clone.addEventListener('click', (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (!target) return;
+            // A click on a label (or on the checkbox it wraps) has already
+            // toggled the mirror's own checkbox; that is forwarded through
+            // 'change' below -- forwarding this click as well would toggle
+            // the original twice.
+            if (target.closest('label') || target.matches('input, select')) return;
+            const actionable = target.closest('button, a, [role="button"], [' + MIRROR_ATTR + '="gpp-drop-zone"]');
+            if (!actionable || !clone.contains(actionable)) return;
+            const original = mirrorOriginalOf(actionable);
+            if (!original || original.disabled) return;
+            original.click();
+            scheduleMirrorSync(clone);
+        });
+        // Keyboard activation of a mirrored non-<button> control (the scan
+        // bar is a div with role=button) — real buttons already get this
+        // from the browser as a click.
+        clone.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const target = event.target instanceof Element ? event.target.closest('[role="button"]') : null;
+            if (!target || !clone.contains(target)) return;
+            const original = mirrorOriginalOf(target);
+            if (!original) return;
+            event.preventDefault();
+            original.click();
+            scheduleMirrorSync(clone);
+        });
+        clone.addEventListener('change', (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) return;
+            const original = mirrorOriginalOf(target);
+            if (!original) return;
+            if (target instanceof HTMLInputElement && (target.type === 'checkbox' || target.type === 'radio')) {
+                // .click() both flips the original and fires its own change
+                // handler, exactly like a tap on it would.
+                if (original.checked !== target.checked && !original.disabled) original.click();
+            } else if (!(target instanceof HTMLInputElement && target.type === 'file')) {
+                original.value = target.value;
+                original.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            scheduleMirrorSync(clone);
+            endMirrorSliderGesture(); // a range 'change' means the drag is over, even if pointerup was missed
+        });
+        clone.addEventListener('input', (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLInputElement) || target.type === 'checkbox' || target.type === 'radio' || target.type === 'file') return;
+            const original = mirrorOriginalOf(target);
+            if (!original) return;
+            original.value = target.value;
+            original.dispatchEvent(new Event('input', { bubbles: true }));
+            // Immediate, not scheduled: this is the live value readout during
+            // a drag, and the observer's own rebuild is deferred until the
+            // gesture ends (see startGhostModalLiveSync).
+            syncMirrorState(clone);
+        });
+        // Drag-and-drop onto a mirrored drop zone: the original's own
+        // dragover/drop listeners (gpp-init.js's wireDropZone) are attached
+        // directly to it, so a synthetic 'drop' carrying the real
+        // dataTransfer runs the real ingestion -- the same technique
+        // handlePlaceholderPaste already uses for paste.
+        clone.addEventListener('dragover', (event) => {
+            if (!event.dataTransfer || !Array.from(event.dataTransfer.types || []).includes('Files')) return;
+            event.preventDefault();
+            clone.classList.add('gpp-dragging');
+        });
+        clone.addEventListener('dragleave', () => clone.classList.remove('gpp-dragging'));
+        clone.addEventListener('drop', (event) => {
+            clone.classList.remove('gpp-dragging');
+            const zone = clone.getAttribute(MIRROR_ATTR) === 'gpp-drop-zone' ? clone : clone.querySelector('[' + MIRROR_ATTR + '="gpp-drop-zone"]');
+            const original = mirrorOriginalOf(zone);
+            if (!original || !event.dataTransfer || !event.dataTransfer.files.length) return;
+            event.preventDefault();
+            original.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: event.dataTransfer }));
+        });
+    }
+
+    // Copies the live original's visible state (enabled/checked/value/
+    // title/classes/leaf text) onto a mirror and its id'd descendants. The
+    // marker classes this file adds to mirrors (gpc-pmo-*) survive the class
+    // copy; inline styles are never copied, so retintScanButton's own
+    // colours on a mirror survive too.
+    function syncMirrorState(clone) {
+        if (!clone || !clone.isConnected) return;
+        const pairs = [];
+        const rootOriginal = mirrorOriginalOf(clone);
+        if (rootOriginal) pairs.push([clone, rootOriginal]);
+        clone.querySelectorAll('[' + MIRROR_ATTR + ']').forEach((m) => {
+            const o = mirrorOriginalOf(m);
+            if (o) pairs.push([m, o]);
+        });
+        for (const [m, o] of pairs) {
+            if ('disabled' in m && 'disabled' in o && m.disabled !== o.disabled) m.disabled = o.disabled;
+            if (m instanceof HTMLInputElement && (m.type === 'checkbox' || m.type === 'radio')) {
+                if (m.checked !== o.checked) m.checked = o.checked;
+            } else if ((m instanceof HTMLInputElement && m.type !== 'file') || m instanceof HTMLSelectElement) {
+                if (document.activeElement !== m && m.value !== o.value) m.value = o.value;
+            }
+            if (m.title !== o.title) m.title = o.title;
+            const markers = Array.from(m.classList).filter((c) => c.startsWith('gpc-pmo-'));
+            if (m.className !== o.className) m.className = o.className;
+            markers.forEach((c) => m.classList.add(c));
+            if (!m.children.length && !o.children.length && m.textContent !== o.textContent) m.textContent = o.textContent;
+        }
+    }
+    function scheduleMirrorSync(clone) {
+        Promise.resolve().then(() => syncMirrorState(clone));
+        setTimeout(() => syncMirrorState(clone), 80);
+    }
+
+    // A live pointer drag on a mirrored slider must not be interrupted: the
+    // original's own 'input' handler rewrites its value readout, which is
+    // a DOM change inside #gpp-modal, which would otherwise make the
+    // observer re-mirror the panel -- replacing the very slider being
+    // dragged. The rebuild is deferred while a pointer is down on such a
+    // slider and flushed the moment the gesture ends.
+    let mirrorSliderPointerDown = false;
+    let liveSyncRebuildDeferred = false;
+    document.addEventListener('pointerdown', (event) => {
+        const t = event.target;
+        if (t instanceof HTMLInputElement && t.type === 'range' && t.closest('.gpc-pmo-mirror')) mirrorSliderPointerDown = true;
+    }, true);
+    function endMirrorSliderGesture() {
+        if (!mirrorSliderPointerDown) return;
+        mirrorSliderPointerDown = false;
+        if (liveSyncRebuildDeferred) {
+            liveSyncRebuildDeferred = false;
+            runGhostModalLiveSync();
+        }
+    }
+    document.addEventListener('pointerup', endMirrorSliderGesture, true);
+    document.addEventListener('pointercancel', endMirrorSliderGesture, true);
+
+    // Palette view toggle (Grid/List, gpp-view-settings.js), MIRRORED into
     // buildTemplatePaletteGrid's own .gpc-pmo-palette-wrap, directly left
-    // of .gpc-pmo-preview-frame. Kept live-synced by the SAME shared
-    // observer as p1/p2/p3 (startGhostModalLiveSync, below) -- an EARLIER
+    // of .gpc-pmo-preview-frame; the real row stays in View Settings. Kept
+    // live-synced by the SAME shared observer as p1/p2/p3
+    // (startGhostModalLiveSync, below) -- an EARLIER
     // version of this used a second, independent MutationObserver instead,
     // which caused a real, shipped freeze-the-page bug: two separate
     // observers both watching #gpp-modal, each disconnecting only ITSELF
@@ -1175,7 +1348,6 @@
     // modal is ever opened) -- it does not switch THIS file's own compact
     // grid (buildTemplatePaletteGrid) to a list layout, which always renders
     // as a grid regardless of this setting.
-    let viewToggleBorrowedNodes = []; // separate from borrowedNodes -- its lifecycle (borrowed for as long as the compact grid exists at all, not scoped to placeholder mode) is independent of p1/p2/p3's, so a plain "return everything" call for one must never also catch the other.
 
     // "Visible rows" -- purely a THIS-file preference (how tall
     // #gpc-pmo-palette-grid's own scroll area is), nothing Ghost++ has
@@ -1202,13 +1374,12 @@
         return rows * 26 + (rows - 1) * 3 + 4;
     }
 
-    // Our own control, appended alongside the borrowed toggle row inside
+    // Our own control, appended alongside the mirrored toggle row inside
     // ensureViewControlsColumn's container -- built once per compact-grid
     // instance (guarded against the container already having one, since
-    // borrowPaletteViewToggle -- and so this -- runs again on every
+    // mirrorPaletteViewToggle -- and so this -- runs again on every
     // live-sync tick) and never touches any real Ghost++ state, so unlike
-    // everything else in this file there's no borrow/restore discipline
-    // needed for it at all.
+    // everything else in this file it is not a mirror of anything.
     function ensureVisibleRowsControl(col) {
         if (col.querySelector('#gpc-pmo-visible-rows-row')) return;
         const row = document.createElement('div');
@@ -1236,11 +1407,11 @@
         col.appendChild(row);
     }
 
-    // Shared, stable container for the borrowed toggle row AND
+    // Shared, stable container for the mirrored toggle row AND
     // ensureVisibleRowsControl's own row, stacked together -- see this
     // container's own CSS comment (.gpc-pmo-view-controls-col) for why
     // it has to exist as a separate, persistent element rather than
-    // borrowing the toggle row directly into .gpc-pmo-palette-wrap.
+    // putting the toggle row directly into .gpc-pmo-palette-wrap.
     // Scoped to hostEl (NOT a bare document.getElementById) on purpose: at
     // the moment buildTemplatePaletteGrid calls this, the OLD wrap (with
     // its own #gpc-pmo-view-controls, about to be discarded via
@@ -1257,20 +1428,17 @@
         }
         return col;
     }
-    function borrowPaletteViewToggle(hostEl) {
+    function mirrorPaletteViewToggle(hostEl) {
         if (!hostEl) return;
         const col = ensureViewControlsColumn(hostEl);
+        const stale = col.querySelector('[' + MIRROR_ATTR + '="gpp-vs-palette-view-row"]');
+        if (stale) stale.remove();
         const row = document.getElementById('gpp-vs-palette-view-row');
         if (row) {
-            row.classList.add('gpc-pmo-view-toggle-row');
-            // Recorded manually rather than via the shared borrowNode
-            // helper -- pinned to always be col's FIRST child (insertBefore
-            // col.firstChild, safe even when row already IS the first
-            // child -- see borrowNode's own precedent for why that self-
-            // reference case is spec-safe) so a later re-borrow can never
-            // reorder it after ensureVisibleRowsControl's row below.
-            viewToggleBorrowedNodes.push({ node: row, originalParent: row.parentElement, originalNextSibling: row.nextElementSibling });
-            col.insertBefore(row, col.firstChild);
+            // Pinned to always be col's FIRST child so a later re-mirror can
+            // never reorder it after ensureVisibleRowsControl's row below.
+            const mirror = mirrorNode(row, col, true);
+            if (mirror) mirror.classList.add('gpc-pmo-view-toggle-row');
         }
         ensureVisibleRowsControl(col);
     }
@@ -1278,7 +1446,7 @@
     // Ensures Ghost++'s real progress section, drop zone, and template
     // library / position-transform section are all currently rendered with
     // fresh data for the focused template, so there's something current to
-    // borrow from -- ensurePaletteControllerReady() guarantees the modal
+    // mirror -- ensurePaletteControllerReady() guarantees the modal
     // shell (and the left-panel sections within it) exists at all, even if
     // the real Ghost++ modal was never opened this session;
     // gppRequestUiRefresh() then populates it (and the separate right-panel
@@ -1289,12 +1457,12 @@
         if (typeof gppRequestUiRefresh === 'function') gppRequestUiRefresh();
     }
 
-    // Return-then-rebuild for all three columns, shared by the initial
-    // switch to placeholder mode and by the live-sync observer below.
-    // Callers are responsible for their own "should this run right now"
-    // checks (e.g. is placeholder mode even showing).
+    // Discard-then-rebuild for all three columns (their contents are
+    // mirrors, so wiping them touches nothing of Ghost++'s), shared by the
+    // initial switch to placeholder mode and by the live-sync observer
+    // below. Callers are responsible for their own "should this run right
+    // now" checks (e.g. is placeholder mode even showing).
     function rebuildPlaceholderColumns() {
-        returnBorrowedNodes();
         const scanPanel = document.getElementById('gpc-pmo-scan-panel');
         const uploadPanel = document.getElementById('gpc-pmo-upload-panel');
         const placementPanel = document.getElementById('gpc-pmo-placement-panel');
@@ -1304,34 +1472,24 @@
         requestPaintMenuControlsScaleLayout();
     }
 
-    // Keeps everything borrowed from the real Ghost++ modal live-synced
-    // with its own re-renders: the palette-view toggle above (borrowed for
-    // as long as the compact grid exists at all -- .gpc-pmo-palette-wrap
-    // is always visible, not just during placeholder mode) AND p1/p2/p3
-    // (borrowed only while placeholder mode is showing). Without this, any
-    // borrowed control's own interaction leaves every OTHER borrowed node
-    // permanently stale. Root cause: `onChange` (the parameter
+    // Keeps everything mirrored from the real Ghost++ modal live-synced
+    // with it: the palette-view toggle above (mirrored for as long as the
+    // compact grid exists at all -- .gpc-pmo-palette-wrap is always
+    // visible, not just during placeholder mode) AND p1/p2/p3 (mirrored
+    // only while placeholder mode is showing). A mirror is a snapshot, so
+    // anything that changes the original afterwards -- a mirrored control's
+    // own forwarded interaction, the same control used directly in the real
+    // modal, a scan finishing, a template switch -- must re-mirror. Why a
+    // plain subscription can't cover this: `onChange` (the parameter
     // gpp-scan.js/gpp-placement.js/gpp-library.js/gpp-view-settings.js's
     // render functions were called with) IS gpp-init.js's refreshAll,
-    // called DIRECTLY by a borrowed checkbox/button's own handler --
-    // refreshAll() itself never touches gppUiRefreshSubscribers (only the
-    // separate gppRequestUiRefresh() gateway does), so
-    // gppSubscribeUiRefresh() alone can't catch these. refreshAll() wipes
-    // and rebuilds #gpp-progress-section's content, #gpp-view-settings-
-    // section's content, and (via gppRenderTemplateLibrary)
-    // #gpp-lib-current-pt on every single call -- creating fresh, invisible
-    // replacement sets back in their original, now-empty-looking homes,
-    // while whatever we'd already borrowed keeps its own old listeners (DOM
-    // relocation doesn't detach those) but stops receiving any further
-    // updates. Concrete, reported symptoms of this: Lock Position / Group
-    // noise checkboxes visibly desyncing from Ghost++'s own state after the
-    // first interaction, Place/Preview appearing dead
-    // (gppRenderPositionTransform calls gppCancelPlacementCapture() at the
-    // START of every one of these re-renders, killing an in-progress
-    // capture the instant any other borrowed control is touched), and the
-    // palette-view toggle going stale after the very first color tap (this
-    // file's own soloColor()/toggleColor() already call
-    // gppRequestUiRefresh() themselves).
+    // called DIRECTLY by a control's own handler -- refreshAll() itself
+    // never touches gppUiRefreshSubscribers (only the separate
+    // gppRequestUiRefresh() gateway does), so gppSubscribeUiRefresh() alone
+    // can't catch these. refreshAll() wipes and rebuilds
+    // #gpp-progress-section's content, #gpp-view-settings-section's
+    // content, and (via gppRenderTemplateLibrary) #gpp-lib-current-pt on
+    // every single call, replacing every original wholesale.
     //
     // Fixed the same way the hide-paint-menu.js reorder bug was: a
     // MutationObserver watching for externally-triggered DOM changes and
@@ -1343,74 +1501,76 @@
     // new children; #gpp-lib-current-pt and gpp-view-settings.js's own row
     // get entirely replaced by fresh elements, as part of their render
     // functions' own full rebuild) -- observing the whole modal catches all
-    // of these uniformly.
+    // of these uniformly. Attribute changes are watched too (class/
+    // disabled/title/hidden only), because some state never goes through a
+    // re-render at all -- Preview toggles .gpp-pt-btn-active on the real
+    // button in place (gpp-placement.js); a moved node used to show that
+    // for free, a mirror can't.
     //
     // ONE shared observer, started once and never stopped -- there's no
     // "leaving" event to stop on, since the palette-view toggle concern is
     // permanent for as long as the compact grid exists at all, well beyond
     // any single placeholder-mode session (see the comment above the
-    // palette-view toggle borrow functions for why an earlier, separate-
-    // observer version of this caused a real, shipped freeze bug: two
-    // observers each disconnecting only themselves before their own
-    // mutation still see each OTHER's mutations, so each one's reconnect
-    // re-triggers the other, forever). Disconnects itself before its OWN
-    // mutations and reconnects after, rather than a same-tick flag (a
-    // MutationObserver callback fires as a later microtask, by which point
-    // a flag reset synchronously inside this same call would already be
-    // back to its original value) -- otherwise THIS rebuild would trigger
-    // itself indefinitely too, since returning and re-borrowing are
-    // themselves childList mutations within the observed subtree.
+    // palette-view toggle functions for why an earlier, separate-observer
+    // version of this caused a real, shipped freeze bug: two observers each
+    // disconnecting only themselves before their own mutation still see
+    // each OTHER's mutations, so each one's reconnect re-triggers the
+    // other, forever). Mirrors live outside #gpp-modal, so a rebuild no
+    // longer mutates the observed subtree at all; the disconnect/reconnect
+    // around it is kept as cheap insurance against that ever changing.
+    // Rebuilds are coalesced per microtask, and deferred while a pointer is
+    // down on a mirrored slider (see endMirrorSliderGesture).
+    const GHOST_MODAL_LIVE_SYNC_OPTIONS = Object.freeze({ childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'disabled', 'title', 'hidden'] });
     let ghostModalLiveSyncObserver = null;
+    let liveSyncRefreshQueued = false;
+    function runGhostModalLiveSync() {
+        const observer = ghostModalLiveSyncObserver;
+        const modalEl = document.getElementById('gpp-modal');
+        if (observer) observer.disconnect();
+        try {
+            const wrap = document.querySelector('.gpc-pmo-palette-wrap');
+            if (wrap) mirrorPaletteViewToggle(wrap);
+            const group = document.getElementById('gpc-pmo-placeholder-group');
+            if (group && !group.classList.contains('gpc-hidden')) rebuildPlaceholderColumns();
+        } finally {
+            if (observer && ghostModalLiveSyncObserver === observer && modalEl && modalEl.isConnected) {
+                observer.observe(modalEl, GHOST_MODAL_LIVE_SYNC_OPTIONS);
+            }
+        }
+    }
     function startGhostModalLiveSync() {
         if (ghostModalLiveSyncObserver) return;
         const modalEl = document.getElementById('gpp-modal');
         if (!modalEl) return;
-        let refreshQueued = false;
         ghostModalLiveSyncObserver = new MutationObserver(() => {
-            if (refreshQueued) return;
-            refreshQueued = true;
+            if (liveSyncRefreshQueued) return;
+            liveSyncRefreshQueued = true;
             Promise.resolve().then(() => {
-                refreshQueued = false;
+                liveSyncRefreshQueued = false;
                 if (!ghostModalLiveSyncObserver) return;
-                ghostModalLiveSyncObserver.disconnect();
-                try {
-                    const wrap = document.querySelector('.gpc-pmo-palette-wrap');
-                    if (wrap) {
-                        returnBorrowedNodes(viewToggleBorrowedNodes);
-                        borrowPaletteViewToggle(wrap);
-                    }
-                    const group = document.getElementById('gpc-pmo-placeholder-group');
-                    if (group && !group.classList.contains('gpc-hidden')) {
-                        rebuildPlaceholderColumns();
-                    }
-                } finally {
-                    if (ghostModalLiveSyncObserver && modalEl.isConnected) {
-                        ghostModalLiveSyncObserver.observe(modalEl, { childList: true, subtree: true });
-                    }
-                }
+                if (mirrorSliderPointerDown) { liveSyncRebuildDeferred = true; return; }
+                runGhostModalLiveSync();
             });
         });
-        ghostModalLiveSyncObserver.observe(modalEl, { childList: true, subtree: true });
+        ghostModalLiveSyncObserver.observe(modalEl, GHOST_MODAL_LIVE_SYNC_OPTIONS);
     }
 
-    // Paste-to-upload regression fix: gpp-init.js's wireDropZone() attaches
-    // its paste listener to #gpp-modal itself (event delegation), not to
-    // #gpp-drop-zone directly -- once the drop zone is borrowed out of the
-    // modal's subtree, a paste there no longer bubbles to that listener.
-    // Rather than reimplementing file ingestion (ingestFileList is a
+    // Paste-to-upload: gpp-init.js's wireDropZone() attaches its paste
+    // listener to #gpp-modal itself (event delegation), so a paste while
+    // the user is working in this file's own panels never bubbles through
+    // it. Rather than reimplementing file ingestion (ingestFileList is a
     // private closure inside gpp-init.js, not reachable from here), this
-    // reuses the drop zone's own REAL 'drop' listener -- which IS attached
-    // directly to it, not delegated, so it's unaffected by borrowing -- by
-    // dispatching a synthetic 'drop' event carrying the pasted files as its
-    // dataTransfer. Attached once, globally; the guard below makes it a
-    // no-op except while the drop zone is actually the one currently
-    // showing in our own placeholder group.
+    // reuses the real drop zone's own 'drop' listener -- attached directly
+    // to it, not delegated -- by dispatching a synthetic 'drop' event
+    // carrying the pasted files as its dataTransfer. Attached once,
+    // globally; the guard below makes it a no-op except while the drop
+    // zone's mirror is actually showing in our own placeholder group.
     function handlePlaceholderPaste(event) {
         if (!event.clipboardData) return;
         const dropZone = document.getElementById('gpp-drop-zone');
         if (!dropZone) return;
         const group = document.getElementById('gpc-pmo-placeholder-group');
-        if (!group || group.classList.contains('gpc-hidden') || !group.contains(dropZone)) return;
+        if (!group || group.classList.contains('gpc-hidden') || !group.querySelector('[' + MIRROR_ATTR + '="gpp-drop-zone"]')) return;
         const files = Array.from(event.clipboardData.items || [])
             .filter((item) => item.kind === 'file')
             .map((item) => item.getAsFile())
@@ -1439,10 +1599,9 @@
     // (bare `window` isn't reliably the same object as the page's own in a
     // sandboxed userscript realm). Subscribed once, globally, exactly like
     // handlePlaceholderPaste above -- the real #gpp-pt-place button is a
-    // singleton regardless of whether it's currently borrowed into this
-    // view or sitting in the real (possibly desktop-opened) Ghost++ modal,
-    // so this applies uniformly either way, not just while this view is
-    // showing.
+    // singleton in the Ghost++ modal whether it's reached directly or
+    // through its mirror in this view, so this applies uniformly either
+    // way, not just while this view is showing.
     function togglePagePrimaryMode() {
         const win = pageWindow();
         if (win && typeof win.togglePrimaryMode === 'function') win.togglePrimaryMode();
@@ -1486,79 +1645,60 @@
             (button.disabled ? 'opacity:.5; cursor:default;' : '');
     }
 
-    // Unlike the regular borrowed controls, gpp-scan.js intentionally bakes
-    // these four buttons' theme colors into inline style.cssText. Refresh that
-    // presentation whenever the Painting Menu Overhaul theme stylesheet refreshes so
-    // a live GeoPixels++ theme switch cannot leave placeholder Scan controls
+    // Unlike the other mirrored controls, gpp-scan.js intentionally bakes
+    // these four buttons' theme colors into inline style.cssText (which the
+    // mirrors inherit on cloning). Refresh that presentation on the MIRRORS
+    // whenever the Painting Menu Overhaul theme stylesheet refreshes, so a
+    // live GeoPixels++ theme switch cannot leave placeholder Scan controls
     // with their old colors until something else rebuilds the whole panel.
-    function retintBorrowedScanButtons() {
+    function retintMirroredScanButtons() {
         const group = document.getElementById('gpc-pmo-placeholder-group');
         if (!group || group.classList.contains('gpc-hidden')) return;
         const template = getFocusedTemplateWithPalette();
-        const scanBtn = group.querySelector('#gpp-scan-btn-scan');
-        const showErrBtn = group.querySelector('#gpp-scan-btn-show-err');
-        const showMissBtn = group.querySelector('#gpp-scan-btn-show-miss');
-        const nearestBtn = group.querySelector('#gpp-scan-btn-nearest');
-        if (scanBtn) retintScanButton(scanBtn, true);
-        if (showErrBtn) retintScanButton(showErrBtn, !!(template && template._gppShowWrong));
-        if (showMissBtn) retintScanButton(showMissBtn, !!(template && template._gppShowMissing));
-        if (nearestBtn) retintScanButton(nearestBtn, false);
+        const mirrorOf = (id) => group.querySelector('#' + MIRROR_ID_PREFIX + id);
+        retintScanButton(mirrorOf('gpp-scan-btn-scan'), true);
+        retintScanButton(mirrorOf('gpp-scan-btn-show-err'), !!(template && template._gppShowWrong));
+        retintScanButton(mirrorOf('gpp-scan-btn-show-miss'), !!(template && template._gppShowMissing));
+        retintScanButton(mirrorOf('gpp-scan-btn-nearest'), false);
     }
 
-    // Placeholder 1: the real scan-progress bar + its two summary text
-    // lines + 4 of its 5 real buttons (Scan progress / Show errors / Show
-    // missing / Nearest error -- Clear is deliberately left behind, per
-    // explicit product decision) in a 2x2 grid. All borrowed from
-    // #gpp-progress-section (gpp-scan.js's gppRenderProgressBar), which the
-    // ids added there exist specifically to make findable.
+    // Placeholder 1: the scan-progress bar + its two summary text lines +
+    // 4 of its 5 buttons (Scan progress / Show errors / Show missing /
+    // Nearest error -- Clear is deliberately left out, per explicit product
+    // decision) in a 2x2 grid. All mirrored from #gpp-progress-section
+    // (gpp-scan.js's gppRenderProgressBar), which the ids added there exist
+    // specifically to make findable.
     function buildPlaceholder1Content(container) {
         const section = document.getElementById('gpp-progress-section');
         if (!section) return;
         const template = getFocusedTemplateWithPalette();
-        const bar = section.querySelector('#gpp-scan-bar-outer');
-        const summaryLine = section.querySelector('#gpp-scan-summary-line');
-        const countsLine = section.querySelector('#gpp-scan-counts-line'); // only present when there's something to report
-        const scanBtn = section.querySelector('#gpp-scan-btn-scan');
-        const showErrBtn = section.querySelector('#gpp-scan-btn-show-err');
-        const showMissBtn = section.querySelector('#gpp-scan-btn-show-miss');
-        const nearestBtn = section.querySelector('#gpp-scan-btn-nearest');
+        const pick = (id) => section.querySelector('#' + id);
+        mirrorNode(pick('gpp-scan-bar-outer'), container);
+        mirrorNode(pick('gpp-scan-summary-line'), container);
+        mirrorNode(pick('gpp-scan-counts-line'), container); // only present when there's something to report
 
         // Same primary/non-primary determination gpp-scan.js's own
-        // gppRenderProgressBar makes for these same 4 buttons (scanBtn
-        // always primary, nearestBtn never, the other two reflecting
-        // whether that toggle is currently on) -- re-applied here with
-        // tc()'s colors instead of t2()'s.
-        if (scanBtn) retintScanButton(scanBtn, true);
-        if (showErrBtn) retintScanButton(showErrBtn, !!(template && template._gppShowWrong));
-        if (showMissBtn) retintScanButton(showMissBtn, !!(template && template._gppShowMissing));
-        if (nearestBtn) retintScanButton(nearestBtn, false);
-
-        if (bar) borrowNode(bar, container);
-        if (summaryLine) borrowNode(summaryLine, container);
-        if (countsLine) borrowNode(countsLine, container);
-
+        // gppRenderProgressBar makes for these same 4 buttons (scan always
+        // primary, nearest never, the other two reflecting whether that
+        // toggle is currently on) -- re-applied to the MIRRORS with tc()'s
+        // colors instead of t2()'s; the originals keep their own styling.
         const buttonsGrid = document.createElement('div');
         buttonsGrid.className = 'gpc-pmo-p-btn-grid';
-        [scanBtn, showErrBtn, showMissBtn, nearestBtn].forEach((btn) => { if (btn) borrowNode(btn, buttonsGrid); });
+        retintScanButton(mirrorNode(pick('gpp-scan-btn-scan'), buttonsGrid), true);
+        retintScanButton(mirrorNode(pick('gpp-scan-btn-show-err'), buttonsGrid), !!(template && template._gppShowWrong));
+        retintScanButton(mirrorNode(pick('gpp-scan-btn-show-miss'), buttonsGrid), !!(template && template._gppShowMissing));
+        retintScanButton(mirrorNode(pick('gpp-scan-btn-nearest'), buttonsGrid), false);
         container.appendChild(buttonsGrid);
 
-        // "Gray unselected color boxes" -- a synced control, not a borrowed
-        // node like everything above it. gpp-view-settings.js's own
-        // #gpp-vs-gray-disabled-swatches checkbox is torn down and rebuilt
-        // from scratch on every View Settings re-render (gppRenderView
-        // Settings does container.innerHTML = '' unconditionally, "after
-        // every onChange()" per its own comment), which makes it a moving
-        // target -- borrowNode's move-then-restore-to-recorded-parent/
-        // sibling contract (see that function's own comment) assumes a
-        // stable origin, and would silently strand this checkbox in a
-        // detached, already-replaced <div> the next time that section
-        // re-renders for any unrelated reason. A second, independent
-        // checkbox that reads/writes the exact same
+        // "Gray unselected color boxes" -- our own synced control, not a
+        // mirror like everything above it (it predates mirroring, when a
+        // checkbox that gpp-view-settings.js tears down and rebuilds on
+        // every re-render was too much of a moving target to move around).
+        // A second, independent checkbox that reads/writes the exact same
         // gppSettings.grayDisabledSwatches Ghost++'s own one does gets the
         // identical practical effect (same setting, same persistence, same
-        // grids react) without that fragility. Distinct id from the real
-        // one on purpose -- two elements sharing
-        // #gpp-vs-gray-disabled-swatches would make every
+        // grids react). Distinct id from the real one on purpose -- two
+        // elements sharing #gpp-vs-gray-disabled-swatches would make every
         // getElementById('gpp-vs-gray-disabled-swatches') lookup elsewhere
         // in Ghost++'s own code ambiguous. Same visual family as "Use
         // manual palette" below (.gpc-pmo-manual-palette-option, this
@@ -1582,54 +1722,41 @@
         container.appendChild(grayOption);
     }
 
-    // Placeholder 2: the real #gpp-drop-zone, wholesale (drag/drop/paste/
-    // click-to-choose file wiring already attached by gpp-init.js's
-    // wireDropZone() -- nothing here re-touches any of that), then the real
-    // "Manage templates" button (gpp-library.js) -- moved here from
-    // placeholder 3 per explicit product decision, directly under the drop
-    // zone rather than below the Place/Preview/Lock/Group-noise block.
+    // Placeholder 2: a mirror of #gpp-drop-zone (clicks and file drops are
+    // forwarded to the real zone, whose own wiring from gpp-init.js's
+    // wireDropZone() does the ingestion -- see wireMirror; paste is handled
+    // by handlePlaceholderPaste), then a mirror of the "Manage templates"
+    // button (gpp-library.js) -- placed here rather than in placeholder 3
+    // per explicit product decision, directly under the drop zone.
     //
     // The zone's own real heading/format-list text is written for desktop
-    // (mentions drag/drop and paste), so those two real elements
-    // (#gpp-drop-zone-heading/-hint ids added in gpp-init.js's
-    // ensureShellBuilt specifically for this) are hidden in place -- never
-    // removed -- in favor of one short line of our own, inserted as a plain
-    // child rather than borrowed (nothing here reads or writes any real
-    // Ghost++ state, so there's nothing to keep in sync). #gpp-url-upload-btn
-    // is deliberately NOT hidden alongside them, per explicit user feedback
+    // (mentions drag/drop and paste), so those two elements are dropped
+    // from the MIRROR (never from the real zone, which is untouched) in
+    // favor of one short line of our own. The mirror's copy of the hidden
+    // <input type=file> goes too: a click here is forwarded to the real
+    // zone, whose handler opens the picker through the real input.
+    // #gpp-url-upload-btn is deliberately kept, per explicit user feedback
     // (it was originally lumped in with the desktop-only text, which
     // silently dropped a real capability -- loading a template from a URL
     // -- rather than just shortening description text); it's real, already-
-    // wired Ghost++ markup, and #gpc-pmo-placeholder-group's own injected
-    // style already carries a tc()-themed rule for it (grouped with
-    // .gpp-muted), so no further styling was needed to show it here. This
-    // runs on every rebuild (including live-sync ticks), which is fine --
-    // adding an already-present class / reusing an already-created element
-    // is a no-op each time. restoreDropZoneForDesktop() (called from
-    // toggleNativeControlsForPlaceholders' native-switch branch, the one
-    // point this column genuinely stops coming back) undoes the
-    // heading/hint hiding, so the real Ghost++ modal never shows the
-    // shortened mobile copy.
+    // wired Ghost++ markup reached through the mirror, and
+    // #gpc-pmo-placeholder-group's own injected style carries a tc()-themed
+    // rule for its mirror. This runs on every rebuild (including live-sync
+    // ticks), building the mirror fresh each time.
     function buildPlaceholder2Content(container) {
         const dropZone = document.getElementById('gpp-drop-zone');
         if (!dropZone) return;
+        const mirror = mirrorNode(dropZone, container);
+        ['gpp-drop-zone-heading', 'gpp-drop-zone-hint', 'gpp-file-input'].forEach((id) => {
+            const el = mirror.querySelector('#' + MIRROR_ID_PREFIX + id);
+            if (el) el.remove();
+        });
+        const mobileHint = document.createElement('div');
+        mobileHint.id = 'gpc-pmo-drop-zone-hint';
+        mobileHint.innerHTML = '<strong>Click to upload template files</strong>';
+        mirror.insertBefore(mobileHint, mirror.firstChild);
 
-        const heading = document.getElementById('gpp-drop-zone-heading');
-        const hint = document.getElementById('gpp-drop-zone-hint');
-        if (heading) heading.classList.add('gpc-hidden');
-        if (hint) hint.classList.add('gpc-hidden');
-
-        let mobileHint = document.getElementById('gpc-pmo-drop-zone-hint');
-        if (!mobileHint) {
-            mobileHint = document.createElement('div');
-            mobileHint.id = 'gpc-pmo-drop-zone-hint';
-            mobileHint.innerHTML = '<strong>Click to upload template files</strong>';
-        }
-        dropZone.insertBefore(mobileHint, dropZone.firstChild);
-
-        borrowNode(dropZone, container);
-        const manageBtn = document.getElementById('gpp-lib-manage-btn');
-        if (manageBtn) borrowNode(manageBtn, container);
+        mirrorNode(document.getElementById('gpp-lib-manage-btn'), container);
 
         // "Use manual palette" -- per explicit user feedback (ReaCreations,
         // via Discord), lives here rather than the always-visible control
@@ -1637,11 +1764,10 @@
         // thumbnail tap alongside the other template-management controls
         // (upload/manage templates) instead of crowding that row with a
         // dedicated dropdown for one checkbox. Recreated fresh on every
-        // rebuild -- same as this column's borrowed-content siblings
-        // (buttonsGrid in buildPlaceholder1Content/buildPlaceholder3Content)
-        // -- because rebuildPlaceholderColumns() always clears this
-        // container's innerHTML first; state lives in _settings, not the
-        // DOM, so there's nothing to preserve across that wipe.
+        // rebuild -- same as this column's mirrored siblings -- because
+        // rebuildPlaceholderColumns() always clears this container's
+        // innerHTML first; state lives in _settings, not the DOM, so there's
+        // nothing to preserve across that wipe.
         const manualPaletteOption = document.createElement('label');
         manualPaletteOption.className = 'gpc-pmo-manual-palette-option';
         const manualPaletteInput = document.createElement('input');
@@ -1659,48 +1785,24 @@
         container.appendChild(manualPaletteOption);
     }
 
-    // Undoes buildPlaceholder2Content's mobile-only simplification of the
-    // real drop zone -- called right before it's actually sent home (see
-    // toggleNativeControlsForPlaceholders), not on every live-sync
-    // mid-cycle churn (rebuildPlaceholderColumns re-simplifies immediately
-    // after those anyway, so there's nothing to undo there). Only
-    // heading/hint ever get hidden now (see buildPlaceholder2Content's own
-    // comment) -- #gpp-url-upload-btn has nothing to restore.
-    function restoreDropZoneForDesktop() {
-        const heading = document.getElementById('gpp-drop-zone-heading');
-        const hint = document.getElementById('gpp-drop-zone-hint');
-        const mobileHint = document.getElementById('gpc-pmo-drop-zone-hint');
-        if (heading) heading.classList.remove('gpc-hidden');
-        if (hint) hint.classList.remove('gpc-hidden');
-        if (mobileHint) mobileHint.remove();
-    }
-
     // Placeholder 3: Place/Unset/Go to/Preview (2x2 grid, same layout
     // approach as placeholder 1's buttons) from gpp-placement.js's
     // gppRenderPositionTransform, then Lock Position / Group noise side by
-    // side with the real left/up/down/right nudge-arrow cluster (all
-    // already uniquely id'd there, no further source changes needed beyond
-    // this session's own #gpp-pt-nudge-row/#gpp-pt-opacity-row additions),
-    // then the real opacity slider below both. The "Manage templates"
-    // button lives in placeholder 2, under the drop zone -- see
-    // buildPlaceholder2Content.
+    // side with the left/up/down/right nudge-arrow cluster (all uniquely
+    // id'd there, which is what makes them findable), then the opacity
+    // slider below both -- every one a mirror of the real control. The
+    // "Manage templates" button lives in placeholder 2, under the drop
+    // zone -- see buildPlaceholder2Content.
     function buildPlaceholder3Content(container) {
         const ptContainer = document.getElementById('gpp-lib-current-pt');
-        const placeBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-place') : null;
-        const unsetBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-unset') : null;
-        const gotoBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-goto') : null;
-        const previewBtn = ptContainer ? ptContainer.querySelector('#gpp-pt-preview') : null;
-        const lockLabel = ptContainer ? ptContainer.querySelector('#gpp-pt-lock-label') : null;
-        const groupNoiseLabel = ptContainer ? ptContainer.querySelector('#gpp-pt-group-noise-label') : null;
-        const nudgeRow = ptContainer ? ptContainer.querySelector('#gpp-pt-nudge-row') : null;
-        const opacityRow = ptContainer ? ptContainer.querySelector('#gpp-pt-opacity-row') : null;
+        const pick = (id) => (ptContainer ? ptContainer.querySelector('#' + id) : null);
 
         const buttonsGrid = document.createElement('div');
         buttonsGrid.className = 'gpc-pmo-p-btn-grid';
-        [placeBtn, unsetBtn, gotoBtn, previewBtn].forEach((btn) => { if (btn) borrowNode(btn, buttonsGrid); });
+        ['gpp-pt-place', 'gpp-pt-unset', 'gpp-pt-goto', 'gpp-pt-preview'].forEach((id) => mirrorNode(pick(id), buttonsGrid));
         container.appendChild(buttonsGrid);
 
-        // Nudge arrows are borrowed WHOLESALE as one unit (not picked apart
+        // Nudge arrows are mirrored WHOLESALE as one unit (not picked apart
         // into a new grid like the buttons above) -- #gpp-pt-nudge-row's own
         // inline flex-wrap:wrap;gap:6px already arranges the 4 of them
         // exactly the way Ghost++ itself designed, nothing to reconstruct.
@@ -1708,28 +1810,28 @@
         checkboxAndNudgeRow.className = 'gpc-pmo-p3-checkbox-nudge-row';
         const checkboxWrap = document.createElement('div');
         checkboxWrap.className = 'gpc-pmo-p3-checkboxes';
-        if (lockLabel) borrowNode(lockLabel, checkboxWrap);
-        if (groupNoiseLabel) borrowNode(groupNoiseLabel, checkboxWrap);
+        mirrorNode(pick('gpp-pt-lock-label'), checkboxWrap);
+        mirrorNode(pick('gpp-pt-group-noise-label'), checkboxWrap);
         checkboxAndNudgeRow.appendChild(checkboxWrap);
-        if (nudgeRow) borrowNode(nudgeRow, checkboxAndNudgeRow);
+        mirrorNode(pick('gpp-pt-nudge-row'), checkboxAndNudgeRow);
         container.appendChild(checkboxAndNudgeRow);
 
-        if (opacityRow) borrowNode(opacityRow, container);
+        mirrorNode(pick('gpp-pt-opacity-row'), container);
     }
 
     // Triggered by tapping .gpp-lib-thumb-canvas (the preview thumbnail
     // itself, see getTemplatePreviewCanvas above) -- a menu switcher
     // between two states, using this file's usual display:none-via-class
     // convention for the two containers that just toggle visibility (never
-    // removed from the DOM), plus the borrow/return mechanism above for the
-    // real Ghost++ content that has to actually move:
+    // removed from the DOM), plus the mirroring mechanism above for the
+    // real Ghost++ controls shown in the placeholder columns:
     //   - Native: #gpc-native-top-bar and .gpc-pmo-controls-row visible,
     //     #gpc-pmo-placeholder-group hidden (the default/starting state).
     //   - Placeholders: the reverse, with p1/p2/p3 freshly (re)populated by
-    //     borrowing from Ghost++'s real panels each time -- switching case
-    //     it back to native returns everything and empties p1/p2/p3 again,
-    //     so a later switch back to placeholders always borrows current
-    //     data rather than showing whatever was true the last time.
+    //     mirroring Ghost++'s real panels each time -- switching back to
+    //     native discards the mirrors and empties p1/p2/p3 again, so a
+    //     later switch back to placeholders always mirrors current data
+    //     rather than showing whatever was true the last time.
     // The group and its 3 column divs are created lazily on first use and,
     // once created, persist across toggles as stable containers -- only
     // their contents and .gpc-hidden class change after that. Current state
@@ -1788,11 +1890,9 @@
             // showing just means it keeps the palette-view toggle in sync
             // (its own separate, always-relevant concern) and no-ops on the
             // p1/p2/p3 half.
-            restoreDropZoneForDesktop();
-            returnBorrowedNodes();
             ['gpc-pmo-scan-panel', 'gpc-pmo-upload-panel', 'gpc-pmo-placement-panel'].forEach((id) => {
                 const el = document.getElementById(id);
-                if (el) el.innerHTML = ''; // clears our own now-empty wrapper divs (button grids, checkbox stacks) left behind
+                if (el) el.innerHTML = ''; // discards the mirrors and our own wrapper divs (button grids, checkbox stacks)
             });
         }
 
@@ -1808,14 +1908,11 @@
 
     // ── Larger-preview modal (eye icon on .gpc-pmo-preview-frame) ───────
     // A genuine standalone modal, built fresh on every open and torn down on
-    // close -- unlike everything else this file borrows from the real
-    // Ghost++ modal, nothing here is borrowed DOM. Two reasons: (1) this can
-    // be opened while placeholder mode is ALSO showing (with the real
-    // #gpp-scan-bar-outer/#gpp-scan-summary-line already borrowed into p1),
-    // and borrowing the same singleton elements a second place at once would
-    // either rip them out of p1 or require yet another live-sync concern --
-    // exactly the kind of observer/borrow proliferation that caused the
-    // real page-freeze regression earlier in this feature's history; (2)
+    // close -- unlike the placeholder columns, nothing here is a mirror of
+    // Ghost++ DOM. Two reasons: (1) it would need its own live-sync concern
+    // on top of the placeholder columns' -- exactly the kind of observer
+    // proliferation that caused the real page-freeze regression earlier in
+    // this feature's history; (2)
     // everything shown here (a progress bar's segment widths, its summary
     // text, the color list) is pure, stateless formatting of already-real
     // data (template.scanSummary, template.palette), the same category of
@@ -1881,6 +1978,10 @@
                 notPlacedSeg.style.cssText = `width:${pct(notPlaced)}%; background:${t2('#94a3b8', '#6c7086')};`;
                 notPlacedSeg.title = `Not yet placed: ${notPlaced.toLocaleString()} px`;
                 barOuter.appendChild(notPlacedSeg);
+
+                // Same entry point to the per-painter leaderboard as the real
+                // Progress bar (gpp-contributions.js); it opens above this modal.
+                if (typeof gppContribMakeBarClickable === 'function') gppContribMakeBarClickable(barOuter, template);
 
                 const donePct = Math.round(pct(summary.correct));
                 summaryLine.textContent = `${summary.correct.toLocaleString()} completed of ${total.toLocaleString()} total (${donePct}%)`
@@ -2045,8 +2146,8 @@
         const colourLookup = (typeof gppPaletteBuildColourLookup === 'function') ? gppPaletteBuildColourLookup(template) : null;
         const hasProgress = !!template.scanSummary;
         // Mirrors gpp-palette.js's own buildSwatch check exactly -- the SAME
-        // gppSettings.paletteViewMode the borrowed Grid/List toggle (see
-        // borrowPaletteViewToggle) writes to, so this grid switches to list
+        // gppSettings.paletteViewMode the mirrored Grid/List toggle (see
+        // mirrorPaletteViewToggle) writes to, so this grid switches to list
         // mode in lockstep with it. Re-read fresh on every call here (every
         // template switch, same as everything else in this function), not
         // cached -- resync()'s own "sameEverything" fast path already
@@ -2344,15 +2445,12 @@
 
         wrap.appendChild(grid);
 
-        // Palette view toggle (Grid/List) -- see the borrowPaletteViewToggle/
-        // startGhostModalLiveSync blocks above for the full picture.
-        // Returned-then-reborrowed on every call here (a template switch),
-        // same discipline as rebuildPlaceholderColumns uses for p1/p2/p3 --
-        // the OLD wrap (and whatever it's currently holding) is about to be
-        // discarded via showCompactGrid's replaceWith, so the toggle needs
-        // to be reclaimed before that happens, not left to go down with it.
-        returnBorrowedNodes(viewToggleBorrowedNodes);
-        borrowPaletteViewToggle(wrap);
+        // Palette view toggle (Grid/List) -- see the mirrorPaletteViewToggle/
+        // startGhostModalLiveSync blocks above for the full picture. A fresh
+        // mirror goes into every new wrap built here (a template switch);
+        // the OLD wrap's mirror is discarded along with it via
+        // showCompactGrid's replaceWith.
+        mirrorPaletteViewToggle(wrap);
         startGhostModalLiveSync();
 
         // Small live preview of the focused template's own ghost image, to
@@ -3109,7 +3207,7 @@
         if (!liveState) return;
         // Keeps the shared stylesheet (control row buttons/menus, and the
         // #gpc-pmo-placeholder-group overrides for whatever's currently
-        // borrowed into p1/p2/p3) live-refreshed on the SAME cadence as
+        // mirrored into p1/p2/p3) live-refreshed on the SAME cadence as
         // everything else resync() already reacts to -- previously
         // injectStyle() only ever ran from inside buildTemplatePaletteGrid,
         // which this function only calls when the focused template or its
@@ -3131,7 +3229,7 @@
         // matching gpp-palette-gray-disabled toggle in
         // buildTemplatePaletteGrid for the initial-render half of this.
         if (liveState.grid) liveState.grid.classList.toggle('gpp-palette-gray-disabled', gppSettings.grayDisabledSwatches !== false);
-        retintBorrowedScanButtons();
+        retintMirroredScanButtons();
         // Grid/placeholder rebuilds can add or remove rows. Re-measure on the
         // next frame so the unscaled surface tracks the scaled content height
         // without ever taking over its width.
@@ -3142,14 +3240,7 @@
             leaveEnableSelectedMode();
             liveState.scanSummaryRef = null;
             if (liveState.wrap) {
-                // Reclaim the borrowed palette-view toggle BEFORE the wrap
-                // holding it gets removed -- otherwise it would silently go
-                // down with it (detached, not returned to its real gpp-
-                // view-settings-section home), leaving that section missing
-                // its Grid/List row if the real Ghost++ modal is ever opened
-                // afterward.
-                returnBorrowedNodes(viewToggleBorrowedNodes);
-                liveState.wrap.remove();
+                liveState.wrap.remove(); // takes its palette-view MIRROR down with it; the real row stays in View Settings
                 // Restore visibility rather than re-inserting the node --
                 // it was never removed from the DOM (see showCompactGrid
                 // below), only hidden, so the native site's own periodic
@@ -3182,8 +3273,8 @@
         const orderKey = order.join(',');
         // Mirrors gpp-palette.js's own listMode check (gppSettings.
         // paletteViewMode === 'list') -- included in sameEverything on
-        // purpose: toggling the borrowed Grid/List button (see
-        // borrowPaletteViewToggle) doesn't touch the template or its
+        // purpose: toggling the mirrored Grid/List button (see
+        // mirrorPaletteViewToggle) doesn't touch the template or its
         // visible order, so without this a Grid<->List switch with no
         // accompanying template switch would silently stay on the fast
         // path below forever and this grid would never actually pick up

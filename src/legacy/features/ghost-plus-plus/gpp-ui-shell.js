@@ -338,6 +338,18 @@
                 background: ${t2('#111827', '#11111b')}; color: #f5f5f5;
                 box-shadow: 0 8px 20px ${t2('rgba(15,23,42,.28)', 'rgba(0,0,0,.6)')};
             }
+            /* The Progress section's scan bar, once it opens the contributions
+               leaderboard (gpp-contributions.js): a pointer cursor and a hover/
+               focus ring so it reads as clickable. box-shadow rather than an
+               outline/border so the bar's own overflow:hidden rounded box is
+               untouched. Class-based on purpose — Painting Menu Overhaul's
+               mirror of the bar keeps the class and inherits this. */
+            .gpp-scan-bar-clickable {
+                cursor: pointer; transition: box-shadow .15s, filter .15s;
+            }
+            .gpp-scan-bar-clickable:hover, .gpp-scan-bar-clickable:focus-visible {
+                box-shadow: 0 0 0 2px ${t2('#2563eb', '#89b4fa')}; filter: brightness(1.08); outline: none;
+            }
         `;
     }
 
