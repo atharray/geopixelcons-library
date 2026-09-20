@@ -3532,6 +3532,133 @@ function buildDriverScript() {
     L.push('    return "Painting Menu Overhaul centers its control row, preserves native bar width, sees Simple Black at first mount, exposes a default-off Selected-only highlight, cancels stale A -> B lookups, rebuilds compact status, and asks Paint Menu Controls to remeasure its independently-owned fixed-width scale surface";');
     L.push('  });');
     L.push('');
+    // ---- item painting-menu-overhaul.mirrors-keep-ghost-modal-intact ----
+    // Regression guard for the reported "Ghost++ loses its buttons on
+    // Painting Menu Overhaul page 2" bug: the placeholder columns used to
+    // MOVE the real Ghost++ nodes into #gpc-pmo-placeholder-group, so with
+    // the Ghost++ modal open at the same time its Progress section was left
+    // with only Clear/Autoscan and Template Settings with only X/Y. They
+    // are now MIRRORS (mobile-painting.js's mirrorNode: a clone with
+    // prefixed ids that forwards every interaction to the live original).
+    // Enters placeholder mode with the modal shell present and checks, for
+    // every mirrored control: the original is still inside #gpp-modal, no
+    // element inside the placeholder group carries an original Ghost++
+    // id, and forwarding works for each interaction kind -- a button
+    // click (Show errors -> template flag + alert, mirror re-renders to
+    // "Hide errors"), a checkbox (Group noise -> template.groupNoise),
+    // a slider 'input' (Opacity -> template.opacity, live value readout on
+    // the mirror), an attribute-only state change (Preview's
+    // .gpp-pt-btn-active, picked up by the observer's attribute watch),
+    // the palette-view Grid/List toggle (settings + active class), and the
+    // drop zone (a mirror click reaches the real #gpp-file-input.click()).
+    L.push('  await step("painting-menu-overhaul.mirrors-keep-ghost-modal-intact", async function() {');
+    L.push('    var modal = document.getElementById("gpp-modal");');
+    L.push('    var previewCanvas = document.querySelector(".gpc-pmo-preview-frame canvas");');
+    L.push('    if (!modal || !previewCanvas) throw new Error("test setup: modal shell or Painting Menu Overhaul preview canvas missing");');
+    L.push('    var savedViewMode = gppSettings.paletteViewMode;');
+    L.push('    previewCanvas.click();');
+    L.push('    var group = null;');
+    L.push('    var opened = await waitFor(function() { group = document.getElementById("gpc-pmo-placeholder-group"); return group && !group.classList.contains("gpc-hidden") && !!group.querySelector("[data-gpc-mirror-of=gpp-scan-btn-scan]"); }, 5000);');
+    L.push('    if (!opened) throw new Error("placeholder mode did not open with a mirrored Scan progress button");');
+    L.push('    var tick = function() { return new Promise(function(r) { setTimeout(r, 0); }); };');
+    L.push('    var mirror = function(id) { return group.querySelector("[data-gpc-mirror-of=" + id + "]"); };');
+    L.push('');
+    L.push('    var originals = ["gpp-scan-bar-outer", "gpp-scan-summary-line", "gpp-scan-btn-scan", "gpp-scan-btn-show-err", "gpp-scan-btn-show-miss", "gpp-scan-btn-nearest", "gpp-drop-zone", "gpp-drop-zone-heading", "gpp-file-input", "gpp-lib-manage-btn", "gpp-pt-place", "gpp-pt-unset", "gpp-pt-goto", "gpp-pt-preview", "gpp-pt-lock-label", "gpp-pt-group-noise-label", "gpp-pt-nudge-row", "gpp-pt-opacity-row", "gpp-pt-opacity", "gpp-vs-palette-view-row"];');
+    L.push('    originals.forEach(function(id) {');
+    L.push('      var el = document.getElementById(id);');
+    L.push('      if (!el) throw new Error("REGRESSION: #" + id + " is gone from the document while placeholder mode is showing");');
+    L.push('      if (!modal.contains(el)) throw new Error("REGRESSION: #" + id + " was moved out of the Ghost++ modal by placeholder mode (found under " + (el.parentElement && el.parentElement.id) + ")");');
+    L.push('      if (group.contains(el)) throw new Error("REGRESSION: the real #" + id + " sits inside the placeholder group");');
+    L.push('    });');
+    L.push('    var heading = document.getElementById("gpp-drop-zone-heading");');
+    L.push('    if (heading.classList.contains("gpc-hidden")) throw new Error("REGRESSION: the real drop zone heading was hidden in the Ghost++ modal");');
+    L.push('    ["gpp-scan-btn-scan", "gpp-scan-btn-show-err", "gpp-scan-btn-show-miss", "gpp-scan-btn-nearest", "gpp-drop-zone", "gpp-lib-manage-btn", "gpp-pt-place", "gpp-pt-preview", "gpp-pt-group-noise", "gpp-pt-opacity", "gpp-pt-opacity-value"].forEach(function(id) {');
+    L.push('      if (!mirror(id)) throw new Error("placeholder group has no mirror of #" + id);');
+    L.push('      if (document.getElementById("gpc-pmo-mirror-" + id) !== mirror(id)) throw new Error("mirror of #" + id + " does not carry the prefixed id gpc-pmo-mirror-" + id);');
+    L.push('    });');
+    L.push('    var mirrorZone = mirror("gpp-drop-zone");');
+    L.push('    if (mirrorZone.querySelector("[data-gpc-mirror-of=gpp-file-input]")) throw new Error("the drop-zone mirror kept a copy of the hidden file input");');
+    L.push('    if (!mirrorZone.querySelector("#gpc-pmo-drop-zone-hint")) throw new Error("the drop-zone mirror is missing its short mobile hint");');
+    L.push('');
+    L.push('    // Button click forwarding: Show errors.');
+    L.push('    var wasWrong = !!template._gppShowWrong;');
+    L.push('    window.__alerts.length = 0;');
+    L.push('    mirror("gpp-scan-btn-show-err").click();');
+    L.push('    if (!!template._gppShowWrong === wasWrong) throw new Error("REGRESSION: clicking the mirrored Show errors button did not reach the real button\'s handler");');
+    L.push('    if (window.__alerts.length !== 1) throw new Error("expected the real Show errors handler to push exactly 1 alert through the mirror, got " + window.__alerts.length);');
+    L.push('    var relabelled = await waitFor(function() { var m = mirror("gpp-scan-btn-show-err"); return m && m.textContent === (wasWrong ? "Show errors" : "Hide errors"); }, 3000);');
+    L.push('    if (!relabelled) throw new Error("REGRESSION: the Show errors mirror did not re-mirror to " + (wasWrong ? "Show errors" : "Hide errors") + " after the real section re-rendered, got " + mirror("gpp-scan-btn-show-err").textContent);');
+    L.push('    mirror("gpp-scan-btn-show-err").click();'); // restore
+    L.push('    if (!!template._gppShowWrong !== wasWrong) throw new Error("second mirrored Show errors click did not toggle the flag back");');
+    L.push('    await waitFor(function() { var m = mirror("gpp-scan-btn-show-err"); return m && m.textContent === (wasWrong ? "Hide errors" : "Show errors"); }, 3000);');
+    L.push('');
+    L.push('    // Checkbox forwarding: Group noise.');
+    L.push('    var wasGroupNoise = !!template.groupNoise;');
+    L.push('    mirror("gpp-pt-group-noise").click();');
+    L.push('    if (!!template.groupNoise === wasGroupNoise) throw new Error("REGRESSION: toggling the mirrored Group noise checkbox did not reach the real checkbox\'s change handler");');
+    L.push('    if (!!document.getElementById("gpp-pt-group-noise").checked === wasGroupNoise) throw new Error("the real Group noise checkbox did not flip");');
+    L.push('    var gnSynced = await waitFor(function() { var m = mirror("gpp-pt-group-noise"); return m && !!m.checked === !wasGroupNoise; }, 3000);');
+    L.push('    if (!gnSynced) throw new Error("the Group noise mirror did not reflect the real checkbox after its re-render");');
+    L.push('    mirror("gpp-pt-group-noise").click();'); // restore
+    L.push('    if (!!template.groupNoise !== wasGroupNoise) throw new Error("second mirrored Group noise click did not restore template.groupNoise");');
+    L.push('    await waitFor(function() { var m = mirror("gpp-pt-group-noise"); return m && !!m.checked === wasGroupNoise; }, 3000);');
+    L.push('');
+    L.push('    // Slider forwarding: Opacity input, with a live value readout on the mirror.');
+    L.push('    var savedOpacity = template.opacity;');
+    L.push('    var mirrorOpacity = mirror("gpp-pt-opacity");');
+    L.push('    mirrorOpacity.value = "40";');
+    L.push('    mirrorOpacity.dispatchEvent(new Event("input", { bubbles: true }));');
+    L.push('    if (Math.abs(template.opacity - 0.4) > 1e-9) throw new Error("REGRESSION: dragging the mirrored Opacity slider did not reach the real slider\'s input handler (template.opacity=" + template.opacity + ")");');
+    L.push('    if (mirror("gpp-pt-opacity-value").textContent !== "40%") throw new Error("the mirrored opacity readout did not update live, got " + mirror("gpp-pt-opacity-value").textContent);');
+    L.push('    await tick();');
+    L.push('    var restoreValue = String(Math.round(savedOpacity * 100));');
+    L.push('    mirrorOpacity = mirror("gpp-pt-opacity");');
+    L.push('    mirrorOpacity.value = restoreValue;');
+    L.push('    mirrorOpacity.dispatchEvent(new Event("input", { bubbles: true }));');
+    L.push('    mirrorOpacity.dispatchEvent(new Event("change", { bubbles: true }));');
+    L.push('    if (Math.abs(template.opacity - savedOpacity) > 1e-9) throw new Error("restoring opacity through the mirror failed");');
+    L.push('    await tick();');
+    L.push('');
+    L.push('    // Attribute-only state: Preview toggles .gpp-pt-btn-active on the real button without any re-render.');
+    L.push('    var previewWasActive = document.getElementById("gpp-pt-preview").classList.contains("gpp-pt-btn-active");');
+    L.push('    mirror("gpp-pt-preview").click();');
+    L.push('    if (document.getElementById("gpp-pt-preview").classList.contains("gpp-pt-btn-active") === previewWasActive) throw new Error("REGRESSION: clicking the mirrored Preview button did not reach the real button");');
+    L.push('    var previewSynced = await waitFor(function() { var m = mirror("gpp-pt-preview"); return m && m.classList.contains("gpp-pt-btn-active") === !previewWasActive; }, 3000);');
+    L.push('    if (!previewSynced) throw new Error("REGRESSION: the Preview mirror did not pick up the real button\'s class-only state change");');
+    L.push('    mirror("gpp-pt-preview").click();'); // restore
+    L.push('    await waitFor(function() { var m = mirror("gpp-pt-preview"); return m && m.classList.contains("gpp-pt-btn-active") === previewWasActive; }, 3000);');
+    L.push('');
+    L.push('    // Palette-view Grid/List toggle: mirrored next to the compact grid, real row stays in View Settings.');
+    L.push('    var col = document.getElementById("gpc-pmo-view-controls");');
+    L.push('    var rowMirror = col && col.querySelector("[data-gpc-mirror-of=gpp-vs-palette-view-row]");');
+    L.push('    if (!rowMirror) throw new Error("the palette-view toggle row is not mirrored into the compact grid\'s view-controls column");');
+    L.push('    if (col.contains(document.getElementById("gpp-vs-palette-view-row"))) throw new Error("REGRESSION: the real palette-view row was moved into the compact grid");');
+    L.push('    gppSettings.paletteViewMode = "grid";');
+    L.push('    col.querySelector("[data-gpc-mirror-of=gpp-vs-palette-view-list]").click();');
+    L.push('    if (gppSettings.paletteViewMode !== "list") throw new Error("REGRESSION: clicking the mirrored List button did not reach the real button");');
+    L.push('    var listSynced = await waitFor(function() { var b = col.querySelector("[data-gpc-mirror-of=gpp-vs-palette-view-list]"); return b && b.classList.contains("gpp-vs-view-btn-active"); }, 3000);');
+    L.push('    if (!listSynced) throw new Error("the List mirror did not show the active state after the real row re-rendered");');
+    L.push('    col.querySelector("[data-gpc-mirror-of=gpp-vs-palette-view-grid]").click();');
+    L.push('    if (gppSettings.paletteViewMode !== "grid") throw new Error("clicking the mirrored Grid button did not restore grid mode");');
+    L.push('    await tick();');
+    L.push('');
+    L.push('    // Drop zone: a click on the mirror must open the picker through the REAL hidden file input.');
+    L.push('    var fileInput = document.getElementById("gpp-file-input");');
+    L.push('    var clickCount = 0;');
+    L.push('    var origClick = fileInput.click;');
+    L.push('    fileInput.click = function() { clickCount++; };');
+    L.push('    try { mirror("gpp-drop-zone").querySelector("#gpc-pmo-drop-zone-hint").click(); } finally { fileInput.click = origClick; }');
+    L.push('    if (clickCount !== 1) throw new Error("REGRESSION: clicking the mirrored drop zone reached the real file input " + clickCount + " time(s), expected exactly 1");');
+    L.push('');
+    L.push('    previewCanvas.click();');
+    L.push('    var closed = await waitFor(function() { return group.classList.contains("gpc-hidden"); }, 5000);');
+    L.push('    if (!closed) throw new Error("placeholder mode did not close");');
+    L.push('    if (group.querySelector("[data-gpc-mirror-of]")) throw new Error("mirrors were not discarded when switching back to native controls");');
+    L.push('    originals.forEach(function(id) { var el = document.getElementById(id); if (!el || !modal.contains(el)) throw new Error("#" + id + " is missing from the Ghost++ modal after leaving placeholder mode"); });');
+    L.push('    gppSettings.paletteViewMode = savedViewMode; gppState.saveSettings();');
+    L.push('    return "placeholder mode mirrors every Ghost++ control instead of moving it: all originals stayed inside #gpp-modal (no original id inside the placeholder group, drop-zone heading untouched), and forwarding worked for a button click (Show errors + alert, mirror relabelled), a checkbox (Group noise), a slider input (Opacity with live readout), an attribute-only change (Preview active class), the Grid/List toggle, and the drop zone (real file input clicked once); mirrors are discarded on the way back";');
+    L.push('  });');
+    L.push('');
     L.push('  var resultEl = document.getElementById("test-result");');
     L.push('  resultEl.dataset.status = "done";');
     L.push('  var payload = {');

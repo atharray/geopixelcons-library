@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.15.0';
+    const VERSION = '2.15.1';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1431,6 +1431,13 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.15.1',
+            date: '2026-09-20',
+            items: [
+                { type: 'fixed', text: 'Painting Menu Overhaul: the Ghost++ window no longer loses its buttons (Scan progress, Show errors / Show missing, Nearest error, Place / Unset / Go to / Preview, Lock Position, Group noise, nudge arrows, Opacity, the upload box, Manage, and the Grid / List toggle) while the compact menu’s second page is showing — that page now shows live copies of those controls instead of taking the real ones away, so both can be used at once' },
+            ]
+        },
         {
             version: '2.15.0',
             date: '2026-09-18',
