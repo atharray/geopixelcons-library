@@ -578,6 +578,10 @@
             #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-scan-bar-outer {
                 background: ${tc('#e5e7eb', '#313244')} !important;
             }
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-scan-bar-outer.gpp-scan-bar-clickable:hover,
+            #gpc-pmo-placeholder-group #gpc-pmo-mirror-gpp-scan-bar-outer.gpp-scan-bar-clickable:focus-visible {
+                box-shadow: 0 0 0 2px ${tc('#2563eb', '#89b4fa')} !important;
+            }
             .gpp-swatch {
                 position: relative; aspect-ratio: 1 / 1; min-height: 15px; border-radius: 4px;
                 border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
@@ -1198,10 +1202,23 @@
             // 'change' below -- forwarding this click as well would toggle
             // the original twice.
             if (target.closest('label') || target.matches('input, select')) return;
-            const actionable = target.closest('button, a, [' + MIRROR_ATTR + '="gpp-drop-zone"]');
+            const actionable = target.closest('button, a, [role="button"], [' + MIRROR_ATTR + '="gpp-drop-zone"]');
             if (!actionable || !clone.contains(actionable)) return;
             const original = mirrorOriginalOf(actionable);
             if (!original || original.disabled) return;
+            original.click();
+            scheduleMirrorSync(clone);
+        });
+        // Keyboard activation of a mirrored non-<button> control (the scan
+        // bar is a div with role=button) — real buttons already get this
+        // from the browser as a click.
+        clone.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const target = event.target instanceof Element ? event.target.closest('[role="button"]') : null;
+            if (!target || !clone.contains(target)) return;
+            const original = mirrorOriginalOf(target);
+            if (!original) return;
+            event.preventDefault();
             original.click();
             scheduleMirrorSync(clone);
         });
@@ -1961,6 +1978,10 @@
                 notPlacedSeg.style.cssText = `width:${pct(notPlaced)}%; background:${t2('#94a3b8', '#6c7086')};`;
                 notPlacedSeg.title = `Not yet placed: ${notPlaced.toLocaleString()} px`;
                 barOuter.appendChild(notPlacedSeg);
+
+                // Same entry point to the per-painter leaderboard as the real
+                // Progress bar (gpp-contributions.js); it opens above this modal.
+                if (typeof gppContribMakeBarClickable === 'function') gppContribMakeBarClickable(barOuter, template);
 
                 const donePct = Math.round(pct(summary.correct));
                 summaryLine.textContent = `${summary.correct.toLocaleString()} completed of ${total.toLocaleString()} total (${donePct}%)`

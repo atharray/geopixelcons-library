@@ -80,6 +80,7 @@ const GPP_FILES = [
     'gpp-native-shim.js',
     'gpp-placement.js',
     'gpp-scan.js',
+    'gpp-contributions.js',
     'gpp-palette.js',
     'gpp-library.js',
     'gpp-view-settings.js',
@@ -3657,6 +3658,107 @@ function buildDriverScript() {
     L.push('    originals.forEach(function(id) { var el = document.getElementById(id); if (!el || !modal.contains(el)) throw new Error("#" + id + " is missing from the Ghost++ modal after leaving placeholder mode"); });');
     L.push('    gppSettings.paletteViewMode = savedViewMode; gppState.saveSettings();');
     L.push('    return "placeholder mode mirrors every Ghost++ control instead of moving it: all originals stayed inside #gpp-modal (no original id inside the placeholder group, drop-zone heading untouched), and forwarding worked for a button click (Show errors + alert, mirror relabelled), a checkbox (Group noise), a slider input (Opacity with live readout), an attribute-only change (Preview active class), the Grid/List toggle, and the drop zone (real file input clicked once); mirrors are discarded on the way back";');
+    L.push('  });');
+    L.push('');
+    // ---- item contributions.leaderboard-from-scan ----
+    // Regression guard for gpp-contributions.js: clicking the Progress
+    // section's scan bar opens the per-painter leaderboard computed
+    // STRICTLY from the last scan. A 2x2 template (three opaque cells, one
+    // transparent) is placed at (0,1) so both rows land in tile (0,0), its
+    // scanSummary is fabricated as [CORRECT, WRONG, CORRECT, UNCHECKED],
+    // and a hand-built userBitmap paints user 7 on the first two cells and
+    // user 9 on the other two -- including the TRANSPARENT cell, which must
+    // not count (Regions Highscore would count it; this must not). Expected:
+    // Bob (9) 1 correct / 0 wrong ranks first (fewer wrong on the tie), Alice
+    // (7) 1 correct / 1 wrong second, summary 2 painters / 2 correct / 1
+    // wrong. Username lookups are stubbed at window.fetch. Also checks the
+    // bar's clickable affordance (class/role/title), Escape closing, and
+    // that the Painting Menu Overhaul mirror of the bar opens the same modal.
+    L.push('  await step("contributions.leaderboard-from-scan", async function() {');
+    L.push('    var priorFocused = gppState.focusedTemplateId;');
+    L.push('    var c = document.createElement("canvas");');
+    L.push('    c.width = 2; c.height = 2;');
+    L.push('    var ctx = c.getContext("2d");');
+    L.push('    ctx.fillStyle = "rgb(255,0,0)"; ctx.fillRect(0, 0, 2, 1);'); // row 0: red, red
+    L.push('    ctx.fillStyle = "rgb(0,0,255)"; ctx.fillRect(0, 1, 1, 1);'); // row 1: blue, (transparent)
+    L.push('    var blob = await new Promise(function(r) { c.toBlob(r, "image/png"); });');
+    L.push('    var contribTemplate = await gppState.ingestImageFile(new File([blob], "gpp-fixture-contrib.png", { type: "image/png" }));');
+    L.push('    if (contribTemplate.width !== 2 || contribTemplate.height !== 2) throw new Error("test setup: expected a 2x2 template");');
+    L.push('    contribTemplate.position = { gridX: 0, gridY: 1 };'); // rows -> gridY 1 and 0, both inside tile (0,0)
+    L.push('    contribTemplate.opacity = 1;');
+    L.push('    await gppState.persistTemplateState(contribTemplate);');
+    L.push('    await gppState.focusTemplate(contribTemplate.id);');
+    L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test setup: load-time scan never finished");');
+    L.push('    var ERROR_STATE = core.constants.ERROR_STATE;');
+    L.push('    var empty = core.emptyValue(contribTemplate.indexType);');
+    L.push('    if (contribTemplate.indices[3] !== empty) throw new Error("test setup: cell (1,1) should be transparent");');
+    L.push('    var states = new Uint8Array([ERROR_STATE.CORRECT, ERROR_STATE.WRONG, ERROR_STATE.CORRECT, ERROR_STATE.UNCHECKED]);');
+    L.push('    contribTemplate.scanSummary = { scannedAt: new Date().toISOString(), total: 3, correct: 2, wrong: 1, missing: 0, unknown: 0, perColour: [], states: states };');
+    L.push('    var uc = document.createElement("canvas"); uc.width = 1000; uc.height = 1000;');
+    L.push('    var uctx = uc.getContext("2d"); uctx.clearRect(0, 0, 1000, 1000);');
+    L.push('    uctx.fillStyle = "rgb(0,0,7)"; uctx.fillRect(0, 1, 2, 1);'); // grid (0,1),(1,1) = template row 0 -> user 7
+    L.push('    uctx.fillStyle = "rgb(0,0,9)"; uctx.fillRect(0, 0, 2, 1);'); // grid (0,0),(1,0) = template row 1 -> user 9 (incl. the transparent cell)
+    L.push('    var userBitmap = await createImageBitmap(uc);');
+    L.push('    var prevTile = tileImageCache.get("0,0") || {};');
+    L.push('    tileImageCache.set("0,0", Object.assign({}, prevTile, { userBitmap: userBitmap }));');
+    L.push('    var realFetch = window.fetch;');
+    L.push('    var lookups = [];');
+    L.push('    window.fetch = function(url, opts) {');
+    L.push('      if (String(url).indexOf("GetUserProfile") !== -1) {');
+    L.push('        var id = JSON.parse(opts.body).targetId; lookups.push(id);');
+    L.push('        var name = id === 7 ? "Alice" : id === 9 ? "Bob" : null;');
+    L.push('        return Promise.resolve({ ok: !!name, json: function() { return Promise.resolve({ name: name }); } });');
+    L.push('      }');
+    L.push('      return Promise.reject(new Error("fixture: unexpected fetch " + url));');
+    L.push('    };');
+    L.push('    try {');
+    L.push('      gppRequestUiRefresh();');
+    L.push('      var bar = await waitFor(function() { var b = document.getElementById("gpp-scan-bar-outer"); return b && b.classList.contains("gpp-scan-bar-clickable") ? b : false; }, 3000) && document.getElementById("gpp-scan-bar-outer");');
+    L.push('      if (!bar) throw new Error("the scan bar did not become clickable for a scanned template");');
+    L.push('      if (bar.getAttribute("role") !== "button" || !bar.title || bar.tabIndex !== 0) throw new Error("clickable scan bar is missing role=button / title / tabIndex");');
+    L.push('      if (getComputedStyle(bar).cursor !== "pointer") throw new Error("clickable scan bar does not show a pointer cursor, got " + getComputedStyle(bar).cursor);');
+    L.push('      bar.click();');
+    L.push('      var opened = await waitFor(function() { return !!document.getElementById("gpp-contrib-modal-container"); }, 3000);');
+    L.push('      if (!opened) throw new Error("clicking the scan bar did not open the contributions modal");');
+    L.push('      var tabled = await waitFor(function() { return !!document.getElementById("gpp-contrib-table"); }, 8000);');
+    L.push('      if (!tabled) throw new Error("contributions modal never rendered its table; progress text: " + (document.getElementById("gpp-contrib-progress-text") || {}).textContent + "; content: " + document.getElementById("gpp-contrib-modal-content").textContent);');
+    L.push('      var rows = Array.from(document.querySelectorAll("#gpp-contrib-table tbody tr")).map(function(tr) { return Array.from(tr.children).map(function(td) { return td.textContent.trim(); }); });');
+    L.push('      if (rows.length !== 2) throw new Error("expected 2 painter rows, got " + rows.length + ": " + JSON.stringify(rows));');
+    L.push('      if (rows[0][1] !== "Bob" || rows[0][2] !== "1" || rows[0][3] !== "0") throw new Error("rank 1 should be Bob with 1 correct / 0 incorrect, got " + JSON.stringify(rows[0]));');
+    L.push('      if (rows[1][1] !== "Alice" || rows[1][2] !== "1" || rows[1][3] !== "1") throw new Error("rank 2 should be Alice with 1 correct / 1 incorrect, got " + JSON.stringify(rows[1]));');
+    L.push('      if (!/^\\S+ 1$/.test(rows[0][0]) || rows[1][0].indexOf("2") === -1) throw new Error("rank cells unexpected: " + JSON.stringify([rows[0][0], rows[1][0]]));');
+    L.push('      var summaryText = document.getElementById("gpp-contrib-summary").textContent;');
+    L.push('      if (summaryText.indexOf("2 painters placed 2 correct pixels and 1 wrong-colour pixel on this template") === -1) throw new Error("summary text unexpected: " + summaryText);');
+    L.push('      if (summaryText.indexOf("could not be attributed") !== -1) throw new Error("nothing should be unattributed with the tile cached: " + summaryText);');
+    L.push('      if (lookups.length !== 2) throw new Error("expected exactly one username lookup per painter (2), got " + lookups.length);');
+    L.push('      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));');
+    L.push('      if (document.getElementById("gpp-contrib-modal-container")) throw new Error("Escape did not close the contributions modal");');
+    L.push('');
+    L.push('      // Painting Menu Overhaul: the mirrored bar on page 2 opens the same modal.');
+    L.push('      var previewCanvas = document.querySelector(".gpc-pmo-preview-frame canvas");');
+    L.push('      if (!previewCanvas) throw new Error("test setup: Painting Menu Overhaul preview canvas missing after focusing the contributions template");');
+    L.push('      previewCanvas.click();');
+    L.push('      var mirrorBar = null;');
+    L.push('      var mirrored = await waitFor(function() { var g = document.getElementById("gpc-pmo-placeholder-group"); mirrorBar = g && !g.classList.contains("gpc-hidden") ? g.querySelector("[data-gpc-mirror-of=gpp-scan-bar-outer]") : null; return !!(mirrorBar && mirrorBar.classList.contains("gpp-scan-bar-clickable")); }, 5000);');
+    L.push('      if (!mirrored) throw new Error("placeholder mode did not show a clickable mirror of the scan bar");');
+    L.push('      mirrorBar.click();');
+    L.push('      var openedViaMirror = await waitFor(function() { return !!document.getElementById("gpp-contrib-modal-container"); }, 3000);');
+    L.push('      if (!openedViaMirror) throw new Error("REGRESSION: clicking the mirrored scan bar did not open the contributions modal");');
+    L.push('      await waitFor(function() { return !!document.getElementById("gpp-contrib-table"); }, 8000);');
+    L.push('      document.getElementById("gpp-contrib-close").click();');
+    L.push('      if (document.getElementById("gpp-contrib-modal-container")) throw new Error("the close button did not close the contributions modal");');
+    L.push('      previewCanvas.click();');
+    L.push('      await waitFor(function() { var g = document.getElementById("gpc-pmo-placeholder-group"); return g && g.classList.contains("gpc-hidden"); }, 5000);');
+    L.push('    } finally {');
+    L.push('      window.fetch = realFetch;');
+    L.push('      var t0 = tileImageCache.get("0,0"); if (t0) { tileImageCache.set("0,0", Object.assign({}, t0, { userBitmap: null })); }');
+    L.push('      userBitmap.close();');
+    L.push('    }');
+    L.push('    if (priorFocused !== contribTemplate.id) await gppState.focusTemplate(priorFocused);');
+    L.push('    await gppState.deleteTemplate(contribTemplate);');
+    L.push('    template = gppState.getFocusedTemplate();');
+    L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test cleanup: load-time scan never finished");');
+    L.push('    return "scan bar is clickable (pointer, role=button, title) once scanned; clicking it opened the contributions leaderboard computed strictly from scan states via the tile userBitmap: Bob 1/0 ranked above Alice 1/1, the painted-but-transparent cell was excluded, summary 2 painters / 2 correct / 1 wrong, one username lookup per painter; Escape and the close button close it; the Painting Menu Overhaul mirror of the bar opens the same modal";');
     L.push('  });');
     L.push('');
     L.push('  var resultEl = document.getElementById("test-result");');

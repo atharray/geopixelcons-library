@@ -952,6 +952,11 @@
                     + (unscanned ? `, not yet scanned: ${unscanned.toLocaleString()}` : '') + ')';
                 barOuter.appendChild(notPlacedSeg);
 
+                // The bar doubles as the entry point to the per-painter
+                // contributions leaderboard (gpp-contributions.js) — only
+                // once there's a scan with opaque pixels to attribute.
+                if (typeof gppContribMakeBarClickable === 'function') gppContribMakeBarClickable(barOuter, template);
+
                 const donePct = Math.round(pct(summary.correct));
                 summaryLine.textContent = `${summary.correct.toLocaleString()} completed of ${total.toLocaleString()} total (${donePct}%)`
                     + (summary.scannedAt ? ` — scanned ${gppScanFormatRelativeTime(summary.scannedAt)}` : '');

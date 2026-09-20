@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.15.1';
+    const VERSION = '2.16.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1432,9 +1432,10 @@
     // ============================================================
     const CHANGELOG = [
         {
-            version: '2.15.1',
+            version: '2.16.0',
             date: '2026-09-20',
             items: [
+                { type: 'added', text: 'Ghost++: click the Progress bar (in the Ghost++ window, in Painting Menu Overhaul’s second page, or in its larger preview) to open a Template Contributions leaderboard — who painted how many correct and incorrect pixels of the focused template, computed strictly from the last scan; pixels outside the template’s opaque cells are never counted' },
                 { type: 'fixed', text: 'Painting Menu Overhaul: the Ghost++ window no longer loses its buttons (Scan progress, Show errors / Show missing, Nearest error, Place / Unset / Go to / Preview, Lock Position, Group noise, nudge arrows, Opacity, the upload box, Manage, and the Grid / List toggle) while the compact menu’s second page is showing — that page now shows live copies of those controls instead of taking the real ones away, so both can be used at once' },
             ]
         },
