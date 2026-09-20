@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.0](https://github.com/atharray/geopixelcons-library/compare/v2.15.0...v2.16.0) (2026-09-20)
+
+
+### Features
+
+* **ghost-plus-plus:** template contributions leaderboard + PMO mirrors ([#66](https://github.com/atharray/geopixelcons-library/issues/66)) ([95c688d](https://github.com/atharray/geopixelcons-library/commit/95c688dbac52a5e94097d71ed60ac9f9613cb7d8))
+
 ## [2.15.0](https://github.com/atharray/geopixelcons-library/compare/v2.14.0...v2.15.0) (2026-09-19)
 
 
