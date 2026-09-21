@@ -81,6 +81,7 @@ const GPP_FILES = [
     'gpp-placement.js',
     'gpp-scan.js',
     'gpp-contributions.js',
+    'gpp-preview-modal.js',
     'gpp-palette.js',
     'gpp-library.js',
     'gpp-view-settings.js',
@@ -3672,8 +3673,10 @@ function buildDriverScript() {
     // Bob (9) 1 correct / 0 wrong ranks first (fewer wrong on the tie), Alice
     // (7) 1 correct / 1 wrong second, summary 2 painters / 2 correct / 1
     // wrong. Username lookups are stubbed at window.fetch. Also checks the
-    // bar's clickable affordance (class/role/title), Escape closing, and
-    // that the Painting Menu Overhaul mirror of the bar opens the same modal.
+    // bar's clickable affordance (class/role/title), Escape closing, that
+    // the Painting Menu Overhaul mirror of the bar opens the same modal,
+    // and that the larger-preview modal's own collapsible Leaderboard
+    // section loads the same table (compact) inline on first expand only.
     L.push('  await step("contributions.leaderboard-from-scan", async function() {');
     L.push('    var priorFocused = gppState.focusedTemplateId;');
     L.push('    var c = document.createElement("canvas");');
@@ -3734,6 +3737,41 @@ function buildDriverScript() {
     L.push('      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));');
     L.push('      if (document.getElementById("gpp-contrib-modal-container")) throw new Error("Escape did not close the contributions modal");');
     L.push('');
+    L.push('      // Larger-preview modal: the collapsible Leaderboard section loads the same table inline on first expand.');
+    L.push('      var ghostInfo = document.getElementById("gpp-lib-current-info-btn");');
+    L.push('      if (!ghostInfo) throw new Error("test setup: Ghost++ ℹ️ button missing for the focused template");');
+    L.push('      ghostInfo.click();');
+    L.push('      var preview = document.getElementById("gpc-pmo-preview-modal");');
+    L.push('      if (!preview) throw new Error("test setup: larger-preview modal did not open");');
+    L.push('      var lbSection = preview.querySelector("#gpp-preview-modal-leaderboard");');
+    L.push('      var lbDetails = lbSection && lbSection.querySelector("details.gpp-collapsible#gpp-preview-modal-leaderboard-details");');
+    L.push('      if (!lbDetails) throw new Error("larger-preview modal has no collapsible Leaderboard section for a scanned template");');
+    L.push('      if (lbSection.querySelector("button")) throw new Error("REGRESSION: the Leaderboard section still renders a button instead of a collapsible");');
+    L.push('      var lbSummary = lbDetails.querySelector("summary");');
+    L.push('      if (!lbSummary || lbSummary.textContent !== "Leaderboard" || lbDetails.open) throw new Error("the Leaderboard collapsible should start closed with a Leaderboard summary");');
+    L.push('      if (parseFloat(getComputedStyle(lbSummary).fontSize) > 12.5) throw new Error("Leaderboard summary text is not small: " + getComputedStyle(lbSummary).fontSize);');
+    L.push('      var progressWrap = preview.querySelector(".gpc-preview-modal-progress-wrap");');
+    L.push('      if (!progressWrap || progressWrap.nextElementSibling !== lbSection) throw new Error("the Leaderboard section is not directly below the progress bar + summary text");');
+    L.push('      var lbBody = lbDetails.querySelector(".gpp-body");');
+    L.push('      if (lbBody.children.length) throw new Error("the Leaderboard section loaded before being expanded");');
+    L.push('      lbSummary.click();');
+    L.push('      if (!lbDetails.open) throw new Error("clicking the Leaderboard summary did not expand it");');
+    L.push('      var inlineTabled = await waitFor(function() { return !!lbDetails.querySelector("#gpp-contrib-table"); }, 8000);');
+    L.push('      if (!inlineTabled) throw new Error("inline leaderboard never rendered its table; body: " + lbDetails.textContent);');
+    L.push('      var inlineTable = lbDetails.querySelector("#gpp-contrib-table");');
+    L.push('      if (parseFloat(getComputedStyle(inlineTable).fontSize) > 11.5) throw new Error("inline leaderboard table text is not the compact size: " + getComputedStyle(inlineTable).fontSize);');
+    L.push('      var inlineRows = Array.from(inlineTable.querySelectorAll("tbody tr")).map(function(tr) { return Array.from(tr.children).map(function(td) { return td.textContent.trim(); }); });');
+    L.push('      if (inlineRows.length !== 2 || inlineRows[0][1] !== "Bob" || inlineRows[0][2] !== "1" || inlineRows[0][3] !== "0" || inlineRows[1][1] !== "Alice" || inlineRows[1][3] !== "1") throw new Error("inline leaderboard rows differ from the modal\'s: " + JSON.stringify(inlineRows));');
+    L.push('      if (lookups.length !== 2) throw new Error("inline leaderboard should reuse cached usernames (still 2 lookups total), got " + lookups.length);');
+    L.push('      lbSummary.click();');
+    L.push('      if (lbDetails.open || (lbBody.checkVisibility && lbBody.checkVisibility())) throw new Error("collapsing the inline leaderboard did not hide its table");');
+    L.push('      lbSummary.click();');
+    L.push('      await new Promise(function(r) { setTimeout(r, 30); });'); // a toggle event is queued asynchronously
+    L.push('      if (!lbDetails.open || (lbBody.checkVisibility && !lbBody.checkVisibility())) throw new Error("re-opening the inline leaderboard did not show its table again");');
+    L.push('      if (lbDetails.querySelector("#gpp-contrib-table") !== inlineTable) throw new Error("re-opening the inline leaderboard reloaded it instead of keeping the loaded table");');
+    L.push('      preview.querySelector(".gpc-preview-modal-close-btn").click();');
+    L.push('      if (document.getElementById("gpc-pmo-preview-modal")) throw new Error("could not close the larger-preview modal");');
+    L.push('');
     L.push('      // Painting Menu Overhaul: the mirrored bar on page 2 opens the same modal.');
     L.push('      var previewCanvas = document.querySelector(".gpc-pmo-preview-frame canvas");');
     L.push('      if (!previewCanvas) throw new Error("test setup: Painting Menu Overhaul preview canvas missing after focusing the contributions template");');
@@ -3758,7 +3796,57 @@ function buildDriverScript() {
     L.push('    await gppState.deleteTemplate(contribTemplate);');
     L.push('    template = gppState.getFocusedTemplate();');
     L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test cleanup: load-time scan never finished");');
-    L.push('    return "scan bar is clickable (pointer, role=button, title) once scanned; clicking it opened the contributions leaderboard computed strictly from scan states via the tile userBitmap: Bob 1/0 ranked above Alice 1/1, the painted-but-transparent cell was excluded, summary 2 painters / 2 correct / 1 wrong, one username lookup per painter; Escape and the close button close it; the Painting Menu Overhaul mirror of the bar opens the same modal";');
+    L.push('    return "scan bar is clickable (pointer, role=button, title) once scanned; clicking it opened the contributions leaderboard computed strictly from scan states via the tile userBitmap: Bob 1/0 ranked above Alice 1/1, the painted-but-transparent cell was excluded, summary 2 painters / 2 correct / 1 wrong, one username lookup per painter; Escape and the close button close it; the larger-preview modal\'s collapsible Leaderboard section (directly under the progress readout, closed by default, small type) loaded the same rows inline in a compact table on first expand only, reusing cached usernames, and folds/unfolds without reloading; the Painting Menu Overhaul mirror of the bar opens the same modal";');
+    L.push('  });');
+    L.push('');
+    // ---- item previewModal.ghost-info-button-and-pmo-delegation ----
+    // Regression guard for gpp-preview-modal.js: the larger-preview modal
+    // moved out of Painting Menu Overhaul into Ghost++ proper, and the
+    // Ghost++ window's current-template frame gained a top-left ℹ️ that
+    // opens it. Checks: the ℹ️ renders top-left (the ✕ stays top-right),
+    // clicking it opens #gpc-pmo-preview-modal (same id as always) with the
+    // image, progress readout, hex textarea holding the palette and the Buy
+    // all button, WITHOUT also triggering the canvas's own full-screen
+    // overlay (stopPropagation); ✖ closes it; PMO's own ℹ️ still opens the
+    // same modal through its delegate; Escape closes it.
+    L.push('  await step("previewModal.ghost-info-button-and-pmo-delegation", async function() {');
+    L.push('    if (!template || !template.id) throw new Error("test setup: no focused template");');
+    L.push('    gppRequestUiRefresh();');
+    L.push('    var info = await waitFor(function() { return !!document.querySelector(".gpp-lib-current-canvas-wrap #gpp-lib-current-info-btn"); }, 3000) && document.getElementById("gpp-lib-current-info-btn");');
+    L.push('    if (!info) throw new Error("the Ghost++ current-template frame has no ℹ️ Larger preview button");');
+    L.push('    if (info.title !== "Larger preview") throw new Error("ℹ️ button title unexpected: " + info.title);');
+    L.push('    var infoStyle = getComputedStyle(info);');
+    L.push('    if (infoStyle.position !== "absolute" || infoStyle.left !== "3px" || infoStyle.top !== "3px") throw new Error("ℹ️ button is not pinned to the frame\'s top-left corner: " + infoStyle.position + " left=" + infoStyle.left + " top=" + infoStyle.top);');
+    L.push('    var unload = document.querySelector(".gpp-lib-current-canvas-wrap .gpp-lib-current-unload");');
+    L.push('    if (!unload || getComputedStyle(unload).right !== "3px") throw new Error("the ✕ unload button no longer sits top-right");');
+    L.push('    if (typeof gppPreviewModalClose === "function") gppPreviewModalClose();'); // a previous step may have left it open
+    L.push('    if (document.getElementById("gpc-pmo-preview-modal")) throw new Error("test setup: preview modal already open");');
+    L.push('    info.click();');
+    L.push('    var modal = document.getElementById("gpc-pmo-preview-modal");');
+    L.push('    if (!modal) throw new Error("clicking the Ghost++ ℹ️ did not open #gpc-pmo-preview-modal");');
+    L.push('    if (document.getElementById("gpp-lib-fullview-overlay")) throw new Error("REGRESSION: the ℹ️ click also fired the canvas\'s full-screen overlay (stopPropagation missing)");');
+    L.push('    if (!document.getElementById("gpp-preview-modal-style")) throw new Error("the preview modal did not inject its own stylesheet");');
+    L.push('    if (!modal.querySelector(".gpc-preview-modal-canvas-frame canvas")) throw new Error("preview modal has no rendered template canvas");');
+    L.push('    if (!modal.querySelector(".gpc-preview-modal-bar-outer")) throw new Error("preview modal has no progress bar");');
+    L.push('    var titleEl = modal.querySelector(".gpc-preview-modal-title");');
+    L.push('    if (!titleEl || titleEl.textContent !== (template.name || "Template preview")) throw new Error("preview modal title unexpected: " + (titleEl && titleEl.textContent));');
+    L.push('    var ta = document.getElementById("gpc-preview-modal-colors-textarea");');
+    L.push('    var expectedHex = core.packedToHex(template.palette[0]);');
+    L.push('    if (!ta || ta.value.indexOf(expectedHex) === -1) throw new Error("hex textarea is missing the template\'s first colour " + expectedHex + ": " + (ta && ta.value));');
+    L.push('    if (!modal.querySelector(".gpc-preview-modal-buy-btn")) throw new Error("preview modal has no Buy all colors button");');
+    L.push('    if (parseInt(getComputedStyle(modal).zIndex, 10) !== 100000) throw new Error("preview modal overlay z-index unexpected: " + getComputedStyle(modal).zIndex);');
+    L.push('    modal.querySelector(".gpc-preview-modal-close-btn").click();');
+    L.push('    if (document.getElementById("gpc-pmo-preview-modal")) throw new Error("✖ did not close the preview modal");');
+    L.push('');
+    L.push('    // Painting Menu Overhaul\'s own ℹ️ must open the very same modal through its delegate.');
+    L.push('    var pmoInfo = document.querySelector(".gpc-pmo-preview-frame .gpc-pmo-preview-info-btn");');
+    L.push('    if (!pmoInfo) throw new Error("test setup: Painting Menu Overhaul preview ℹ️ not mounted");');
+    L.push('    pmoInfo.click();');
+    L.push('    if (!document.getElementById("gpc-pmo-preview-modal")) throw new Error("REGRESSION: PMO\'s ℹ️ no longer opens the preview modal after the move");');
+    L.push('    if (document.getElementById("gpc-pmo-placeholder-group") && !document.getElementById("gpc-pmo-placeholder-group").classList.contains("gpc-hidden")) throw new Error("PMO\'s ℹ️ click also toggled placeholder mode (stopPropagation missing)");');
+    L.push('    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));');
+    L.push('    if (document.getElementById("gpc-pmo-preview-modal")) throw new Error("Escape did not close the preview modal");');
+    L.push('    return "Ghost++ frame shows a top-left ℹ️ (✕ still top-right); it opens #gpc-pmo-preview-modal with canvas, progress bar, hex textarea and Buy all, without firing the canvas full-screen overlay; ✖ closes it; PMO\'s own ℹ️ opens the same modal via its delegate; Escape closes it";');
     L.push('  });');
     L.push('');
     L.push('  var resultEl = document.getElementById("test-result");');

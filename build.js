@@ -19,6 +19,7 @@ const LEGACY_SOURCE_ORDER = [
     'src/legacy/features/ghost-plus-plus/gpp-placement.js',
     'src/legacy/features/ghost-plus-plus/gpp-scan.js',
     'src/legacy/features/ghost-plus-plus/gpp-contributions.js',
+    'src/legacy/features/ghost-plus-plus/gpp-preview-modal.js',
     'src/legacy/features/ghost-plus-plus/gpp-palette.js',
     'src/legacy/features/ghost-plus-plus/gpp-library.js',
     'src/legacy/features/ghost-plus-plus/gpp-view-settings.js',

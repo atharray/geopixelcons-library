@@ -107,6 +107,18 @@
                 color: ${t2('#111827', '#f5f5f5')};
             }
             .gpp-lib-current-unload:hover { opacity: 1; }
+            /* ℹ️ "Larger preview" -- top-left twin of the ✕ above, opening
+               gpp-preview-modal.js's modal (image, progress, hex list, Buy
+               all colors), the same one Painting Menu Overhaul's own ℹ️
+               opens. Same size/colours as the ✕ so the two corners match. */
+            .gpp-lib-current-info {
+                position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+                border-radius: 9999px; border: none; display: flex; align-items: center; justify-content: center;
+                font-size: 10px; line-height: 1; cursor: pointer; opacity: .65; transition: opacity .1s;
+                background: ${t2('rgba(255,255,255,.85)', 'rgba(30,30,46,.85)')};
+                color: ${t2('#111827', '#f5f5f5')};
+            }
+            .gpp-lib-current-info:hover { opacity: 1; }
             .gpp-lib-current-name {
                 font-size: 12px; font-weight: 600; text-align: center; max-width: 100%;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -889,6 +901,19 @@
             fullCanvas.title = 'Click for a full-screen preview';
             fullCanvas.addEventListener('click', () => gppLibraryOpenFullPreview(focusedTemplate));
             canvasWrap.appendChild(fullCanvas);
+
+            const infoBtn = document.createElement('button');
+            infoBtn.type = 'button';
+            infoBtn.id = 'gpp-lib-current-info-btn';
+            infoBtn.className = 'gpp-lib-current-info';
+            infoBtn.textContent = 'ℹ️';
+            infoBtn.title = 'Larger preview';
+            infoBtn.setAttribute('aria-label', 'Larger preview');
+            infoBtn.addEventListener('click', event => {
+                event.stopPropagation(); // the canvas behind it has its own full-screen click
+                if (typeof gppPreviewModalOpen === 'function') gppPreviewModalOpen(focusedTemplate);
+            });
+            canvasWrap.appendChild(infoBtn);
 
             const unloadBtn = document.createElement('button');
             unloadBtn.type = 'button';

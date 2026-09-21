@@ -31,7 +31,7 @@ test('publishes the library bridge when @require wraps the source', () => {
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Ghost Template Manager/);
-    assert.match(artifact, /const VERSION = '2\.16\.0';/);
+    assert.match(artifact, /const VERSION = '2\.17\.0';/);
     const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const versionPattern = new RegExp(`const LIBRARY_VERSION = '${escapedVersion}'; // x-release-please-version`);
     assert.match(artifact, versionPattern);
@@ -98,6 +98,8 @@ test('keeps Painting Menu Overhaul responsive and exposes selected-colour scan f
     // Placeholder columns MIRROR Ghost++ controls (clone + forward); they never move the originals.
     assert.match(artifact, /function mirrorNode\(/);
     assert.match(artifact, /function gppContributionsOpen\(/);
+    assert.match(artifact, /function gppPreviewModalOpen\(/);
+    assert.doesNotMatch(artifact, /function buildModalProgressReadout\(/);
     assert.doesNotMatch(artifact, /function borrowNode\(/);
     assert.match(artifact, /justify-content: center/);
     assert.match(artifact, /Painting Menu Overhaul/);
