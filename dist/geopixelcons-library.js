@@ -1448,7 +1448,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             date: '2026-09-20',
             items: [
                 { type: 'added', text: 'Ghost++: an ℹ️ button in the top-left corner of the current-template preview opens the larger preview — full-size image, progress bar, every colour as a copyable hex list, and Buy all colors — the same window Painting Menu Overhaul’s own ℹ️ opens, now available even with that extension off' },
-                { type: 'added', text: 'Ghost++ larger preview: a Leaderboard button under the progress bar loads the Template Contributions table right inside the window, in a collapsible section' },
+                { type: 'added', text: 'Ghost++ larger preview: a collapsible Leaderboard section under the progress bar loads the Template Contributions table right inside the window the first time you expand it' },
             ]
         },
         {
@@ -10859,9 +10859,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //                                    no UI; the larger-preview modal's
     //                                    inline Leaderboard section
     //                                    (gpp-preview-modal.js) uses this.
-    //   gppContribRenderResult(container, rows, counts, theme) — renders the
-    //                                    table (or the empty state) into any
-    //                                    container.
+    //   gppContribRenderResult(container, rows, counts, theme, options) —
+    //                                    renders the table (or the empty
+    //                                    state) into any container;
+    //                                    options.compact for the smaller
+    //                                    inline variant.
 
     const GPP_CONTRIB_BAND_ROWS = 128;         // rows per getImageData batch, same as the scan
     const GPP_CONTRIB_USERNAME_BATCH = 10;     // parallel /GetUserProfile lookups, same as Regions Highscore
@@ -11114,14 +11116,20 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         if (gppContribOpenRun) { gppContribOpenRun.cancelled = true; gppContribOpenRun = null; }
     }
 
-    function gppContribBuildTable(rows, counts, t) {
+    // `options.compact` is the larger-preview modal's inline variant: smaller
+    // type and tighter cells, since it sits inside a 12px-scale window
+    // rather than its own full-size modal.
+    function gppContribBuildTable(rows, counts, t, options) {
+        const compact = !!(options && options.compact);
+        const cellPad = compact ? '5px 8px' : '10px 12px';
+        const fontSize = compact ? '11px' : '14px';
         const container = document.createElement('div');
         const totalCorrect = rows.reduce((sum, row) => sum + row.correct, 0);
         const totalWrong = rows.reduce((sum, row) => sum + row.wrong, 0);
 
         const summary = document.createElement('div');
         summary.id = 'gpp-contrib-summary';
-        summary.style.cssText = 'margin-bottom: 16px; padding: 12px; background: ' + t.summaryBg + '; border-radius: 8px; font-size: 14px; color: ' + t.summaryText + ';';
+        summary.style.cssText = (compact ? 'margin-bottom: 8px; padding: 8px 10px; ' : 'margin-bottom: 16px; padding: 12px; ') + 'background: ' + t.summaryBg + '; border-radius: 8px; font-size: ' + fontSize + '; color: ' + t.summaryText + ';';
         summary.innerHTML = '<strong>' + rows.length.toLocaleString() + '</strong> painter' + (rows.length === 1 ? '' : 's') + ' placed <strong>'
             + totalCorrect.toLocaleString() + '</strong> correct pixel' + (totalCorrect === 1 ? '' : 's') + ' and <strong>'
             + totalWrong.toLocaleString() + '</strong> wrong-colour pixel' + (totalWrong === 1 ? '' : 's') + ' on this template'
@@ -11130,14 +11138,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 
         const table = document.createElement('table');
         table.id = 'gpp-contrib-table';
-        table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 14px; color: ' + t.text + ';';
+        table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: ' + fontSize + '; color: ' + t.text + ';';
         const thead = document.createElement('thead');
         thead.innerHTML = '<tr style="background: ' + t.headerBg + '; text-align: left;">'
-            + '<th style="padding: 10px 12px; font-weight: 600; width: 60px;">Rank</th>'
-            + '<th style="padding: 10px 12px; font-weight: 600;">Username</th>'
-            + '<th style="padding: 10px 12px; font-weight: 600; text-align: right; width: 100px;" title="Pixels placed in the template\'s colour">Correct</th>'
-            + '<th style="padding: 10px 12px; font-weight: 600; text-align: right; width: 100px;" title="Pixels placed in a different colour than the template">Incorrect</th>'
-            + '<th style="padding: 10px 12px; font-weight: 600; text-align: right; width: 80px;" title="Share of all correct pixels">%</th>'
+            + '<th style="padding: ' + cellPad + '; font-weight: 600; width: 60px;">Rank</th>'
+            + '<th style="padding: ' + cellPad + '; font-weight: 600;">Username</th>'
+            + '<th style="padding: ' + cellPad + '; font-weight: 600; text-align: right; width: 100px;" title="Pixels placed in the template\'s colour">Correct</th>'
+            + '<th style="padding: ' + cellPad + '; font-weight: 600; text-align: right; width: 100px;" title="Pixels placed in a different colour than the template">Incorrect</th>'
+            + '<th style="padding: ' + cellPad + '; font-weight: 600; text-align: right; width: 80px;" title="Share of all correct pixels">%</th>'
             + '</tr>';
         table.appendChild(thead);
         const tbody = document.createElement('tbody');
@@ -11146,11 +11154,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             tr.className = 'gpp-contrib-row';
             tr.style.cssText = 'border-bottom: 1px solid ' + t.border + ';' + (row.rank <= 3 ? ' background: ' + gppContribRankBackground(row.rank) + ';' : '');
             const percent = totalCorrect > 0 ? ((row.correct / totalCorrect) * 100).toFixed(1) : '0.0';
-            tr.innerHTML = '<td style="padding: 10px 12px; font-weight: ' + (row.rank <= 3 ? 'bold' : 'normal') + ';">' + gppContribRankEmoji(row.rank) + ' ' + row.rank + '</td>'
-                + '<td style="padding: 10px 12px;">' + gppContribEscapeHtml(row.name) + '</td>'
-                + '<td style="padding: 10px 12px; text-align: right; font-family: monospace;">' + row.correct.toLocaleString() + '</td>'
-                + '<td style="padding: 10px 12px; text-align: right; font-family: monospace;' + (row.wrong ? ' color: ' + t2('#dc2626', '#f38ba8') + ';' : '') + '">' + row.wrong.toLocaleString() + '</td>'
-                + '<td style="padding: 10px 12px; text-align: right; color: ' + t.textSecondary + ';">' + percent + '%</td>';
+            tr.innerHTML = '<td style="padding: ' + cellPad + '; font-weight: ' + (row.rank <= 3 ? 'bold' : 'normal') + ';">' + gppContribRankEmoji(row.rank) + ' ' + row.rank + '</td>'
+                + '<td style="padding: ' + cellPad + ';">' + gppContribEscapeHtml(row.name) + '</td>'
+                + '<td style="padding: ' + cellPad + '; text-align: right; font-family: monospace;">' + row.correct.toLocaleString() + '</td>'
+                + '<td style="padding: ' + cellPad + '; text-align: right; font-family: monospace;' + (row.wrong ? ' color: ' + t2('#dc2626', '#f38ba8') + ';' : '') + '">' + row.wrong.toLocaleString() + '</td>'
+                + '<td style="padding: ' + cellPad + '; text-align: right; color: ' + t.textSecondary + ';">' + percent + '%</td>';
             tbody.appendChild(tr);
         }
         table.appendChild(tbody);
@@ -11238,7 +11246,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 
     // Renders the leaderboard table — or the nothing-to-show state — into
     // `container`, replacing whatever it held.
-    function gppContribRenderResult(container, rows, counts, t) {
+    function gppContribRenderResult(container, rows, counts, t, options) {
         container.innerHTML = '';
         if (!rows.length) {
             gppContribSetContent(container, '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; color: ' + t.textSecondary + ';">'
@@ -11248,7 +11256,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 + '</div>');
             return;
         }
-        container.appendChild(gppContribBuildTable(rows, counts, t));
+        container.appendChild(gppContribBuildTable(rows, counts, t, options));
     }
 
     function gppContribErrorHtml(error, t) {
@@ -11303,8 +11311,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // The "ℹ️ Larger preview" modal for a template: its full-resolution
     // image, the same 3-segment scan-progress readout as the Progress
     // section (bar doubles as the entry point to the contributions
-    // leaderboard, see gpp-contributions.js), a Leaderboard button that
-    // loads that same per-painter table inline into a collapsible section,
+    // leaderboard, see gpp-contributions.js), a collapsible Leaderboard
+    // section that loads that same per-painter table inline when expanded,
     // every colour in the template as a copyable hex list, and a
     // Buy-all-colors shortcut into Bulk Purchase Colors. Opened from the
     // ℹ️ button on the Ghost++ window's current-template frame
@@ -11414,17 +11422,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             }
             .gpc-preview-modal-buy-btn:hover { opacity: .9; }
             .gpc-preview-modal-leaderboard:empty { display: none; }
-            .gpc-preview-modal-leaderboard-btn {
-                width: 100%; font: inherit; font-weight: 600; padding: 8px; border-radius: 6px; cursor: pointer;
-                border: 1px solid ${t2('#d1d5db', '#45475a')};
-                background: ${t2('#ffffff', '#313244')}; color: ${t2('#111827', '#f5f5f5')};
-            }
-            .gpc-preview-modal-leaderboard-btn:hover { background: ${t2('#f3f4f6', '#45475a')}; }
             /* Reuses Ghost++'s own details.gpp-collapsible look (global rules,
-               gpp-ui-shell.js) with the panel's side padding removed, since
-               this one sits inside the modal box rather than a panel. */
+               gpp-ui-shell.js: border-top, ▸ marker, 600-weight summary)
+               with the panel's side padding removed and a smaller type
+               size, since this one sits inside the modal box rather than a
+               panel. */
             details.gpc-preview-modal-leaderboard-details { padding: 8px 0 0; font-size: 12px; }
-            details.gpc-preview-modal-leaderboard-details .gpp-body { padding: 8px 0 0; overflow-x: auto; }
+            details.gpc-preview-modal-leaderboard-details > summary { font-size: 12px; }
+            details.gpc-preview-modal-leaderboard-details .gpp-body { padding: 6px 0 0; overflow-x: auto; }
         `;
     }
 
@@ -11445,48 +11450,46 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     }
 
     // "Leaderboard" — the same per-painter table the contributions modal
-    // shows (gpp-contributions.js), loaded inline on demand: one click
-    // replaces the button with a collapsible <details> that first shows the
-    // loading readout and then the table, so a long list can be folded away
-    // again without leaving the modal. Only offered once there's a scan with
-    // opaque pixels to attribute — the same gate as the clickable bar.
+    // shows (gpp-contributions.js), as a Ghost++-style collapsible section
+    // (details.gpp-collapsible, the look of the Ghost++ window's own
+    // sections) that starts closed and loads its table lazily the first
+    // time it is expanded: the loading readout, then the compact table. It
+    // never reloads on later toggles — collapsing just hides it. Only
+    // present once there's a scan with opaque pixels to attribute, the same
+    // gate as the clickable bar.
     function gppPreviewModalLeaderboard(template) {
         const section = document.createElement('div');
         section.id = 'gpp-preview-modal-leaderboard';
         section.className = 'gpc-preview-modal-leaderboard';
         if (typeof gppContributionsLoad !== 'function' || !template.position || !template.scanSummary || !(template.scanSummary.total > 0)) return section;
 
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.id = 'gpp-preview-modal-leaderboard-btn';
-        btn.className = 'gpc-preview-modal-leaderboard-btn';
-        btn.textContent = 'Leaderboard';
-        btn.title = 'Who painted this template — correct and incorrect pixels per painter, from the last scan';
-        btn.addEventListener('click', () => {
+        const details = document.createElement('details');
+        details.id = 'gpp-preview-modal-leaderboard-details';
+        details.className = 'gpp-collapsible gpc-preview-modal-leaderboard-details';
+        const summary = document.createElement('summary');
+        summary.textContent = 'Leaderboard';
+        summary.title = 'Who painted this template — correct and incorrect pixels per painter, from the last scan';
+        const body = document.createElement('div');
+        body.className = 'gpp-body';
+        details.append(summary, body);
+
+        let loaded = false;
+        details.addEventListener('toggle', () => {
+            if (!details.open || loaded) return;
+            loaded = true;
             const t = gppContribThemeColors();
             const run = { cancelled: false };
             if (gppPreviewModalLeaderboardRun) gppPreviewModalLeaderboardRun.cancelled = true;
             gppPreviewModalLeaderboardRun = run;
-
-            const details = document.createElement('details');
-            details.className = 'gpp-collapsible gpc-preview-modal-leaderboard-details';
-            details.open = true;
-            const summary = document.createElement('summary');
-            summary.textContent = 'Leaderboard';
-            const body = document.createElement('div');
-            body.className = 'gpp-body';
-            body.innerHTML = '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 0; color: ' + t.textSecondary + ';">'
-                + '<div style="font-size: 28px; margin-bottom: 12px;">⏳</div>'
+            body.innerHTML = '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px 0; color: ' + t.textSecondary + ';">'
+                + '<div style="font-size: 22px; margin-bottom: 8px;">⏳</div>'
                 + '<div id="gpp-preview-modal-leaderboard-progress">Reading the scan…</div>'
                 + '</div>';
-            details.append(summary, body);
-            btn.replaceWith(details);
-
             const progressEl = body.querySelector('#gpp-preview-modal-leaderboard-progress');
             gppContributionsLoad(template, run, text => { if (progressEl && progressEl.isConnected) progressEl.textContent = text; })
                 .then(result => {
                     if (!result || run.cancelled || !body.isConnected) return;
-                    gppContribRenderResult(body, result.rows, result.counts, t);
+                    gppContribRenderResult(body, result.rows, result.counts, t, { compact: true });
                 })
                 .catch(error => {
                     console.error('[GeoPixelcons++] Ghost++ preview leaderboard failed:', error);
@@ -11494,7 +11497,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 })
                 .finally(() => { if (gppPreviewModalLeaderboardRun === run) gppPreviewModalLeaderboardRun = null; });
         });
-        section.appendChild(btn);
+        section.appendChild(details);
         return section;
     }
 

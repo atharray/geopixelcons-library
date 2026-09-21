@@ -37,9 +37,11 @@
     //                                    no UI; the larger-preview modal's
     //                                    inline Leaderboard section
     //                                    (gpp-preview-modal.js) uses this.
-    //   gppContribRenderResult(container, rows, counts, theme) — renders the
-    //                                    table (or the empty state) into any
-    //                                    container.
+    //   gppContribRenderResult(container, rows, counts, theme, options) —
+    //                                    renders the table (or the empty
+    //                                    state) into any container;
+    //                                    options.compact for the smaller
+    //                                    inline variant.
 
     const GPP_CONTRIB_BAND_ROWS = 128;         // rows per getImageData batch, same as the scan
     const GPP_CONTRIB_USERNAME_BATCH = 10;     // parallel /GetUserProfile lookups, same as Regions Highscore
@@ -292,14 +294,20 @@
         if (gppContribOpenRun) { gppContribOpenRun.cancelled = true; gppContribOpenRun = null; }
     }
 
-    function gppContribBuildTable(rows, counts, t) {
+    // `options.compact` is the larger-preview modal's inline variant: smaller
+    // type and tighter cells, since it sits inside a 12px-scale window
+    // rather than its own full-size modal.
+    function gppContribBuildTable(rows, counts, t, options) {
+        const compact = !!(options && options.compact);
+        const cellPad = compact ? '5px 8px' : '10px 12px';
+        const fontSize = compact ? '11px' : '14px';
         const container = document.createElement('div');
         const totalCorrect = rows.reduce((sum, row) => sum + row.correct, 0);
         const totalWrong = rows.reduce((sum, row) => sum + row.wrong, 0);
 
         const summary = document.createElement('div');
         summary.id = 'gpp-contrib-summary';
-        summary.style.cssText = 'margin-bottom: 16px; padding: 12px; background: ' + t.summaryBg + '; border-radius: 8px; font-size: 14px; color: ' + t.summaryText + ';';
+        summary.style.cssText = (compact ? 'margin-bottom: 8px; padding: 8px 10px; ' : 'margin-bottom: 16px; padding: 12px; ') + 'background: ' + t.summaryBg + '; border-radius: 8px; font-size: ' + fontSize + '; color: ' + t.summaryText + ';';
         summary.innerHTML = '<strong>' + rows.length.toLocaleString() + '</strong> painter' + (rows.length === 1 ? '' : 's') + ' placed <strong>'
             + totalCorrect.toLocaleString() + '</strong> correct pixel' + (totalCorrect === 1 ? '' : 's') + ' and <strong>'
             + totalWrong.toLocaleString() + '</strong> wrong-colour pixel' + (totalWrong === 1 ? '' : 's') + ' on this template'
@@ -308,14 +316,14 @@
 
         const table = document.createElement('table');
         table.id = 'gpp-contrib-table';
-        table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 14px; color: ' + t.text + ';';
+        table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: ' + fontSize + '; color: ' + t.text + ';';
         const thead = document.createElement('thead');
         thead.innerHTML = '<tr style="background: ' + t.headerBg + '; text-align: left;">'
-            + '<th style="padding: 10px 12px; font-weight: 600; width: 60px;">Rank</th>'
-            + '<th style="padding: 10px 12px; font-weight: 600;">Username</th>'
-            + '<th style="padding: 10px 12px; font-weight: 600; text-align: right; width: 100px;" title="Pixels placed in the template\'s colour">Correct</th>'
-            + '<th style="padding: 10px 12px; font-weight: 600; text-align: right; width: 100px;" title="Pixels placed in a different colour than the template">Incorrect</th>'
-            + '<th style="padding: 10px 12px; font-weight: 600; text-align: right; width: 80px;" title="Share of all correct pixels">%</th>'
+            + '<th style="padding: ' + cellPad + '; font-weight: 600; width: 60px;">Rank</th>'
+            + '<th style="padding: ' + cellPad + '; font-weight: 600;">Username</th>'
+            + '<th style="padding: ' + cellPad + '; font-weight: 600; text-align: right; width: 100px;" title="Pixels placed in the template\'s colour">Correct</th>'
+            + '<th style="padding: ' + cellPad + '; font-weight: 600; text-align: right; width: 100px;" title="Pixels placed in a different colour than the template">Incorrect</th>'
+            + '<th style="padding: ' + cellPad + '; font-weight: 600; text-align: right; width: 80px;" title="Share of all correct pixels">%</th>'
             + '</tr>';
         table.appendChild(thead);
         const tbody = document.createElement('tbody');
@@ -324,11 +332,11 @@
             tr.className = 'gpp-contrib-row';
             tr.style.cssText = 'border-bottom: 1px solid ' + t.border + ';' + (row.rank <= 3 ? ' background: ' + gppContribRankBackground(row.rank) + ';' : '');
             const percent = totalCorrect > 0 ? ((row.correct / totalCorrect) * 100).toFixed(1) : '0.0';
-            tr.innerHTML = '<td style="padding: 10px 12px; font-weight: ' + (row.rank <= 3 ? 'bold' : 'normal') + ';">' + gppContribRankEmoji(row.rank) + ' ' + row.rank + '</td>'
-                + '<td style="padding: 10px 12px;">' + gppContribEscapeHtml(row.name) + '</td>'
-                + '<td style="padding: 10px 12px; text-align: right; font-family: monospace;">' + row.correct.toLocaleString() + '</td>'
-                + '<td style="padding: 10px 12px; text-align: right; font-family: monospace;' + (row.wrong ? ' color: ' + t2('#dc2626', '#f38ba8') + ';' : '') + '">' + row.wrong.toLocaleString() + '</td>'
-                + '<td style="padding: 10px 12px; text-align: right; color: ' + t.textSecondary + ';">' + percent + '%</td>';
+            tr.innerHTML = '<td style="padding: ' + cellPad + '; font-weight: ' + (row.rank <= 3 ? 'bold' : 'normal') + ';">' + gppContribRankEmoji(row.rank) + ' ' + row.rank + '</td>'
+                + '<td style="padding: ' + cellPad + ';">' + gppContribEscapeHtml(row.name) + '</td>'
+                + '<td style="padding: ' + cellPad + '; text-align: right; font-family: monospace;">' + row.correct.toLocaleString() + '</td>'
+                + '<td style="padding: ' + cellPad + '; text-align: right; font-family: monospace;' + (row.wrong ? ' color: ' + t2('#dc2626', '#f38ba8') + ';' : '') + '">' + row.wrong.toLocaleString() + '</td>'
+                + '<td style="padding: ' + cellPad + '; text-align: right; color: ' + t.textSecondary + ';">' + percent + '%</td>';
             tbody.appendChild(tr);
         }
         table.appendChild(tbody);
@@ -416,7 +424,7 @@
 
     // Renders the leaderboard table — or the nothing-to-show state — into
     // `container`, replacing whatever it held.
-    function gppContribRenderResult(container, rows, counts, t) {
+    function gppContribRenderResult(container, rows, counts, t, options) {
         container.innerHTML = '';
         if (!rows.length) {
             gppContribSetContent(container, '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; color: ' + t.textSecondary + ';">'
@@ -426,7 +434,7 @@
                 + '</div>');
             return;
         }
-        container.appendChild(gppContribBuildTable(rows, counts, t));
+        container.appendChild(gppContribBuildTable(rows, counts, t, options));
     }
 
     function gppContribErrorHtml(error, t) {
