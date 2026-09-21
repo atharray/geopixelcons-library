@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.17.0](https://github.com/atharray/geopixelcons-library/compare/v2.16.0...v2.17.0) (2026-09-21)
+
+
+### Features
+
+* **ghost-plus-plus:** larger-preview button on the current-template frame ([#68](https://github.com/atharray/geopixelcons-library/issues/68)) ([484430a](https://github.com/atharray/geopixelcons-library/commit/484430abd8eaa69997153046b3a70da894fc8016))
+
 ## [2.16.0](https://github.com/atharray/geopixelcons-library/compare/v2.15.0...v2.16.0) (2026-09-20)
 
 
