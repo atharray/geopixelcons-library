@@ -32,6 +32,14 @@
     // Public surface:
     //   gppContributionsOpen(template) — opens (or re-opens) the modal for
     //                                    a positioned, scanned template.
+    //   gppContributionsLoad(template, run, onProgress) — the numbers alone
+    //                                    (counts → usernames → ranked rows),
+    //                                    no UI; the larger-preview modal's
+    //                                    inline Leaderboard section
+    //                                    (gpp-preview-modal.js) uses this.
+    //   gppContribRenderResult(container, rows, counts, theme) — renders the
+    //                                    table (or the empty state) into any
+    //                                    container.
 
     const GPP_CONTRIB_BAND_ROWS = 128;         // rows per getImageData batch, same as the scan
     const GPP_CONTRIB_USERNAME_BATCH = 10;     // parallel /GetUserProfile lookups, same as Regions Highscore
@@ -395,6 +403,39 @@
         content.innerHTML = html;
     }
 
+    // The whole computation with no UI attached: counts → usernames →
+    // ranked rows. Resolves null if `run.cancelled` was set part-way.
+    async function gppContributionsLoad(template, run, onProgress) {
+        const progress = typeof onProgress === 'function' ? onProgress : () => {};
+        const counts = await gppContribComputeCounts(template, run, progress);
+        if (!counts || run.cancelled) return null;
+        const names = await gppContribFetchUsernames(Array.from(counts.users.keys()), run, progress);
+        if (!names || run.cancelled) return null;
+        return { rows: gppContribRank(counts.users, names), counts };
+    }
+
+    // Renders the leaderboard table — or the nothing-to-show state — into
+    // `container`, replacing whatever it held.
+    function gppContribRenderResult(container, rows, counts, t) {
+        container.innerHTML = '';
+        if (!rows.length) {
+            gppContribSetContent(container, '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; color: ' + t.textSecondary + ';">'
+                + '<div style="font-size: 32px; margin-bottom: 16px;">🤷</div>'
+                + '<div>No painted pixels could be attributed for this template' + (counts.unattributed ? ' (' + counts.unattributed.toLocaleString() + ' painted pixels had no tile data)' : '') + '</div>'
+                + '<div style="font-size: 12px; margin-top: 8px; color: ' + t.textSubtle + ';">Scan progress with the template on screen, then try again.</div>'
+                + '</div>');
+            return;
+        }
+        container.appendChild(gppContribBuildTable(rows, counts, t));
+    }
+
+    function gppContribErrorHtml(error, t) {
+        return '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; color: ' + t.textSecondary + ';">'
+            + '<div style="font-size: 32px; margin-bottom: 16px;">⚠️</div>'
+            + '<div>Could not compute contributions: ' + gppContribEscapeHtml(error && error.message ? error.message : String(error)) + '</div>'
+            + '</div>';
+    }
+
     async function gppContributionsOpen(template) {
         if (!template || !template.position || !template.scanSummary) return { ok: false, reason: 'not-scanned' };
         const t = gppContribThemeColors();
@@ -404,31 +445,13 @@
         const progressEl = content.querySelector('#gpp-contrib-progress-text');
         const onProgress = text => { if (progressEl && progressEl.isConnected) progressEl.textContent = text; };
         try {
-            const counts = await gppContribComputeCounts(template, run, onProgress);
-            if (!counts || run.cancelled) return { ok: false, reason: 'cancelled' };
-            const names = await gppContribFetchUsernames(Array.from(counts.users.keys()), run, onProgress);
-            if (!names || run.cancelled) return { ok: false, reason: 'cancelled' };
-            const rows = gppContribRank(counts.users, names);
-            if (!modalContainer.isConnected) return { ok: false, reason: 'cancelled' };
-            if (!rows.length) {
-                gppContribSetContent(content, '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; color: ' + t.textSecondary + ';">'
-                    + '<div style="font-size: 32px; margin-bottom: 16px;">🤷</div>'
-                    + '<div>No painted pixels could be attributed for this template' + (counts.unattributed ? ' (' + counts.unattributed.toLocaleString() + ' painted pixels had no tile data)' : '') + '</div>'
-                    + '<div style="font-size: 12px; margin-top: 8px; color: ' + t.textSubtle + ';">Scan progress with the template on screen, then try again.</div>'
-                    + '</div>');
-            } else {
-                content.innerHTML = '';
-                content.appendChild(gppContribBuildTable(rows, counts, t));
-            }
-            return { ok: true, rows, counts };
+            const result = await gppContributionsLoad(template, run, onProgress);
+            if (!result || run.cancelled || !modalContainer.isConnected) return { ok: false, reason: 'cancelled' };
+            gppContribRenderResult(content, result.rows, result.counts, t);
+            return { ok: true, rows: result.rows, counts: result.counts };
         } catch (error) {
             console.error('[GeoPixelcons++] Ghost++ contributions failed:', error);
-            if (modalContainer.isConnected) {
-                gppContribSetContent(content, '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; color: ' + t.textSecondary + ';">'
-                    + '<div style="font-size: 32px; margin-bottom: 16px;">⚠️</div>'
-                    + '<div>Could not compute contributions: ' + gppContribEscapeHtml(error && error.message ? error.message : String(error)) + '</div>'
-                    + '</div>');
-            }
+            if (modalContainer.isConnected) gppContribSetContent(content, gppContribErrorHtml(error, t));
             return { ok: false, reason: 'error', error };
         }
     }

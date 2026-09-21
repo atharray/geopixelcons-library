@@ -3673,8 +3673,10 @@ function buildDriverScript() {
     // Bob (9) 1 correct / 0 wrong ranks first (fewer wrong on the tie), Alice
     // (7) 1 correct / 1 wrong second, summary 2 painters / 2 correct / 1
     // wrong. Username lookups are stubbed at window.fetch. Also checks the
-    // bar's clickable affordance (class/role/title), Escape closing, and
-    // that the Painting Menu Overhaul mirror of the bar opens the same modal.
+    // bar's clickable affordance (class/role/title), Escape closing, that
+    // the Painting Menu Overhaul mirror of the bar opens the same modal,
+    // and that the larger-preview modal's own Leaderboard button loads the
+    // same table inline into a collapsible section (button gone after).
     L.push('  await step("contributions.leaderboard-from-scan", async function() {');
     L.push('    var priorFocused = gppState.focusedTemplateId;');
     L.push('    var c = document.createElement("canvas");');
@@ -3735,6 +3737,34 @@ function buildDriverScript() {
     L.push('      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));');
     L.push('      if (document.getElementById("gpp-contrib-modal-container")) throw new Error("Escape did not close the contributions modal");');
     L.push('');
+    L.push('      // Larger-preview modal: its Leaderboard button loads the same table inline, collapsibly, and goes away.');
+    L.push('      var ghostInfo = document.getElementById("gpp-lib-current-info-btn");');
+    L.push('      if (!ghostInfo) throw new Error("test setup: Ghost++ ℹ️ button missing for the focused template");');
+    L.push('      ghostInfo.click();');
+    L.push('      var preview = document.getElementById("gpc-pmo-preview-modal");');
+    L.push('      if (!preview) throw new Error("test setup: larger-preview modal did not open");');
+    L.push('      var lbSection = preview.querySelector("#gpp-preview-modal-leaderboard");');
+    L.push('      var lbBtn = preview.querySelector("#gpp-preview-modal-leaderboard-btn");');
+    L.push('      if (!lbSection || !lbBtn || lbBtn.textContent !== "Leaderboard") throw new Error("larger-preview modal has no Leaderboard button for a scanned template");');
+    L.push('      var progressWrap = preview.querySelector(".gpc-preview-modal-progress-wrap");');
+    L.push('      if (!progressWrap || progressWrap.nextElementSibling !== lbSection) throw new Error("the Leaderboard section is not directly below the progress bar + summary text");');
+    L.push('      lbBtn.click();');
+    L.push('      if (preview.querySelector("#gpp-preview-modal-leaderboard-btn")) throw new Error("REGRESSION: the Leaderboard button did not go away once clicked");');
+    L.push('      var lbDetails = lbSection.querySelector("details.gpp-collapsible");');
+    L.push('      if (!lbDetails || !lbDetails.open || !lbDetails.querySelector("summary")) throw new Error("the inline leaderboard is not an open collapsible <details> with a summary");');
+    L.push('      var inlineTabled = await waitFor(function() { return !!lbDetails.querySelector("#gpp-contrib-table"); }, 8000);');
+    L.push('      if (!inlineTabled) throw new Error("inline leaderboard never rendered its table; body: " + lbDetails.textContent);');
+    L.push('      var inlineRows = Array.from(lbDetails.querySelectorAll("#gpp-contrib-table tbody tr")).map(function(tr) { return Array.from(tr.children).map(function(td) { return td.textContent.trim(); }); });');
+    L.push('      if (inlineRows.length !== 2 || inlineRows[0][1] !== "Bob" || inlineRows[0][2] !== "1" || inlineRows[0][3] !== "0" || inlineRows[1][1] !== "Alice" || inlineRows[1][3] !== "1") throw new Error("inline leaderboard rows differ from the modal\'s: " + JSON.stringify(inlineRows));');
+    L.push('      if (lookups.length !== 2) throw new Error("inline leaderboard should reuse cached usernames (still 2 lookups total), got " + lookups.length);');
+    L.push('      var lbBody = lbDetails.querySelector(".gpp-body");');
+    L.push('      lbDetails.open = false;');
+    L.push('      if (lbBody.checkVisibility && lbBody.checkVisibility()) throw new Error("collapsing the inline leaderboard did not hide its table");');
+    L.push('      lbDetails.open = true;');
+    L.push('      if (lbBody.checkVisibility && !lbBody.checkVisibility()) throw new Error("re-opening the inline leaderboard did not show its table again");');
+    L.push('      preview.querySelector(".gpc-preview-modal-close-btn").click();');
+    L.push('      if (document.getElementById("gpc-pmo-preview-modal")) throw new Error("could not close the larger-preview modal");');
+    L.push('');
     L.push('      // Painting Menu Overhaul: the mirrored bar on page 2 opens the same modal.');
     L.push('      var previewCanvas = document.querySelector(".gpc-pmo-preview-frame canvas");');
     L.push('      if (!previewCanvas) throw new Error("test setup: Painting Menu Overhaul preview canvas missing after focusing the contributions template");');
@@ -3759,7 +3789,7 @@ function buildDriverScript() {
     L.push('    await gppState.deleteTemplate(contribTemplate);');
     L.push('    template = gppState.getFocusedTemplate();');
     L.push('    if (!(await waitFor(function() { return !gppScanRunning; }, 5000))) throw new Error("test cleanup: load-time scan never finished");');
-    L.push('    return "scan bar is clickable (pointer, role=button, title) once scanned; clicking it opened the contributions leaderboard computed strictly from scan states via the tile userBitmap: Bob 1/0 ranked above Alice 1/1, the painted-but-transparent cell was excluded, summary 2 painters / 2 correct / 1 wrong, one username lookup per painter; Escape and the close button close it; the Painting Menu Overhaul mirror of the bar opens the same modal";');
+    L.push('    return "scan bar is clickable (pointer, role=button, title) once scanned; clicking it opened the contributions leaderboard computed strictly from scan states via the tile userBitmap: Bob 1/0 ranked above Alice 1/1, the painted-but-transparent cell was excluded, summary 2 painters / 2 correct / 1 wrong, one username lookup per painter; Escape and the close button close it; the larger-preview modal\'s Leaderboard button (directly under the progress readout) loaded the same rows inline into an open collapsible and removed itself, reusing cached usernames; the Painting Menu Overhaul mirror of the bar opens the same modal";');
     L.push('  });');
     L.push('');
     // ---- item previewModal.ghost-info-button-and-pmo-delegation ----
@@ -3782,6 +3812,7 @@ function buildDriverScript() {
     L.push('    if (infoStyle.position !== "absolute" || infoStyle.left !== "3px" || infoStyle.top !== "3px") throw new Error("ℹ️ button is not pinned to the frame\'s top-left corner: " + infoStyle.position + " left=" + infoStyle.left + " top=" + infoStyle.top);');
     L.push('    var unload = document.querySelector(".gpp-lib-current-canvas-wrap .gpp-lib-current-unload");');
     L.push('    if (!unload || getComputedStyle(unload).right !== "3px") throw new Error("the ✕ unload button no longer sits top-right");');
+    L.push('    if (typeof gppPreviewModalClose === "function") gppPreviewModalClose();'); // a previous step may have left it open
     L.push('    if (document.getElementById("gpc-pmo-preview-modal")) throw new Error("test setup: preview modal already open");');
     L.push('    info.click();');
     L.push('    var modal = document.getElementById("gpc-pmo-preview-modal");');

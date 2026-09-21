@@ -1436,6 +1436,7 @@
             date: '2026-09-20',
             items: [
                 { type: 'added', text: 'Ghost++: an ℹ️ button in the top-left corner of the current-template preview opens the larger preview — full-size image, progress bar, every colour as a copyable hex list, and Buy all colors — the same window Painting Menu Overhaul’s own ℹ️ opens, now available even with that extension off' },
+                { type: 'added', text: 'Ghost++ larger preview: a Leaderboard button under the progress bar loads the Template Contributions table right inside the window, in a collapsible section' },
             ]
         },
         {

@@ -3,12 +3,14 @@
     // The "ℹ️ Larger preview" modal for a template: its full-resolution
     // image, the same 3-segment scan-progress readout as the Progress
     // section (bar doubles as the entry point to the contributions
-    // leaderboard, see gpp-contributions.js), every colour in the template
-    // as a copyable hex list, and a Buy-all-colors shortcut into Bulk
-    // Purchase Colors. Opened from the ℹ️ button on the Ghost++ window's
-    // current-template frame (gpp-library.js, .gpp-lib-current-info) and
-    // from Painting Menu Overhaul's own ℹ️ on its preview thumbnail
-    // (mobile-painting.js, .gpc-pmo-preview-info-btn).
+    // leaderboard, see gpp-contributions.js), a Leaderboard button that
+    // loads that same per-painter table inline into a collapsible section,
+    // every colour in the template as a copyable hex list, and a
+    // Buy-all-colors shortcut into Bulk Purchase Colors. Opened from the
+    // ℹ️ button on the Ghost++ window's current-template frame
+    // (gpp-library.js, .gpp-lib-current-info) and from Painting Menu
+    // Overhaul's own ℹ️ on its preview thumbnail (mobile-painting.js,
+    // .gpc-pmo-preview-info-btn).
     //
     // This began life inside Painting Menu Overhaul (mobile-painting.js's
     // openTemplatePreviewModal) and moved here so the Ghost++ window can
@@ -111,10 +113,23 @@
                 background: ${t2('#2563eb', '#89b4fa')}; color: ${t2('#ffffff', '#1e1e2e')};
             }
             .gpc-preview-modal-buy-btn:hover { opacity: .9; }
+            .gpc-preview-modal-leaderboard:empty { display: none; }
+            .gpc-preview-modal-leaderboard-btn {
+                width: 100%; font: inherit; font-weight: 600; padding: 8px; border-radius: 6px; cursor: pointer;
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+                background: ${t2('#ffffff', '#313244')}; color: ${t2('#111827', '#f5f5f5')};
+            }
+            .gpc-preview-modal-leaderboard-btn:hover { background: ${t2('#f3f4f6', '#45475a')}; }
+            /* Reuses Ghost++'s own details.gpp-collapsible look (global rules,
+               gpp-ui-shell.js) with the panel's side padding removed, since
+               this one sits inside the modal box rather than a panel. */
+            details.gpc-preview-modal-leaderboard-details { padding: 8px 0 0; font-size: 12px; }
+            details.gpc-preview-modal-leaderboard-details .gpp-body { padding: 8px 0 0; overflow-x: auto; }
         `;
     }
 
     let gppPreviewModalEscHandler = null;
+    let gppPreviewModalLeaderboardRun = null; // { cancelled } for an inline leaderboard still loading
 
     function gppPreviewModalClose() {
         const existing = document.getElementById(GPP_PREVIEW_MODAL_ID);
@@ -123,6 +138,64 @@
             document.removeEventListener('keydown', gppPreviewModalEscHandler);
             gppPreviewModalEscHandler = null;
         }
+        if (gppPreviewModalLeaderboardRun) {
+            gppPreviewModalLeaderboardRun.cancelled = true;
+            gppPreviewModalLeaderboardRun = null;
+        }
+    }
+
+    // "Leaderboard" — the same per-painter table the contributions modal
+    // shows (gpp-contributions.js), loaded inline on demand: one click
+    // replaces the button with a collapsible <details> that first shows the
+    // loading readout and then the table, so a long list can be folded away
+    // again without leaving the modal. Only offered once there's a scan with
+    // opaque pixels to attribute — the same gate as the clickable bar.
+    function gppPreviewModalLeaderboard(template) {
+        const section = document.createElement('div');
+        section.id = 'gpp-preview-modal-leaderboard';
+        section.className = 'gpc-preview-modal-leaderboard';
+        if (typeof gppContributionsLoad !== 'function' || !template.position || !template.scanSummary || !(template.scanSummary.total > 0)) return section;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'gpp-preview-modal-leaderboard-btn';
+        btn.className = 'gpc-preview-modal-leaderboard-btn';
+        btn.textContent = 'Leaderboard';
+        btn.title = 'Who painted this template — correct and incorrect pixels per painter, from the last scan';
+        btn.addEventListener('click', () => {
+            const t = gppContribThemeColors();
+            const run = { cancelled: false };
+            if (gppPreviewModalLeaderboardRun) gppPreviewModalLeaderboardRun.cancelled = true;
+            gppPreviewModalLeaderboardRun = run;
+
+            const details = document.createElement('details');
+            details.className = 'gpp-collapsible gpc-preview-modal-leaderboard-details';
+            details.open = true;
+            const summary = document.createElement('summary');
+            summary.textContent = 'Leaderboard';
+            const body = document.createElement('div');
+            body.className = 'gpp-body';
+            body.innerHTML = '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 0; color: ' + t.textSecondary + ';">'
+                + '<div style="font-size: 28px; margin-bottom: 12px;">⏳</div>'
+                + '<div id="gpp-preview-modal-leaderboard-progress">Reading the scan…</div>'
+                + '</div>';
+            details.append(summary, body);
+            btn.replaceWith(details);
+
+            const progressEl = body.querySelector('#gpp-preview-modal-leaderboard-progress');
+            gppContributionsLoad(template, run, text => { if (progressEl && progressEl.isConnected) progressEl.textContent = text; })
+                .then(result => {
+                    if (!result || run.cancelled || !body.isConnected) return;
+                    gppContribRenderResult(body, result.rows, result.counts, t);
+                })
+                .catch(error => {
+                    console.error('[GeoPixelcons++] Ghost++ preview leaderboard failed:', error);
+                    if (body.isConnected) body.innerHTML = gppContribErrorHtml(error, t);
+                })
+                .finally(() => { if (gppPreviewModalLeaderboardRun === run) gppPreviewModalLeaderboardRun = null; });
+        });
+        section.appendChild(btn);
+        return section;
     }
 
     // Fresh gppLibraryRenderFullCanvas() call -- see the canvas-frame CSS
@@ -326,6 +399,7 @@
 
         box.appendChild(gppPreviewModalCanvas(template));
         box.appendChild(gppPreviewModalProgress(template));
+        box.appendChild(gppPreviewModalLeaderboard(template));
         box.appendChild(gppPreviewModalColors(template, core));
         box.appendChild(gppPreviewModalBuyAll(template, core));
 

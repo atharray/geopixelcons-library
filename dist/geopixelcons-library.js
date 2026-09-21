@@ -1448,6 +1448,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             date: '2026-09-20',
             items: [
                 { type: 'added', text: 'Ghost++: an ℹ️ button in the top-left corner of the current-template preview opens the larger preview — full-size image, progress bar, every colour as a copyable hex list, and Buy all colors — the same window Painting Menu Overhaul’s own ℹ️ opens, now available even with that extension off' },
+                { type: 'added', text: 'Ghost++ larger preview: a Leaderboard button under the progress bar loads the Template Contributions table right inside the window, in a collapsible section' },
             ]
         },
         {
@@ -10853,6 +10854,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // Public surface:
     //   gppContributionsOpen(template) — opens (or re-opens) the modal for
     //                                    a positioned, scanned template.
+    //   gppContributionsLoad(template, run, onProgress) — the numbers alone
+    //                                    (counts → usernames → ranked rows),
+    //                                    no UI; the larger-preview modal's
+    //                                    inline Leaderboard section
+    //                                    (gpp-preview-modal.js) uses this.
+    //   gppContribRenderResult(container, rows, counts, theme) — renders the
+    //                                    table (or the empty state) into any
+    //                                    container.
 
     const GPP_CONTRIB_BAND_ROWS = 128;         // rows per getImageData batch, same as the scan
     const GPP_CONTRIB_USERNAME_BATCH = 10;     // parallel /GetUserProfile lookups, same as Regions Highscore
@@ -11216,6 +11225,39 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         content.innerHTML = html;
     }
 
+    // The whole computation with no UI attached: counts → usernames →
+    // ranked rows. Resolves null if `run.cancelled` was set part-way.
+    async function gppContributionsLoad(template, run, onProgress) {
+        const progress = typeof onProgress === 'function' ? onProgress : () => {};
+        const counts = await gppContribComputeCounts(template, run, progress);
+        if (!counts || run.cancelled) return null;
+        const names = await gppContribFetchUsernames(Array.from(counts.users.keys()), run, progress);
+        if (!names || run.cancelled) return null;
+        return { rows: gppContribRank(counts.users, names), counts };
+    }
+
+    // Renders the leaderboard table — or the nothing-to-show state — into
+    // `container`, replacing whatever it held.
+    function gppContribRenderResult(container, rows, counts, t) {
+        container.innerHTML = '';
+        if (!rows.length) {
+            gppContribSetContent(container, '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; color: ' + t.textSecondary + ';">'
+                + '<div style="font-size: 32px; margin-bottom: 16px;">🤷</div>'
+                + '<div>No painted pixels could be attributed for this template' + (counts.unattributed ? ' (' + counts.unattributed.toLocaleString() + ' painted pixels had no tile data)' : '') + '</div>'
+                + '<div style="font-size: 12px; margin-top: 8px; color: ' + t.textSubtle + ';">Scan progress with the template on screen, then try again.</div>'
+                + '</div>');
+            return;
+        }
+        container.appendChild(gppContribBuildTable(rows, counts, t));
+    }
+
+    function gppContribErrorHtml(error, t) {
+        return '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; color: ' + t.textSecondary + ';">'
+            + '<div style="font-size: 32px; margin-bottom: 16px;">⚠️</div>'
+            + '<div>Could not compute contributions: ' + gppContribEscapeHtml(error && error.message ? error.message : String(error)) + '</div>'
+            + '</div>';
+    }
+
     async function gppContributionsOpen(template) {
         if (!template || !template.position || !template.scanSummary) return { ok: false, reason: 'not-scanned' };
         const t = gppContribThemeColors();
@@ -11225,31 +11267,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         const progressEl = content.querySelector('#gpp-contrib-progress-text');
         const onProgress = text => { if (progressEl && progressEl.isConnected) progressEl.textContent = text; };
         try {
-            const counts = await gppContribComputeCounts(template, run, onProgress);
-            if (!counts || run.cancelled) return { ok: false, reason: 'cancelled' };
-            const names = await gppContribFetchUsernames(Array.from(counts.users.keys()), run, onProgress);
-            if (!names || run.cancelled) return { ok: false, reason: 'cancelled' };
-            const rows = gppContribRank(counts.users, names);
-            if (!modalContainer.isConnected) return { ok: false, reason: 'cancelled' };
-            if (!rows.length) {
-                gppContribSetContent(content, '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; color: ' + t.textSecondary + ';">'
-                    + '<div style="font-size: 32px; margin-bottom: 16px;">🤷</div>'
-                    + '<div>No painted pixels could be attributed for this template' + (counts.unattributed ? ' (' + counts.unattributed.toLocaleString() + ' painted pixels had no tile data)' : '') + '</div>'
-                    + '<div style="font-size: 12px; margin-top: 8px; color: ' + t.textSubtle + ';">Scan progress with the template on screen, then try again.</div>'
-                    + '</div>');
-            } else {
-                content.innerHTML = '';
-                content.appendChild(gppContribBuildTable(rows, counts, t));
-            }
-            return { ok: true, rows, counts };
+            const result = await gppContributionsLoad(template, run, onProgress);
+            if (!result || run.cancelled || !modalContainer.isConnected) return { ok: false, reason: 'cancelled' };
+            gppContribRenderResult(content, result.rows, result.counts, t);
+            return { ok: true, rows: result.rows, counts: result.counts };
         } catch (error) {
             console.error('[GeoPixelcons++] Ghost++ contributions failed:', error);
-            if (modalContainer.isConnected) {
-                gppContribSetContent(content, '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 150px; color: ' + t.textSecondary + ';">'
-                    + '<div style="font-size: 32px; margin-bottom: 16px;">⚠️</div>'
-                    + '<div>Could not compute contributions: ' + gppContribEscapeHtml(error && error.message ? error.message : String(error)) + '</div>'
-                    + '</div>');
-            }
+            if (modalContainer.isConnected) gppContribSetContent(content, gppContribErrorHtml(error, t));
             return { ok: false, reason: 'error', error };
         }
     }
@@ -11279,12 +11303,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // The "ℹ️ Larger preview" modal for a template: its full-resolution
     // image, the same 3-segment scan-progress readout as the Progress
     // section (bar doubles as the entry point to the contributions
-    // leaderboard, see gpp-contributions.js), every colour in the template
-    // as a copyable hex list, and a Buy-all-colors shortcut into Bulk
-    // Purchase Colors. Opened from the ℹ️ button on the Ghost++ window's
-    // current-template frame (gpp-library.js, .gpp-lib-current-info) and
-    // from Painting Menu Overhaul's own ℹ️ on its preview thumbnail
-    // (mobile-painting.js, .gpc-pmo-preview-info-btn).
+    // leaderboard, see gpp-contributions.js), a Leaderboard button that
+    // loads that same per-painter table inline into a collapsible section,
+    // every colour in the template as a copyable hex list, and a
+    // Buy-all-colors shortcut into Bulk Purchase Colors. Opened from the
+    // ℹ️ button on the Ghost++ window's current-template frame
+    // (gpp-library.js, .gpp-lib-current-info) and from Painting Menu
+    // Overhaul's own ℹ️ on its preview thumbnail (mobile-painting.js,
+    // .gpc-pmo-preview-info-btn).
     //
     // This began life inside Painting Menu Overhaul (mobile-painting.js's
     // openTemplatePreviewModal) and moved here so the Ghost++ window can
@@ -11387,10 +11413,23 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 background: ${t2('#2563eb', '#89b4fa')}; color: ${t2('#ffffff', '#1e1e2e')};
             }
             .gpc-preview-modal-buy-btn:hover { opacity: .9; }
+            .gpc-preview-modal-leaderboard:empty { display: none; }
+            .gpc-preview-modal-leaderboard-btn {
+                width: 100%; font: inherit; font-weight: 600; padding: 8px; border-radius: 6px; cursor: pointer;
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+                background: ${t2('#ffffff', '#313244')}; color: ${t2('#111827', '#f5f5f5')};
+            }
+            .gpc-preview-modal-leaderboard-btn:hover { background: ${t2('#f3f4f6', '#45475a')}; }
+            /* Reuses Ghost++'s own details.gpp-collapsible look (global rules,
+               gpp-ui-shell.js) with the panel's side padding removed, since
+               this one sits inside the modal box rather than a panel. */
+            details.gpc-preview-modal-leaderboard-details { padding: 8px 0 0; font-size: 12px; }
+            details.gpc-preview-modal-leaderboard-details .gpp-body { padding: 8px 0 0; overflow-x: auto; }
         `;
     }
 
     let gppPreviewModalEscHandler = null;
+    let gppPreviewModalLeaderboardRun = null; // { cancelled } for an inline leaderboard still loading
 
     function gppPreviewModalClose() {
         const existing = document.getElementById(GPP_PREVIEW_MODAL_ID);
@@ -11399,6 +11438,64 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             document.removeEventListener('keydown', gppPreviewModalEscHandler);
             gppPreviewModalEscHandler = null;
         }
+        if (gppPreviewModalLeaderboardRun) {
+            gppPreviewModalLeaderboardRun.cancelled = true;
+            gppPreviewModalLeaderboardRun = null;
+        }
+    }
+
+    // "Leaderboard" — the same per-painter table the contributions modal
+    // shows (gpp-contributions.js), loaded inline on demand: one click
+    // replaces the button with a collapsible <details> that first shows the
+    // loading readout and then the table, so a long list can be folded away
+    // again without leaving the modal. Only offered once there's a scan with
+    // opaque pixels to attribute — the same gate as the clickable bar.
+    function gppPreviewModalLeaderboard(template) {
+        const section = document.createElement('div');
+        section.id = 'gpp-preview-modal-leaderboard';
+        section.className = 'gpc-preview-modal-leaderboard';
+        if (typeof gppContributionsLoad !== 'function' || !template.position || !template.scanSummary || !(template.scanSummary.total > 0)) return section;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'gpp-preview-modal-leaderboard-btn';
+        btn.className = 'gpc-preview-modal-leaderboard-btn';
+        btn.textContent = 'Leaderboard';
+        btn.title = 'Who painted this template — correct and incorrect pixels per painter, from the last scan';
+        btn.addEventListener('click', () => {
+            const t = gppContribThemeColors();
+            const run = { cancelled: false };
+            if (gppPreviewModalLeaderboardRun) gppPreviewModalLeaderboardRun.cancelled = true;
+            gppPreviewModalLeaderboardRun = run;
+
+            const details = document.createElement('details');
+            details.className = 'gpp-collapsible gpc-preview-modal-leaderboard-details';
+            details.open = true;
+            const summary = document.createElement('summary');
+            summary.textContent = 'Leaderboard';
+            const body = document.createElement('div');
+            body.className = 'gpp-body';
+            body.innerHTML = '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 0; color: ' + t.textSecondary + ';">'
+                + '<div style="font-size: 28px; margin-bottom: 12px;">⏳</div>'
+                + '<div id="gpp-preview-modal-leaderboard-progress">Reading the scan…</div>'
+                + '</div>';
+            details.append(summary, body);
+            btn.replaceWith(details);
+
+            const progressEl = body.querySelector('#gpp-preview-modal-leaderboard-progress');
+            gppContributionsLoad(template, run, text => { if (progressEl && progressEl.isConnected) progressEl.textContent = text; })
+                .then(result => {
+                    if (!result || run.cancelled || !body.isConnected) return;
+                    gppContribRenderResult(body, result.rows, result.counts, t);
+                })
+                .catch(error => {
+                    console.error('[GeoPixelcons++] Ghost++ preview leaderboard failed:', error);
+                    if (body.isConnected) body.innerHTML = gppContribErrorHtml(error, t);
+                })
+                .finally(() => { if (gppPreviewModalLeaderboardRun === run) gppPreviewModalLeaderboardRun = null; });
+        });
+        section.appendChild(btn);
+        return section;
     }
 
     // Fresh gppLibraryRenderFullCanvas() call -- see the canvas-frame CSS
@@ -11602,6 +11699,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 
         box.appendChild(gppPreviewModalCanvas(template));
         box.appendChild(gppPreviewModalProgress(template));
+        box.appendChild(gppPreviewModalLeaderboard(template));
         box.appendChild(gppPreviewModalColors(template, core));
         box.appendChild(gppPreviewModalBuyAll(template, core));
 
