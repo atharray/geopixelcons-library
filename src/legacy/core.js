@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.16.0';
+    const VERSION = '2.17.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1431,6 +1431,13 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.17.0',
+            date: '2026-09-20',
+            items: [
+                { type: 'added', text: 'Ghost++: an ℹ️ button in the top-left corner of the current-template preview opens the larger preview — full-size image, progress bar, every colour as a copyable hex list, and Buy all colors — the same window Painting Menu Overhaul’s own ℹ️ opens, now available even with that extension off' },
+            ]
+        },
         {
             version: '2.16.0',
             date: '2026-09-20',

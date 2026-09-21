@@ -197,91 +197,9 @@
                 font-size: 10px; line-height: 1; cursor: pointer;
             }
             .gpc-pmo-preview-info-btn:hover { background: rgba(0,0,0,.75); }
-            /* Larger-preview modal (openTemplatePreviewModal) -- a genuine
-               standalone overlay appended to document.body, NOT nested
-               inside #bottomControls, so t2() (not tc()) is the CORRECT
-               signal here, same as every other real modal in this codebase
-               (Ghost++'s own, core.js's #gpc-settings-modal) -- tc() exists
-               specifically to work around #bottomControls' own wrapper
-               never going dark, which doesn't apply to a modal this file
-               builds and positions itself. z-index matches core.js's own
-               #gpc-settings-modal convention (100000). */
-            .gpc-preview-modal-overlay {
-                position: fixed; inset: 0; z-index: 100000;
-                background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center;
-                padding: 16px; box-sizing: border-box;
-            }
-            .gpc-preview-modal-box {
-                width: 100%; max-width: 532px; max-height: 90vh; overflow-y: auto;
-                box-sizing: border-box; padding: 14px; border-radius: 10px;
-                background: ${t2('#ffffff', '#1e1e2e')}; color: ${t2('#111827', '#f5f5f5')};
-                box-shadow: 0 12px 32px rgba(0,0,0,.4);
-                display: flex; flex-direction: column; gap: 10px;
-            }
-            .gpc-preview-modal-header {
-                display: flex; align-items: center; justify-content: space-between; gap: 8px;
-            }
-            .gpc-preview-modal-title {
-                font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-            }
-            .gpc-preview-modal-close-btn {
-                flex-shrink: 0; border: none; background: transparent; cursor: pointer;
-                font-size: 14px; color: ${t2('#64748b', '#a6adc8')}; padding: 2px 4px;
-            }
-            /* Fresh gppLibraryRenderFullCanvas() call, independent of the
-               small thumbnail's own cached canvas (getTemplatePreviewCanvas)
-               -- a second call returns a second, unrelated <canvas>, so
-               there's no node-sharing conflict with the thumbnail still
-               showing behind this modal. max-width+max-height BOTH set as
-               caps (neither one FIXED) with width/height:auto is the
-               standard "fit within bounds, keep aspect ratio" CSS pattern
-               -- a different situation from the small thumbnail's own
-               comment (which warns against a FIXED height paired with
-               max-width, not two caps together). Verified in a real DOM
-               regardless, given that comment's own history. */
-            .gpc-preview-modal-canvas-frame {
-                display: flex; align-items: center; justify-content: center;
-                max-height: 56vh; overflow: hidden;
-                border: 1px solid ${t2('#d1d5db', '#45475a')}; border-radius: 6px;
-                background: ${t2('rgba(0,0,0,.03)', 'rgba(255,255,255,.05)')};
-            }
-            .gpc-preview-modal-canvas-frame canvas {
-                max-width: 100%; max-height: 56vh; width: auto; height: auto;
-                display: block; image-rendering: pixelated;
-            }
-            .gpc-preview-modal-progress-wrap { display: flex; flex-direction: column; gap: 4px; }
-            .gpc-preview-modal-bar-outer {
-                display: flex; height: 10px; border-radius: 5px; overflow: hidden;
-                background: ${t2('#e5e7eb', '#313244')};
-            }
-            .gpc-preview-modal-summary-line {
-                font-size: 11px; color: ${t2('#475569', '#a6adc8')};
-            }
-            .gpc-preview-modal-colors-wrap { display: flex; flex-direction: column; gap: 4px; }
-            .gpc-preview-modal-colors-wrap label {
-                font-size: 11px; font-weight: 600; color: ${t2('#1f2937', '#e2e2f5')};
-            }
-            .gpc-preview-modal-colors-row { display: flex; gap: 6px; align-items: stretch; }
-            .gpc-preview-modal-colors-row textarea {
-                flex: 1 1 auto; min-width: 0; height: 70px; resize: vertical;
-                font: 11px ui-monospace, Menlo, Consolas, monospace;
-                padding: 6px; border-radius: 6px; box-sizing: border-box;
-                border: 1px solid ${t2('#d1d5db', '#45475a')};
-                background: ${t2('#f9fafb', '#181825')}; color: ${t2('#111827', '#f5f5f5')};
-            }
-            .gpc-preview-modal-copy-btn {
-                flex-shrink: 0; width: 32px; border-radius: 6px; cursor: pointer;
-                border: 1px solid ${t2('#d1d5db', '#45475a')};
-                background: ${t2('#ffffff', '#313244')}; color: ${t2('#111827', '#f5f5f5')};
-                font-size: 14px;
-            }
-            .gpc-preview-modal-copy-btn:hover { background: ${t2('#f3f4f6', '#45475a')}; }
-            .gpc-preview-modal-buy-btn {
-                font: inherit; font-weight: 600; padding: 8px; border-radius: 6px; cursor: pointer;
-                border: 1px solid ${t2('#2563eb', '#89b4fa')};
-                background: ${t2('#2563eb', '#89b4fa')}; color: ${t2('#ffffff', '#1e1e2e')};
-            }
-            .gpc-preview-modal-buy-btn:hover { opacity: .9; }
+            /* The larger-preview modal itself (.gpc-preview-modal-*) is
+               Ghost++'s own now -- see gpp-preview-modal.js, which injects
+               its stylesheet; openTemplatePreviewModal below just delegates. */
             /* Palette view toggle (Grid/List), MIRRORED from gpp-view-
                settings.js -- see mirrorPaletteViewToggle's own comment.
                Ghost++'s own .gpp-vs-row is a horizontal label-then-toggle
@@ -987,8 +905,8 @@
     // RGB template hex (core.packedToHex) has to be compared against just the
     // leading 7 characters ("#RRGGBB") of each owned entry, the same
     // truncation that function already uses -- NOT the unfiltered
-    // whole-string comparison this file's own bulkEnableOwned/
-    // buildModalBuyAllButton use elsewhere (which never actually matches a
+    // whole-string comparison this file's own bulkEnableOwned and
+    // gpp-preview-modal.js's gppPreviewModalBuyAll use elsewhere (which never actually matches a
     // 6-digit hex against an 8-digit one -- a separate, pre-existing issue,
     // out of scope here).
     function isTemplateColorOwned(hex) {
@@ -1906,225 +1824,18 @@
         dbgPush('Painting Menu Overhaul: preview thumbnail tapped -- switched to ' + (switchingToPlaceholders ? 'placeholder panels' : 'native controls') + '.', { uiComponent: 'Painting Menu Overhaul' });
     }
 
-    // ── Larger-preview modal (eye icon on .gpc-pmo-preview-frame) ───────
-    // A genuine standalone modal, built fresh on every open and torn down on
-    // close -- unlike the placeholder columns, nothing here is a mirror of
-    // Ghost++ DOM. Two reasons: (1) it would need its own live-sync concern
-    // on top of the placeholder columns' -- exactly the kind of observer
-    // proliferation that caused the real page-freeze regression earlier in
-    // this feature's history; (2)
-    // everything shown here (a progress bar's segment widths, its summary
-    // text, the color list) is pure, stateless formatting of already-real
-    // data (template.scanSummary, template.palette), the same category of
-    // thing gppPaletteStats/gppPaletteProgressColor already are -- not
-    // Ghost++ business logic being duplicated, just display of it.
-
+    // ── Larger-preview modal (ℹ️ on .gpc-pmo-preview-frame) ─────────────
+    // Ghost++'s own modal now (gpp-preview-modal.js: same #gpc-pmo-preview-
+    // modal id and .gpc-preview-modal-* classes it always had, plus the
+    // Ghost++ window's own ℹ️ opening it), so it exists whether or not this
+    // extension is enabled. These two delegates keep this file's callers
+    // unchanged.
     function closeTemplatePreviewModal() {
-        const existing = document.getElementById('gpc-pmo-preview-modal');
-        if (existing) existing.remove();
-    }
-
-    // Mirrors gpp-scan.js's own gppRenderProgressBar readout exactly (same
-    // 3-segment correct/wrong/not-yet-placed bar, same summary text
-    // including gppScanFormatRelativeTime's real relative-time formatting,
-    // called directly rather than reimplemented) for whichever of its
-    // states currently applies -- not placed yet, not scanned yet, no
-    // opaque pixels, or a real scan result.
-    function buildModalProgressReadout(template) {
-        const wrap = document.createElement('div');
-        wrap.className = 'gpc-preview-modal-progress-wrap';
-
-        const barOuter = document.createElement('div');
-        barOuter.className = 'gpc-preview-modal-bar-outer';
-        wrap.appendChild(barOuter);
-
-        const summaryLine = document.createElement('div');
-        summaryLine.className = 'gpc-preview-modal-summary-line';
-        wrap.appendChild(summaryLine);
-
-        const neutralSeg = () => {
-            const seg = document.createElement('div');
-            seg.style.cssText = 'width:100%; background:' + t2('#cbd5e1', '#45475a') + ';';
-            barOuter.appendChild(seg);
-        };
-
-        if (!template.position) {
-            barOuter.style.opacity = '0.4';
-            summaryLine.textContent = 'Place the template on the map, then scan to see progress.';
-        } else if (!template.scanSummary) {
-            neutralSeg();
-            summaryLine.textContent = 'Not scanned yet.';
-        } else {
-            const summary = template.scanSummary;
-            const total = summary.total;
-            if (total <= 0) {
-                neutralSeg();
-                summaryLine.textContent = 'Template has no opaque pixels -- nothing to show.';
-            } else {
-                const notPlaced = Math.max(0, total - summary.correct - summary.wrong);
-                const pct = (value) => (value / total) * 100;
-
-                const correctSeg = document.createElement('div');
-                correctSeg.style.cssText = `width:${pct(summary.correct)}%; background:${t2('#16a34a', '#a6e3a1')};`;
-                correctSeg.title = `Correct: ${summary.correct.toLocaleString()} px`;
-                barOuter.appendChild(correctSeg);
-
-                const wrongSeg = document.createElement('div');
-                wrongSeg.style.cssText = `width:${pct(summary.wrong)}%; background:${t2('#dc2626', '#f38ba8')};`;
-                wrongSeg.title = `Wrong color: ${summary.wrong.toLocaleString()} px`;
-                barOuter.appendChild(wrongSeg);
-
-                const notPlacedSeg = document.createElement('div');
-                notPlacedSeg.style.cssText = `width:${pct(notPlaced)}%; background:${t2('#94a3b8', '#6c7086')};`;
-                notPlacedSeg.title = `Not yet placed: ${notPlaced.toLocaleString()} px`;
-                barOuter.appendChild(notPlacedSeg);
-
-                // Same entry point to the per-painter leaderboard as the real
-                // Progress bar (gpp-contributions.js); it opens above this modal.
-                if (typeof gppContribMakeBarClickable === 'function') gppContribMakeBarClickable(barOuter, template);
-
-                const donePct = Math.round(pct(summary.correct));
-                summaryLine.textContent = `${summary.correct.toLocaleString()} completed of ${total.toLocaleString()} total (${donePct}%)`
-                    + (summary.scannedAt ? ` — scanned ${gppScanFormatRelativeTime(summary.scannedAt)}` : '');
-            }
-        }
-        return wrap;
-    }
-
-    // Textarea with every color in the template (matches
-    // copyHexValuesForScope's own 'all'-scope order/format exactly, since
-    // that's what the copy button below actually copies) plus a clipboard
-    // button that reuses copyHexValuesForScope directly for the real
-    // copy-with-fallback behavior -- only the confirmation on top
-    // (showAlert with the returned count) is new here.
-    function buildModalColorsSection(template, core) {
-        const wrap = document.createElement('div');
-        wrap.className = 'gpc-preview-modal-colors-wrap';
-
-        const label = document.createElement('label');
-        label.htmlFor = 'gpc-preview-modal-colors-textarea';
-        label.textContent = 'Colors in this template';
-        wrap.appendChild(label);
-
-        const row = document.createElement('div');
-        row.className = 'gpc-preview-modal-colors-row';
-
-        const textarea = document.createElement('textarea');
-        textarea.id = 'gpc-preview-modal-colors-textarea';
-        textarea.readOnly = true;
-        const hexes = [];
-        for (let index = 0; index < template.palette.length; index++) {
-            hexes.push(core.packedToHex(template.palette[index]));
-        }
-        textarea.value = hexes.join(', ');
-        row.appendChild(textarea);
-
-        const copyBtn = document.createElement('button');
-        copyBtn.type = 'button';
-        copyBtn.className = 'gpc-preview-modal-copy-btn';
-        copyBtn.title = 'Copy to clipboard';
-        copyBtn.textContent = '📋';
-        copyBtn.addEventListener('click', () => {
-            const count = copyHexValuesForScope(template, core, 'all');
-            const win = pageWindow();
-            if (win && typeof win.showAlert === 'function') {
-                win.showAlert('Success', `${count.toLocaleString()} color${count === 1 ? '' : 's'} copied to clipboard.`);
-            }
-        });
-        row.appendChild(copyBtn);
-
-        wrap.appendChild(row);
-        return wrap;
-    }
-
-    // Mirrors gpp-palette.js's own buyBtn click handler exactly (same
-    // owned-check + dedup + needed-list computation, same disabled/all-
-    // owned guard messages) -- duplicated rather than called since it's
-    // inline inside that file's own private closure, not a reachable
-    // function, but the ACTUAL "reveal profile panel, scroll, populate
-    // textarea" behavior still goes through the one real function
-    // (gppBulkPurchaseOpenProfilePanel), not reimplemented. Closes this
-    // modal afterward so it doesn't sit on top of the profile panel it
-    // just opened.
-    function buildModalBuyAllButton(template, core) {
-        const buyBtn = document.createElement('button');
-        buyBtn.type = 'button';
-        buyBtn.className = 'gpc-preview-modal-buy-btn';
-        buyBtn.textContent = 'Buy all colors';
-        buyBtn.title = "Reveal the profile panel's Bulk Purchase Colors card, pre-filled with every color in this template you don't already own";
-        buyBtn.addEventListener('click', () => {
-            if (typeof gppBulkPurchaseOpenProfilePanel !== 'function') {
-                alert('Bulk Purchase Colors is disabled in GeoPixelcons++ settings.');
-                return;
-            }
-            const ownedHex = new Set(((typeof gppReadGamePalette === 'function') ? gppReadGamePalette() : []).map((row) => String(row.hex).toUpperCase()));
-            const seen = new Set();
-            const needed = [];
-            for (let index = 0; index < template.palette.length; index++) {
-                const hex = core.packedToHex(template.palette[index]);
-                if (ownedHex.has(hex) || seen.has(hex)) continue;
-                seen.add(hex);
-                needed.push(hex);
-            }
-            if (!needed.length) {
-                alert('Every color in this template is already owned.');
-                return;
-            }
-            gppBulkPurchaseOpenProfilePanel(needed);
-            closeTemplatePreviewModal();
-        });
-        return buyBtn;
-    }
-
-    // Fresh gppLibraryRenderFullCanvas() call -- independent of
-    // getTemplatePreviewCanvas's own cached canvas for the small thumbnail,
-    // so there's no node-sharing conflict with the thumbnail still showing
-    // behind this modal.
-    function buildModalPreviewCanvas(template) {
-        const frame = document.createElement('div');
-        frame.className = 'gpc-preview-modal-canvas-frame';
-        if (typeof gppLibraryRenderFullCanvas === 'function') {
-            const canvas = gppLibraryRenderFullCanvas(template);
-            if (canvas) frame.appendChild(canvas);
-        }
-        return frame;
+        if (typeof gppPreviewModalClose === 'function') gppPreviewModalClose();
     }
 
     function openTemplatePreviewModal(template) {
-        closeTemplatePreviewModal(); // always rebuilt fresh, never reused stale
-        const core = gppCreateCore();
-
-        const overlay = document.createElement('div');
-        overlay.id = 'gpc-pmo-preview-modal';
-        overlay.className = 'gpc-preview-modal-overlay';
-        overlay.addEventListener('click', (event) => {
-            if (event.target === overlay) closeTemplatePreviewModal();
-        });
-
-        const box = document.createElement('div');
-        box.className = 'gpc-preview-modal-box';
-        overlay.appendChild(box);
-
-        const headerRow = document.createElement('div');
-        headerRow.className = 'gpc-preview-modal-header';
-        const title = document.createElement('div');
-        title.className = 'gpc-preview-modal-title';
-        title.textContent = template.name || 'Template preview';
-        const closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        closeBtn.className = 'gpc-preview-modal-close-btn';
-        closeBtn.textContent = '✖';
-        closeBtn.title = 'Close';
-        closeBtn.addEventListener('click', closeTemplatePreviewModal);
-        headerRow.append(title, closeBtn);
-        box.appendChild(headerRow);
-
-        box.appendChild(buildModalPreviewCanvas(template));
-        box.appendChild(buildModalProgressReadout(template));
-        box.appendChild(buildModalColorsSection(template, core));
-        box.appendChild(buildModalBuyAllButton(template, core));
-
-        document.body.appendChild(overlay);
+        if (typeof gppPreviewModalOpen === 'function') gppPreviewModalOpen(template);
     }
 
     // Builds the compact grid for `order` (a list of palette indices, already
