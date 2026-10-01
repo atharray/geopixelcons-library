@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.18.0](https://github.com/atharray/geopixelcons-library/compare/v2.17.0...v2.18.0) (2026-10-01)
+
+
+### Features
+
+* keep transparent paint in the template palette ([19ced83](https://github.com/atharray/geopixelcons-library/commit/19ced83e39201199f058b86e2cfd75b804879ad1))
+
 ## [2.17.0](https://github.com/atharray/geopixelcons-library/compare/v2.16.0...v2.17.0) (2026-09-21)
 
 
