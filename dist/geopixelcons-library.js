@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.16.0 - readable release bundle */
+/* GeoPixelcons Library v2.17.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.17.0'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.17.0';
+    const VERSION = '2.18.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1443,6 +1443,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.18.0',
+            date: '2026-09-30',
+            items: [
+                { type: 'fixed', text: 'Painting Menu Overhaul: Use manual palette stays responsive while Ghost++ controls refresh' },
+                { type: 'added', text: 'Painting Menu Overhaul: template palette always ends with a transparent paint swatch' },
+            ]
+        },
         {
             version: '2.17.0',
             date: '2026-09-20',
@@ -38596,7 +38604,15 @@ if (_settings.profileColorsCollapse) {
         const uploadPanel = document.getElementById('gpc-pmo-upload-panel');
         const placementPanel = document.getElementById('gpc-pmo-placement-panel');
         if (scanPanel) { scanPanel.innerHTML = ''; buildPlaceholder1Content(scanPanel); }
-        if (uploadPanel) { uploadPanel.innerHTML = ''; buildPlaceholder2Content(uploadPanel); }
+        if (uploadPanel) {
+            // Keep our checkbox mounted while Ghost++ refreshes its mirrors.
+            // Replacing it mid-pointer gesture can swallow the browser's click.
+            const manualOption = uploadPanel.querySelector('.gpc-pmo-manual-palette-option');
+            Array.from(uploadPanel.children).forEach((child) => {
+                if (child !== manualOption) child.remove();
+            });
+            buildPlaceholder2Content(uploadPanel, manualOption);
+        }
         if (placementPanel) { placementPanel.innerHTML = ''; buildPlaceholder3Content(placementPanel); }
         requestPaintMenuControlsScaleLayout();
     }
@@ -38872,10 +38888,11 @@ if (_settings.profileColorsCollapse) {
     // #gpc-pmo-placeholder-group's own injected style carries a tc()-themed
     // rule for its mirror. This runs on every rebuild (including live-sync
     // ticks), building the mirror fresh each time.
-    function buildPlaceholder2Content(container) {
+    function buildPlaceholder2Content(container, manualOption) {
         const dropZone = document.getElementById('gpp-drop-zone');
         if (!dropZone) return;
         const mirror = mirrorNode(dropZone, container);
+        if (manualOption) container.insertBefore(mirror, manualOption);
         ['gpp-drop-zone-heading', 'gpp-drop-zone-hint', 'gpp-file-input'].forEach((id) => {
             const el = mirror.querySelector('#' + MIRROR_ID_PREFIX + id);
             if (el) el.remove();
@@ -38885,18 +38902,18 @@ if (_settings.profileColorsCollapse) {
         mobileHint.innerHTML = '<strong>Click to upload template files</strong>';
         mirror.insertBefore(mobileHint, mirror.firstChild);
 
-        mirrorNode(document.getElementById('gpp-lib-manage-btn'), container);
+        const manageMirror = mirrorNode(document.getElementById('gpp-lib-manage-btn'), container);
+        if (manualOption && manageMirror) container.insertBefore(manageMirror, manualOption);
+        if (manualOption) return;
 
         // "Use manual palette" -- per explicit user feedback (ReaCreations,
         // via Discord), lives here rather than the always-visible control
         // row: it's a rarely-toggled preference, reachable via the preview
         // thumbnail tap alongside the other template-management controls
         // (upload/manage templates) instead of crowding that row with a
-        // dedicated dropdown for one checkbox. Recreated fresh on every
-        // rebuild -- same as this column's mirrored siblings -- because
-        // rebuildPlaceholderColumns() always clears this container's
-        // innerHTML first; state lives in _settings, not the DOM, so there's
-        // nothing to preserve across that wipe.
+        // dedicated dropdown for one checkbox. Unlike the mirrored siblings,
+        // this control stays mounted across Ghost++ refreshes so a pointer
+        // gesture can complete before the browser dispatches its change.
         const manualPaletteOption = document.createElement('label');
         manualPaletteOption.className = 'gpc-pmo-manual-palette-option';
         const manualPaletteInput = document.createElement('input');
@@ -39120,6 +39137,16 @@ if (_settings.profileColorsCollapse) {
         // not just the dropdown's own change handler.
         grid.style.maxHeight = computeGridMaxHeight(getVisibleRowsSetting()) + 'px';
 
+        function showTransparentCheckerboard(element) {
+            element.style.backgroundImage =
+                'linear-gradient(45deg, #ccc 25%, transparent 25%),' +
+                'linear-gradient(-45deg, #ccc 25%, transparent 25%),' +
+                'linear-gradient(45deg, transparent 75%, #ccc 75%),' +
+                'linear-gradient(-45deg, transparent 75%, #ccc 75%)';
+            element.style.backgroundSize = '15px 15px';
+            element.style.backgroundPosition = '0 0, 0 7.5px, 7.5px -7.5px, -7.5px 0px';
+        }
+
         function soloColor(targetIndex, hex) {
             const isNewSelection = !liveState || liveState.selectedHex !== hex;
             // Per explicit user feedback: tapping a color you don't own must
@@ -39148,6 +39175,10 @@ if (_settings.profileColorsCollapse) {
             let targetSwatchEl = null;
             for (let i = 0; i < swatches.length; i++) {
                 const swatch = swatches[i];
+                if (!swatch.hasAttribute('data-index')) {
+                    swatch.classList.remove('gpp-swatch-selected');
+                    continue;
+                }
                 const swatchIndex = Number(swatch.dataset.index);
                 const isTarget = swatchIndex === targetIndex;
                 if (isTarget) targetSwatchEl = swatch;
@@ -39241,17 +39272,12 @@ if (_settings.profileColorsCollapse) {
                     // pixel-count data.
                     if (typeof gppPaletteApplyListLayout === 'function') {
                         gppPaletteApplyListLayout(swatch, hex, { total: 0, completed: 0 }, false);
+                        if (isTransparent) showTransparentCheckerboard(swatch.querySelector('.gpp-palette-list-chip'));
                     } else {
                         swatch.style.backgroundColor = hex;
                     }
                 } else if (isTransparent) {
-                    swatch.style.backgroundImage =
-                        'linear-gradient(45deg, #ccc 25%, transparent 25%),' +
-                        'linear-gradient(-45deg, #ccc 25%, transparent 25%),' +
-                        'linear-gradient(45deg, transparent 75%, #ccc 75%),' +
-                        'linear-gradient(-45deg, transparent 75%, #ccc 75%)';
-                    swatch.style.backgroundSize = '15px 15px';
-                    swatch.style.backgroundPosition = '0 0, 0 7.5px, 7.5px -7.5px, -7.5px 0px';
+                    showTransparentCheckerboard(swatch);
                 } else {
                     swatch.style.backgroundColor = hex;
                 }
@@ -39361,6 +39387,31 @@ if (_settings.profileColorsCollapse) {
             }
             grid.appendChild(swatch);
         });
+        // Transparency is a native paint color, not a Ghost++ template mask
+        // entry. Keep it available after every sorted/filtered template list.
+        const transparentHex = '#00000000';
+        const transparentSwatch = document.createElement('button');
+        transparentSwatch.type = 'button';
+        transparentSwatch.className = 'gpp-swatch gpc-pmo-template-transparent' + (listMode ? ' gpp-swatch-list' : '');
+        transparentSwatch.dataset.hex = transparentHex;
+        transparentSwatch.title = transparentHex;
+        setSwatchState(transparentSwatch, transparentHex, true);
+        if (listMode && typeof gppPaletteApplyListLayout === 'function') {
+            gppPaletteApplyListLayout(transparentSwatch, transparentHex, { total: 0, completed: 0 }, false);
+            showTransparentCheckerboard(transparentSwatch.querySelector('.gpp-palette-list-chip'));
+            transparentSwatch.querySelector('.gpp-palette-list-progress-text').textContent = 'Paint transparent';
+        } else {
+            showTransparentCheckerboard(transparentSwatch);
+        }
+        transparentSwatch.addEventListener('click', () => {
+            if (!selectNativePaintColor(transparentHex)) return;
+            if (liveState) { liveState.selectedHex = transparentHex; liveState.soloMode = true; }
+            Array.from(grid.children).forEach((swatch) => {
+                swatch.classList.toggle('gpp-swatch-selected', swatch === transparentSwatch);
+            });
+            updateHexDisplay(transparentHex);
+        });
+        grid.appendChild(transparentSwatch);
         } // end of the `else` branch opened above the order.forEach call --
           // deliberately not re-indented (see this block's own opening
           // comment) to keep this diff reviewable.
@@ -40249,6 +40300,7 @@ if (_settings.profileColorsCollapse) {
                 const swatches = liveState.grid.children;
                 for (let i = 0; i < swatches.length; i++) {
                     const swatch = swatches[i];
+                    if (!swatch.hasAttribute('data-index')) continue;
                     const index = Number(swatch.dataset.index);
                     const enabled = core.maskHas(template.mask, index);
                     if (swatch.classList.contains('gpp-swatch-off') === enabled) {

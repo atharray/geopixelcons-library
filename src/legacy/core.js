@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.17.0';
+    const VERSION = '2.18.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1431,6 +1431,14 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.18.0',
+            date: '2026-09-30',
+            items: [
+                { type: 'fixed', text: 'Painting Menu Overhaul: Use manual palette stays responsive while Ghost++ controls refresh' },
+                { type: 'added', text: 'Painting Menu Overhaul: template palette always ends with a transparent paint swatch' },
+            ]
+        },
         {
             version: '2.17.0',
             date: '2026-09-20',
