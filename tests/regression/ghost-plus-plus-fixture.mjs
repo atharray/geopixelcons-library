@@ -3579,6 +3579,27 @@ function buildDriverScript() {
     L.push('      if (document.getElementById("gpc-pmo-mirror-" + id) !== mirror(id)) throw new Error("mirror of #" + id + " does not carry the prefixed id gpc-pmo-mirror-" + id);');
     L.push('    });');
     L.push('    var mirrorZone = mirror("gpp-drop-zone");');
+    L.push('    var manualInput = group.querySelector("#gpc-pmo-upload-panel .gpc-pmo-manual-palette-option input");');
+    L.push('    if (!manualInput) throw new Error("manual palette checkbox missing");');
+    L.push('    modal.setAttribute("title", "manual palette refresh probe");');
+    L.push('    await tick();');
+    L.push('    if (group.querySelector("#gpc-pmo-upload-panel .gpc-pmo-manual-palette-option input") !== manualInput || !manualInput.isConnected) throw new Error("Ghost++ refresh replaced the manual palette checkbox during a pointer gesture");');
+    L.push('    var transparent = document.querySelector("#gpc-pmo-palette-grid .gpc-pmo-template-transparent");');
+    L.push('    if (!transparent || transparent !== transparent.parentElement.lastElementChild || transparent.dataset.hex !== "#00000000" || !transparent.style.backgroundImage.includes("linear-gradient")) throw new Error("template palette must end with a checkerboard transparent swatch");');
+    L.push('    if (document.querySelectorAll("#gpc-pmo-palette-grid .gpc-pmo-template-transparent").length !== 1) throw new Error("template palette rendered duplicate transparent swatches");');
+    L.push('    var maskBeforeTransparent = Array.from(template.mask).join(",");');
+    L.push('    transparent.click();');
+    L.push('    if (window.__changedColors[window.__changedColors.length - 1] !== "#00000000") throw new Error("transparent swatch did not select the native transparent paint color");');
+    L.push('    if (Array.from(template.mask).join(",") !== maskBeforeTransparent) throw new Error("transparent paint selection modified the Ghost++ template mask");');
+    L.push('    document.querySelector("#gpc-pmo-palette-grid [data-index]").click();');
+    L.push('    if (transparent.classList.contains("gpp-swatch-selected")) throw new Error("transparent swatch kept the selected ring after choosing a template color");');
+    L.push('    manualInput.click();');
+    L.push('    if (!manualInput.checked || !document.querySelector("#gpc-pmo-palette-grid.gpc-pmo-manual-mode")) throw new Error("manual palette checkbox did not activate");');
+    L.push('    if (document.querySelector("#gpc-pmo-palette-grid .gpc-pmo-template-transparent")) throw new Error("template-only transparent swatch leaked into manual mode");');
+    L.push('    manualInput.click();');
+    L.push('    if (manualInput.checked || document.querySelector("#gpc-pmo-palette-grid.gpc-pmo-manual-mode")) throw new Error("manual palette checkbox did not return to template mode");');
+    L.push('    transparent = document.querySelector("#gpc-pmo-palette-grid .gpc-pmo-template-transparent");');
+    L.push('    if (!transparent || transparent !== transparent.parentElement.lastElementChild) throw new Error("transparent swatch was not restored last after leaving manual mode");');
     L.push('    if (mirrorZone.querySelector("[data-gpc-mirror-of=gpp-file-input]")) throw new Error("the drop-zone mirror kept a copy of the hidden file input");');
     L.push('    if (!mirrorZone.querySelector("#gpc-pmo-drop-zone-hint")) throw new Error("the drop-zone mirror is missing its short mobile hint");');
     L.push('');
@@ -3640,6 +3661,9 @@ function buildDriverScript() {
     L.push('    if (gppSettings.paletteViewMode !== "list") throw new Error("REGRESSION: clicking the mirrored List button did not reach the real button");');
     L.push('    var listSynced = await waitFor(function() { var b = col.querySelector("[data-gpc-mirror-of=gpp-vs-palette-view-list]"); return b && b.classList.contains("gpp-vs-view-btn-active"); }, 3000);');
     L.push('    if (!listSynced) throw new Error("the List mirror did not show the active state after the real row re-rendered");');
+    L.push('    var listTransparent = null;');
+    L.push('    var listTransparentReady = await waitFor(function() { listTransparent = document.querySelector("#gpc-pmo-palette-grid .gpc-pmo-template-transparent.gpp-swatch-list"); return !!(listTransparent && listTransparent.querySelector(".gpp-palette-list-chip")); }, 3000);');
+    L.push('    if (!listTransparentReady || listTransparent !== listTransparent.parentElement.lastElementChild || !listTransparent.querySelector(".gpp-palette-list-chip").style.backgroundImage.includes("linear-gradient")) throw new Error("List view lost the last checkerboard transparent swatch");');
     L.push('    col.querySelector("[data-gpc-mirror-of=gpp-vs-palette-view-grid]").click();');
     L.push('    if (gppSettings.paletteViewMode !== "grid") throw new Error("clicking the mirrored Grid button did not restore grid mode");');
     L.push('    await tick();');
@@ -3658,7 +3682,7 @@ function buildDriverScript() {
     L.push('    if (group.querySelector("[data-gpc-mirror-of]")) throw new Error("mirrors were not discarded when switching back to native controls");');
     L.push('    originals.forEach(function(id) { var el = document.getElementById(id); if (!el || !modal.contains(el)) throw new Error("#" + id + " is missing from the Ghost++ modal after leaving placeholder mode"); });');
     L.push('    gppSettings.paletteViewMode = savedViewMode; gppState.saveSettings();');
-    L.push('    return "placeholder mode mirrors every Ghost++ control instead of moving it: all originals stayed inside #gpp-modal (no original id inside the placeholder group, drop-zone heading untouched), and forwarding worked for a button click (Show errors + alert, mirror relabelled), a checkbox (Group noise), a slider input (Opacity with live readout), an attribute-only change (Preview active class), the Grid/List toggle, and the drop zone (real file input clicked once); mirrors are discarded on the way back";');
+    L.push('    return "placeholder mode keeps the manual palette checkbox mounted during Ghost++ refreshes; template mode always ends with one usable transparent swatch that selects native paint without changing the template mask; existing Ghost++ mirrors remain intact and interactive";');
     L.push('  });');
     L.push('');
     // ---- item contributions.leaderboard-from-scan ----
