@@ -443,11 +443,11 @@
     }
 
     // ── Hover highlight ──────────────────────────────────────────
-    // Hovering a row flashes that user's pixels magenta with a pulsing
-    // "bump". It is a lightweight overlay canvas rather than a tile
-    // regeneration: one pass over the cached ownership bitmaps builds a small
-    // per-tile mask, and an animation loop just re-projects those masks.
-    let jcHl = null;   // { id, masks, canvas, raf, timer }
+    // Hovering a row highlights that user's pixels in magenta. It is a
+    // lightweight overlay canvas rather than a tile regeneration: one pass over
+    // the cached ownership bitmaps builds a small per-tile mask, which is
+    // re-projected only when the map moves.
+    let jcHl = null;   // { id, masks, canvas, redraw, timer }
 
     function jcBuildMasks(id) {
         const masks = [];
@@ -500,14 +500,16 @@
     function jcStopHighlight() {
         if (!jcHl) return;
         clearTimeout(jcHl.timer);
-        if (jcHl.raf) cancelAnimationFrame(jcHl.raf);
+        if (jcHl.redraw && typeof map !== 'undefined' && map && typeof map.off === 'function') {
+            try { map.off('move', jcHl.redraw); } catch (_) {}
+        }
         if (jcHl.canvas) jcHl.canvas.remove();
         jcHl = null;
     }
 
     function jcStartHighlight(id) {
         jcStopHighlight();
-        const state = { id, masks: null, canvas: null, raf: 0, timer: 0 };
+        const state = { id, masks: null, canvas: null, redraw: null, timer: 0 };
         jcHl = state;
         // Brief delay so sweeping the cursor down the list doesn't scan per row.
         state.timer = setTimeout(() => {
@@ -520,8 +522,8 @@
             canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;';
             container.appendChild(canvas);
             state.canvas = canvas;
-            const start = performance.now();
-            const frame = (now) => {
+            // Static (no animation): redrawn only when the map itself moves.
+            const draw = () => {
                 if (jcHl !== state) return;
                 const rect = container.getBoundingClientRect();
                 const dpr = window.devicePixelRatio || 1;
@@ -530,28 +532,26 @@
                 const ctx = canvas.getContext('2d');
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 ctx.clearRect(0, 0, rect.width, rect.height);
-                // 0..1 pulse; the bump is the mask swelling outward by up to ~2px.
-                const pulse = 0.5 - 0.5 * Math.cos(((now - start) / 700) * Math.PI * 2);
-                const bump = pulse * 2;
-                ctx.globalAlpha = 0.75 + 0.25 * pulse;
                 state.masks.forEach((m) => {
-                    const a = map.project(turf.toWgs84([m.west, m.south]));
-                    const z = map.project(turf.toWgs84([m.east, m.north]));
-                    const x = a.x, y = z.y, w = z.x - a.x, h = a.y - z.y;
+                    const sw = map.project(turf.toWgs84([m.west, m.south]));
+                    const ne = map.project(turf.toWgs84([m.east, m.north]));
+                    const x = sw.x, y = ne.y, w = ne.x - sw.x, h = sw.y - ne.y;
                     if (w <= 0 || h <= 0) return;
                     if (x > rect.width || y > rect.height || x + w < 0 || y + h < 0) return;
                     ctx.imageSmoothingEnabled = (w / m.cols) < 1;
-                    ctx.drawImage(m.canvas, x, y, w, h);
-                    if (bump > 0.05) {
-                        ctx.drawImage(m.canvas, x - bump, y, w, h);
-                        ctx.drawImage(m.canvas, x + bump, y, w, h);
-                        ctx.drawImage(m.canvas, x, y - bump, w, h);
-                        ctx.drawImage(m.canvas, x, y + bump, w, h);
-                    }
+                    // Mask row 0 is the lowest grid Y, which the site draws at the
+                    // BOTTOM of the tile (its corners are supplied BL,BR,TR,TL to
+                    // flip the bitmap), so flip vertically to match.
+                    ctx.save();
+                    ctx.translate(x, y + h);
+                    ctx.scale(1, -1);
+                    ctx.drawImage(m.canvas, 0, 0, w, h);
+                    ctx.restore();
                 });
-                state.raf = requestAnimationFrame(frame);
             };
-            state.raf = requestAnimationFrame(frame);
+            state.redraw = draw;
+            try { map.on('move', draw); } catch (_) {}
+            draw();
         }, 90);
     }
 
