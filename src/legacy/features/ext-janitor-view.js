@@ -595,6 +595,22 @@
         }
     }
 
+    // Blocked User List compatibility: its page bridge publishes the users it is
+    // currently fading or hiding (only while the list is enabled), so those
+    // users stay out of the Janitor Colors list.
+    function jcBlockedIds() {
+        const ids = new Set();
+        try {
+            const bridge = _jcPw.__gpcBlockedUsers;
+            if (!bridge || typeof bridge.getOpacities !== 'function') return ids;
+            (bridge.getOpacities() || []).forEach((e) => {
+                const id = Number(e && e.id);
+                if (Number.isInteger(id)) ids.add(id);
+            });
+        } catch (_) {}
+        return ids;
+    }
+
     function jcRenderRows(panel) {
         const list = panel.querySelector('.gpp-jc-list');
         const note = panel.querySelector('.gpp-jc-note');
@@ -606,7 +622,8 @@
             note.textContent = '';
             return;
         }
-        const entries = Array.from(jcScan.counts.entries()).sort((a, b) => b[1] - a[1]);
+        const blocked = jcBlockedIds();
+        const entries = Array.from(jcScan.counts.entries()).filter(([id]) => !blocked.has(id)).sort((a, b) => b[1] - a[1]);
         const candidates = entries.slice(0, JC_ROW_CAP);
         // Names resolve lazily, so look up every candidate (not just matches) or a
         // name search could never find a user whose name hasn't loaded yet.

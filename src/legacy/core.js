@@ -1464,7 +1464,7 @@
                 { type: 'added', text: 'Region Screenshot: captures the owner colors when Janitor View (toggleUserView) is on' },
                 { type: 'added', text: 'Palette hover tooltip (Ghost++ and Painting Menu Overhaul) shows completion % beside the hex' },
                 { type: 'changed', text: 'Settings: Janitor View and the new Janitor Colors toggle have their own "Janitor settings" section; Janitor Colors is disabled while Janitor View is off' },
-                { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON; hovering a user highlights their pixels in magenta; search by name/ID; click a name to open their profile' },
+                { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON; hovering a user highlights their pixels in magenta; search by name/ID; click a name to open their profile; users on the Blocked User List are left out' },
             ]
         },
         {

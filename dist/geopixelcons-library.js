@@ -1476,7 +1476,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Region Screenshot: captures the owner colors when Janitor View (toggleUserView) is on' },
                 { type: 'added', text: 'Palette hover tooltip (Ghost++ and Painting Menu Overhaul) shows completion % beside the hex' },
                 { type: 'changed', text: 'Settings: Janitor View and the new Janitor Colors toggle have their own "Janitor settings" section; Janitor Colors is disabled while Janitor View is off' },
-                { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON; hovering a user highlights their pixels in magenta; search by name/ID; click a name to open their profile' },
+                { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON; hovering a user highlights their pixels in magenta; search by name/ID; click a name to open their profile; users on the Blocked User List are left out' },
             ]
         },
         {
@@ -32823,6 +32823,22 @@ patch();
         }
     }
 
+    // Blocked User List compatibility: its page bridge publishes the users it is
+    // currently fading or hiding (only while the list is enabled), so those
+    // users stay out of the Janitor Colors list.
+    function jcBlockedIds() {
+        const ids = new Set();
+        try {
+            const bridge = _jcPw.__gpcBlockedUsers;
+            if (!bridge || typeof bridge.getOpacities !== 'function') return ids;
+            (bridge.getOpacities() || []).forEach((e) => {
+                const id = Number(e && e.id);
+                if (Number.isInteger(id)) ids.add(id);
+            });
+        } catch (_) {}
+        return ids;
+    }
+
     function jcRenderRows(panel) {
         const list = panel.querySelector('.gpp-jc-list');
         const note = panel.querySelector('.gpp-jc-note');
@@ -32834,7 +32850,8 @@ patch();
             note.textContent = '';
             return;
         }
-        const entries = Array.from(jcScan.counts.entries()).sort((a, b) => b[1] - a[1]);
+        const blocked = jcBlockedIds();
+        const entries = Array.from(jcScan.counts.entries()).filter(([id]) => !blocked.has(id)).sort((a, b) => b[1] - a[1]);
         const candidates = entries.slice(0, JC_ROW_CAP);
         // Names resolve lazily, so look up every candidate (not just matches) or a
         // name search could never find a user whose name hasn't loaded yet.
