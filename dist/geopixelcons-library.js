@@ -1476,7 +1476,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Region Screenshot: captures the owner colors when Janitor View (toggleUserView) is on' },
                 { type: 'added', text: 'Palette hover tooltip (Ghost++ and Painting Menu Overhaul) shows completion % beside the hex' },
                 { type: 'changed', text: 'Settings: Janitor View and the new Janitor Colors toggle have their own "Janitor settings" section; Janitor Colors is disabled while Janitor View is off' },
-                { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON; hovering a user highlights their pixels in magenta' },
+                { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON; hovering a user highlights their pixels in magenta; search by name/ID; click a name to open their profile' },
             ]
         },
         {
@@ -32290,6 +32290,8 @@ patch();
     let jcOriginal = null;
     let jcScan = null;            // last scan result, reused when only an override changes
     let jcMoveHandler = null;
+    let jcSearch = '';            // lowercase filter text for the panel's search box
+    let jcSearchTimer = 0;
 
     function jcNormalizeHex(value) {
         let v = String(value == null ? '' : value).trim();
@@ -32394,7 +32396,8 @@ patch();
     // ownership bitmaps (RGB of each texel encodes the owner id).
     function jcScanView() {
         const counts = new Map();
-        const result = { counts, truncated: false, ready: false };
+        const samples = new Map();   // id -> [gridX, gridY] of one of their pixels, for inspecting
+        const result = { counts, samples, truncated: false, ready: false };
         if (typeof map === 'undefined' || !map || typeof tileImageCache === 'undefined' || typeof turf === 'undefined') return result;
         result.ready = true;
         const b = map.getBounds();
@@ -32425,7 +32428,14 @@ patch();
                     if (d[i + 3] === 0) continue;
                     const id = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2];
                     if (id === 0) continue;
-                    counts.set(id, (counts.get(id) || 0) + 1);
+                    const seen = counts.get(id);
+                    if (seen === undefined) {
+                        const px = i >> 2;
+                        samples.set(id, [x0 + (px % w), y0 + Math.floor(px / w)]);
+                        counts.set(id, 1);
+                    } else {
+                        counts.set(id, seen + 1);
+                    }
                 }
             } catch (_) {}
         }
@@ -32511,7 +32521,14 @@ patch();
                 width: 22px; height: 22px; border-radius: 4px; flex-shrink: 0; padding: 0; cursor: pointer;
                 border: 1px solid ${t('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')}; background: none;
             }
-            #${JC_PANEL_ID} .gpp-jc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            #${JC_PANEL_ID} .gpp-jc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+            #${JC_PANEL_ID} .gpp-jc-name:hover { color: ${t('#3b82f6', '#89b4fa')}; text-decoration: underline; }
+            #${JC_PANEL_ID} .gpp-jc-search-wrap { padding: 8px 10px 0; }
+            #${JC_PANEL_ID} .gpp-jc-search {
+                width: 100%; box-sizing: border-box; padding: 5px 8px; border-radius: 6px; font-size: 12px;
+                border: 2px solid ${t('#d1d5db', '#45475a')}; background: ${t('#ffffff', '#11111b')}; color: ${t('#111827', '#f5f5f5')};
+            }
+            #${JC_PANEL_ID} .gpp-jc-search:focus { outline: none; border-color: ${t('#3b82f6', '#89b4fa')}; }
             #${JC_PANEL_ID} .gpp-jc-sub { color: ${t('#64748b', '#a6adc8')}; font-size: 10px; flex-shrink: 0; }
             #${JC_PANEL_ID} .gpp-jc-hex, #${JC_IMPORT_ID} textarea {
                 font-family: ui-monospace, Menlo, Consolas, monospace; box-sizing: border-box; border-radius: 6px;
@@ -32783,6 +32800,29 @@ patch();
         }, 90);
     }
 
+    // Same result as clicking one of the user's pixels with the site's inspect
+    // tool: inspectPixel fetches /GetUserProfile and fills the hoverInfo panel.
+    async function jcInspectUser(id) {
+        const sample = jcScan && jcScan.samples && jcScan.samples.get(id);
+        try {
+            const inspect = _jcPw.inspectPixel || (typeof inspectPixel === 'function' ? inspectPixel : null);
+            if (sample && typeof inspect === 'function') {
+                await inspect(sample[0], sample[1], sample[0] + ',' + sample[1]);
+                return;
+            }
+            // Fallback: no inspectable pixel, so call the profile endpoint directly.
+            const res = await fetch('/GetUserProfile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetId: id }),
+            });
+            const show = _jcPw.showPixelUser || (typeof showPixelUser === 'function' ? showPixelUser : null);
+            if (typeof show === 'function') show(res.ok ? await res.json() : null, sample ? sample[0] + ',' + sample[1] : '');
+        } catch (err) {
+            console.warn('[GeoPixelcons++] Janitor Colors could not open the user profile:', err);
+        }
+    }
+
     function jcRenderRows(panel) {
         const list = panel.querySelector('.gpp-jc-list');
         const note = panel.querySelector('.gpp-jc-note');
@@ -32795,8 +32835,29 @@ patch();
             return;
         }
         const entries = Array.from(jcScan.counts.entries()).sort((a, b) => b[1] - a[1]);
-        const shown = entries.slice(0, JC_ROW_CAP);
-        if (!shown.length) list.appendChild(jcEl('div', 'gpp-jc-sub', 'No users in view. Pan or zoom the map, then Refresh.'));
+        const candidates = entries.slice(0, JC_ROW_CAP);
+        // Names resolve lazily, so look up every candidate (not just matches) or a
+        // name search could never find a user whose name hasn't loaded yet.
+        jcQueueNames(candidates.map(([id]) => id), (id, resolved) => {
+            if (!resolved) return;
+            const el = list.querySelector('.gpp-jc-name[data-gpp-jc-id="' + id + '"]');
+            if (el) el.textContent = resolved;
+            if (jcSearch) {
+                clearTimeout(jcSearchTimer);
+                jcSearchTimer = setTimeout(() => {
+                    if (document.getElementById(JC_PANEL_ID) === panel) jcRenderRows(panel);
+                }, 250);
+            }
+        });
+        const q = jcSearch;
+        const shown = q ? candidates.filter(([id]) => {
+            const custom = jcColors.get(id);
+            const label = (jcNames.get(id) || (custom && custom.name) || '').toLowerCase();
+            return label.includes(q) || String(id).includes(q.replace(/^#/, ''));
+        }) : candidates;
+        if (!shown.length) {
+            list.appendChild(jcEl('div', 'gpp-jc-sub', q ? 'No users in view match that search.' : 'No users in view. Pan or zoom the map, then Refresh.'));
+        }
         shown.forEach(([id, count]) => {
             const row = jcEl('div', 'gpp-jc-row');
             const custom = jcColors.get(id);
@@ -32809,8 +32870,9 @@ patch();
             chip.title = 'Pick a color';
 
             const name = jcEl('span', 'gpp-jc-name', jcNames.get(id) || (custom && custom.name) || ('User #' + id));
-            name.title = 'User ID ' + id;
             name.dataset.gppJcId = String(id);
+            name.title = 'User ID ' + id + ' - click to show their profile';
+            name.addEventListener('click', () => jcInspectUser(id));
             const sub = jcEl('span', 'gpp-jc-sub', count.toLocaleString() + ' px');
 
             const hex = document.createElement('input');
@@ -32845,15 +32907,10 @@ patch();
         list.scrollTop = scrollTop;
         const inView = entries.filter(([id]) => jcColors.has(id)).length;
         note.textContent = `${entries.length} user${entries.length === 1 ? '' : 's'} in view` +
-            (entries.length > shown.length ? ` (top ${shown.length} shown)` : '') +
+            (q ? ` · ${shown.length} match` : (entries.length > shown.length ? ` (top ${shown.length} shown)` : '')) +
             ` · ${jcColors.size} custom saved (${inView} in view)` +
             (jcScan.truncated ? ' · zoom in for a complete list' : '') +
             (jcIsViewOn() ? '' : ' · colors show once Janitor View is on');
-        jcQueueNames(shown.map(([id]) => id), (id, resolved) => {
-            if (!resolved) return;
-            const el = list.querySelector('.gpp-jc-name[data-gpp-jc-id="' + id + '"]');
-            if (el) el.textContent = resolved;
-        });
     }
 
     function jcRescan(panel) {
@@ -32889,9 +32946,23 @@ patch();
             })
         );
 
+        const searchWrap = jcEl('div', 'gpp-jc-search-wrap');
+        const search = document.createElement('input');
+        search.type = 'text';
+        search.className = 'gpp-jc-search';
+        search.placeholder = 'Search users in view by name or ID';
+        search.spellcheck = false;
+        search.autocomplete = 'off';
+        search.value = jcSearch;
+        search.addEventListener('input', () => {
+            jcSearch = search.value.trim().toLowerCase();
+            jcRenderRows(panel);
+        });
+        searchWrap.appendChild(search);
+
         const list = jcEl('div', 'gpp-jc-list');
         const note = jcEl('div', 'gpp-jc-note');
-        panel.append(head, bar, list, note);
+        panel.append(head, bar, searchWrap, list, note);
         document.body.appendChild(panel);
         jcMakeDraggable(panel, head);
 
@@ -32901,7 +32972,7 @@ patch();
             timer = setTimeout(() => {
                 // Don't rebuild rows out from under a field being edited.
                 if (!document.getElementById(JC_PANEL_ID)) return;
-                if (panel.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
+                if (list.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
                 jcRescan(panel);
             }, 500);
         };
