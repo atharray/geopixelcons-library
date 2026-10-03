@@ -133,9 +133,13 @@
         const orig = _jcPw.getColorForUser;
         if (typeof orig !== 'function') return false;
         if (orig.__gpcJanitorOriginal) { jcOriginal = orig.__gpcJanitorOriginal; return true; }
+        // Called once per pixel while the site recolours a tile, so keep it lean.
         const wrapped = function (userId) {
-            const custom = jcRgb.get(userId);
-            return custom || orig.apply(this, arguments);
+            if (jcRgb.size !== 0) {
+                const custom = jcRgb.get(userId);
+                if (custom !== undefined) return custom;
+            }
+            return orig(userId);
         };
         wrapped.__gpcJanitorOriginal = orig;
         _jcPw.getColorForUser = wrapped;
@@ -164,14 +168,20 @@
         return '#808080';
     }
 
-    // Users with pixels inside the current viewport, read from the cached
-    // ownership bitmaps (RGB of each texel encodes the owner id).
-    function jcScanView() {
-        const counts = new Map();
-        const samples = new Map();   // id -> [gridX, gridY] of one of their pixels, for inspecting
-        const result = { counts, samples, truncated: false, ready: false };
-        if (typeof map === 'undefined' || !map || typeof tileImageCache === 'undefined' || typeof turf === 'undefined') return result;
-        result.ready = true;
+    const JC_SLICE_TEXELS = 150000;   // texels processed per slice before yielding to the page
+    let jcScanToken = 0;
+    let jcViewKey = '';
+
+    function jcYield() {
+        return new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    // The cached ownership tiles overlapping the viewport, clipped to it. Cheap:
+    // no pixel data is read here.
+    function jcViewTiles() {
+        const out = { tiles: [], truncated: false, ready: false };
+        if (typeof map === 'undefined' || !map || typeof tileImageCache === 'undefined' || typeof turf === 'undefined') return out;
+        out.ready = true;
         const b = map.getBounds();
         const sw = turf.toMercator(b.getSouthWest().toArray());
         const ne = turf.toMercator(b.getNorthEast().toArray());
@@ -189,27 +199,66 @@
             const y0 = Math.max(minY, ty), y1 = Math.min(maxY, ty + (bm.height || JC_TILE_PX) - 1);
             const w = x1 - x0 + 1, h = y1 - y0 + 1;
             if (w <= 0 || h <= 0) continue;
-            if (w * h > budget) { result.truncated = true; continue; }
+            if (w * h > budget) { out.truncated = true; continue; }
             budget -= w * h;
-            try {
-                const cv = new OffscreenCanvas(w, h);
-                const ctx = cv.getContext('2d', { willReadFrequently: true });
-                ctx.drawImage(bm, x0 - tx, y0 - ty, w, h, 0, 0, w, h);
-                const d = ctx.getImageData(0, 0, w, h).data;
-                for (let i = 0; i < d.length; i += 4) {
+            out.tiles.push({ bm, tx, ty, x0, y0, w, h, gs });
+        }
+        return out;
+    }
+
+    function jcViewSignature() {
+        try {
+            const b = map.getBounds();
+            return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((n) => n.toFixed(5)).join(',') +
+                '|' + (typeof tileImageCache !== 'undefined' ? tileImageCache.size : 0);
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function jcReadTile(t) {
+        const cv = new OffscreenCanvas(t.w, t.h);
+        const ctx = cv.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(t.bm, t.x0 - t.tx, t.y0 - t.ty, t.w, t.h, 0, 0, t.w, t.h);
+        return { cv, ctx, img: ctx.getImageData(0, 0, t.w, t.h) };
+    }
+
+    // Users with pixels inside the viewport (RGB of each ownership texel is the
+    // owner id). Time-sliced: reads one tile at a time and yields to the page
+    // between slices, so a big view never stalls a frame. Returns null if a
+    // newer scan (or closing the panel) superseded this one.
+    async function jcScanViewAsync(token) {
+        const view = jcViewTiles();
+        const counts = new Map();
+        const samples = new Map();   // id -> [gridX, gridY] of one of their pixels, for inspecting
+        const result = { counts, samples, truncated: view.truncated, ready: view.ready };
+        for (const t of view.tiles) {
+            if (token !== jcScanToken) return null;
+            await jcYield();
+            if (token !== jcScanToken) return null;
+            let d;
+            try { d = jcReadTile(t).img.data; } catch (_) { continue; }
+            const rowsPerSlice = Math.max(1, Math.floor(JC_SLICE_TEXELS / t.w));
+            for (let r0 = 0; r0 < t.h; r0 += rowsPerSlice) {
+                const r1 = Math.min(t.h, r0 + rowsPerSlice);
+                for (let i = r0 * t.w * 4, end = r1 * t.w * 4; i < end; i += 4) {
                     if (d[i + 3] === 0) continue;
                     const id = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2];
                     if (id === 0) continue;
                     const seen = counts.get(id);
                     if (seen === undefined) {
                         const px = i >> 2;
-                        samples.set(id, [x0 + (px % w), y0 + Math.floor(px / w)]);
+                        samples.set(id, [t.x0 + (px % t.w), t.y0 + Math.floor(px / t.w)]);
                         counts.set(id, 1);
                     } else {
                         counts.set(id, seen + 1);
                     }
                 }
-            } catch (_) {}
+                if (r1 < t.h) {
+                    await jcYield();
+                    if (token !== jcScanToken) return null;
+                }
+            }
         }
         return result;
     }
@@ -452,6 +501,7 @@
     function jcClosePanel() {
         const panel = document.getElementById(JC_PANEL_ID);
         if (panel) panel.remove();
+        jcScanToken++;
         jcStopHighlight();
         if (jcMoveHandler && typeof map !== 'undefined' && map && typeof map.off === 'function') {
             try { map.off('moveend', jcMoveHandler); } catch (_) {}
@@ -466,48 +516,38 @@
     // re-projected only when the map moves.
     let jcHl = null;   // { id, masks, canvas, redraw, timer }
 
-    function jcBuildMasks(id) {
+    async function jcBuildMasks(id, state) {
         const masks = [];
-        if (typeof map === 'undefined' || !map || typeof tileImageCache === 'undefined' || typeof turf === 'undefined') return masks;
-        const b = map.getBounds();
-        const sw = turf.toMercator(b.getSouthWest().toArray());
-        const ne = turf.toMercator(b.getNorthEast().toArray());
-        const gs = (typeof gridSize === 'number' && gridSize > 0) ? gridSize : JC_DEFAULT_GRID;
-        const minX = Math.floor(sw[0] / gs), maxX = Math.ceil(ne[0] / gs);
-        const minY = Math.floor(sw[1] / gs), maxY = Math.ceil(ne[1] / gs);
-        let budget = JC_SCAN_CAP;
-        for (const [key, entry] of tileImageCache.entries()) {
-            const bm = entry && entry.userBitmap;
-            if (!bm) continue;
-            const parts = key.split(',').map(Number);
-            const tx = parts[0], ty = parts[1];
-            if (!Number.isFinite(tx) || !Number.isFinite(ty)) continue;
-            const x0 = Math.max(minX, tx), x1 = Math.min(maxX, tx + (bm.width || JC_TILE_PX) - 1);
-            const y0 = Math.max(minY, ty), y1 = Math.min(maxY, ty + (bm.height || JC_TILE_PX) - 1);
-            const w = x1 - x0 + 1, h = y1 - y0 + 1;
-            if (w <= 0 || h <= 0) continue;
-            if (w * h > budget) continue;
-            budget -= w * h;
+        const view = jcViewTiles();
+        for (const t of view.tiles) {
+            if (jcHl !== state) return null;
+            await jcYield();
+            if (jcHl !== state) return null;
             try {
-                const cv = new OffscreenCanvas(w, h);
-                const ctx = cv.getContext('2d', { willReadFrequently: true });
-                ctx.drawImage(bm, x0 - tx, y0 - ty, w, h, 0, 0, w, h);
-                const img = ctx.getImageData(0, 0, w, h);
+                const { cv, ctx, img } = jcReadTile(t);
                 const d = img.data;
+                const rowsPerSlice = Math.max(1, Math.floor(JC_SLICE_TEXELS / t.w));
                 let hit = false;
-                for (let i = 0; i < d.length; i += 4) {
-                    const match = d[i + 3] !== 0 && ((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === id;
-                    if (match) { d[i] = 255; d[i + 1] = 0; d[i + 2] = 255; d[i + 3] = 255; hit = true; }
-                    else { d[i + 3] = 0; }
+                for (let r0 = 0; r0 < t.h; r0 += rowsPerSlice) {
+                    const r1 = Math.min(t.h, r0 + rowsPerSlice);
+                    for (let i = r0 * t.w * 4, end = r1 * t.w * 4; i < end; i += 4) {
+                        const match = d[i + 3] !== 0 && ((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === id;
+                        if (match) { d[i] = 255; d[i + 1] = 0; d[i + 2] = 255; d[i + 3] = 255; hit = true; }
+                        else { d[i + 3] = 0; }
+                    }
+                    if (r1 < t.h) {
+                        await jcYield();
+                        if (jcHl !== state) return null;
+                    }
                 }
                 if (!hit) continue;
                 ctx.putImageData(img, 0, 0);
                 // Cells are centred on grid coordinates, matching the site's tile placement.
                 masks.push({
                     canvas: cv,
-                    west: x0 * gs - gs / 2, east: (x1 + 1) * gs - gs / 2,
-                    south: y0 * gs - gs / 2, north: (y1 + 1) * gs - gs / 2,
-                    cols: w
+                    west: t.x0 * t.gs - t.gs / 2, east: (t.x0 + t.w) * t.gs - t.gs / 2,
+                    south: t.y0 * t.gs - t.gs / 2, north: (t.y0 + t.h) * t.gs - t.gs / 2,
+                    cols: t.w
                 });
             } catch (_) {}
         }
@@ -529,9 +569,11 @@
         const state = { id, masks: null, canvas: null, redraw: null, timer: 0 };
         jcHl = state;
         // Brief delay so sweeping the cursor down the list doesn't scan per row.
-        state.timer = setTimeout(() => {
+        state.timer = setTimeout(async () => {
             if (jcHl !== state) return;
-            state.masks = jcBuildMasks(id);
+            const masks = await jcBuildMasks(id, state);
+            if (jcHl !== state || !masks) return;
+            state.masks = masks;
             if (!state.masks.length || typeof map === 'undefined' || !map) return;
             const container = map.getContainer();
             const canvas = document.createElement('canvas');
@@ -611,13 +653,84 @@
         return ids;
     }
 
-    function jcRenderRows(panel) {
+    const JC_BATCH = 40;   // rows built per step; the rest load as the list scrolls
+
+    function jcBuildRow(panel, id, count) {
+        const row = jcEl('div', 'gpp-jc-row');
+        const custom = jcColors.get(id);
+        const current = jcColorFor(id);
+
+        const chip = document.createElement('input');
+        chip.type = 'color';
+        chip.className = 'gpp-jc-chip';
+        chip.value = current.toLowerCase();
+        chip.title = 'Pick a color';
+
+        const name = jcEl('span', 'gpp-jc-name', jcNames.get(id) || (custom && custom.name) || ('User #' + id));
+        name.dataset.gppJcId = String(id);
+        name.title = 'User ID ' + id + ' - click to show their profile';
+        name.addEventListener('click', () => jcInspectUser(id));
+        const sub = jcEl('span', 'gpp-jc-sub', count.toLocaleString() + ' px');
+
+        const hex = document.createElement('input');
+        hex.type = 'text';
+        hex.className = 'gpp-jc-hex' + (custom ? ' gpp-jc-custom' : '');
+        hex.value = custom ? custom.hex : '';
+        hex.placeholder = current;
+        hex.maxLength = 7;
+        hex.spellcheck = false;
+
+        const commit = (raw) => {
+            const v = String(raw).trim();
+            if (!v) {
+                if (custom) jcClearColor(id);
+            } else {
+                const norm = jcNormalizeHex(v);
+                if (!norm) { hex.value = custom ? custom.hex : ''; return; }
+                jcSetColor(id, norm);
+            }
+            jcRenderRows(panel);
+        };
+        hex.addEventListener('change', () => commit(hex.value));
+        hex.addEventListener('keydown', (e) => { if (e.key === 'Enter') hex.blur(); });
+        chip.addEventListener('change', () => commit(chip.value));
+
+        row.addEventListener('mouseenter', () => jcStartHighlight(id));
+        row.addEventListener('mouseleave', jcStopHighlight);
+        row.append(chip, name, sub, hex);
+        if (custom) row.appendChild(jcButton('✕', () => { jcClearColor(id); jcRenderRows(panel); }));
+        return row;
+    }
+
+    function jcApplyResolvedName(panel, id, resolved) {
+        if (!resolved) return;
+        const list = panel.querySelector('.gpp-jc-list');
+        const el = list && list.querySelector('.gpp-jc-name[data-gpp-jc-id="' + id + '"]');
+        if (el) el.textContent = resolved;
+        if (jcSearch) {
+            clearTimeout(jcSearchTimer);
+            jcSearchTimer = setTimeout(() => {
+                if (document.getElementById(JC_PANEL_ID) === panel) jcRenderRows(panel);
+            }, 250);
+        }
+    }
+
+    // resetDepth: start again from the first batch (search text changed);
+    // otherwise keep as many rows built as before so scroll position survives.
+    function jcRenderRows(panel, resetDepth) {
         const list = panel.querySelector('.gpp-jc-list');
         const note = panel.querySelector('.gpp-jc-note');
         const scrollTop = list.scrollTop;
+        const prevRendered = (panel.__jc && panel.__jc.rendered) || 0;
         jcStopHighlight();
         list.textContent = '';
-        if (!jcScan || !jcScan.ready) {
+        panel.__jc = null;
+        if (!jcScan) {
+            list.appendChild(jcEl('div', 'gpp-jc-sub', 'Scanning the view…'));
+            note.textContent = '';
+            return;
+        }
+        if (!jcScan.ready) {
             list.appendChild(jcEl('div', 'gpp-jc-sub', 'The map is still loading.'));
             note.textContent = '';
             return;
@@ -625,20 +738,10 @@
         const blocked = jcBlockedIds();
         const entries = Array.from(jcScan.counts.entries()).filter(([id]) => !blocked.has(id)).sort((a, b) => b[1] - a[1]);
         const candidates = entries.slice(0, JC_ROW_CAP);
-        // Names resolve lazily, so look up every candidate (not just matches) or a
-        // name search could never find a user whose name hasn't loaded yet.
-        jcQueueNames(candidates.map(([id]) => id), (id, resolved) => {
-            if (!resolved) return;
-            const el = list.querySelector('.gpp-jc-name[data-gpp-jc-id="' + id + '"]');
-            if (el) el.textContent = resolved;
-            if (jcSearch) {
-                clearTimeout(jcSearchTimer);
-                jcSearchTimer = setTimeout(() => {
-                    if (document.getElementById(JC_PANEL_ID) === panel) jcRenderRows(panel);
-                }, 250);
-            }
-        });
         const q = jcSearch;
+        // A name search needs every candidate's name; otherwise only look up
+        // the rows actually built (see renderMore below).
+        if (q) jcQueueNames(candidates.map(([id]) => id), (id, resolved) => jcApplyResolvedName(panel, id, resolved));
         const shown = q ? candidates.filter(([id]) => {
             const custom = jcColors.get(id);
             const label = (jcNames.get(id) || (custom && custom.name) || '').toLowerCase();
@@ -647,63 +750,35 @@
         if (!shown.length) {
             list.appendChild(jcEl('div', 'gpp-jc-sub', q ? 'No users in view match that search.' : 'No users in view. Pan or zoom the map, then Refresh.'));
         }
-        shown.forEach(([id, count]) => {
-            const row = jcEl('div', 'gpp-jc-row');
-            const custom = jcColors.get(id);
-            const current = jcColorFor(id);
 
-            const chip = document.createElement('input');
-            chip.type = 'color';
-            chip.className = 'gpp-jc-chip';
-            chip.value = current.toLowerCase();
-            chip.title = 'Pick a color';
-
-            const name = jcEl('span', 'gpp-jc-name', jcNames.get(id) || (custom && custom.name) || ('User #' + id));
-            name.dataset.gppJcId = String(id);
-            name.title = 'User ID ' + id + ' - click to show their profile';
-            name.addEventListener('click', () => jcInspectUser(id));
-            const sub = jcEl('span', 'gpp-jc-sub', count.toLocaleString() + ' px');
-
-            const hex = document.createElement('input');
-            hex.type = 'text';
-            hex.className = 'gpp-jc-hex' + (custom ? ' gpp-jc-custom' : '');
-            hex.value = custom ? custom.hex : '';
-            hex.placeholder = current;
-            hex.maxLength = 7;
-            hex.spellcheck = false;
-
-            const commit = (raw) => {
-                const v = String(raw).trim();
-                if (!v) {
-                    if (custom) jcClearColor(id);
-                } else {
-                    const norm = jcNormalizeHex(v);
-                    if (!norm) { hex.value = custom ? custom.hex : ''; return; }
-                    jcSetColor(id, norm);
-                }
-                jcRenderRows(panel);
-            };
-            hex.addEventListener('change', () => commit(hex.value));
-            hex.addEventListener('keydown', (e) => { if (e.key === 'Enter') hex.blur(); });
-            chip.addEventListener('change', () => commit(chip.value));
-
-            row.addEventListener('mouseenter', () => jcStartHighlight(id));
-            row.addEventListener('mouseleave', jcStopHighlight);
-            row.append(chip, name, sub, hex);
-            if (custom) row.appendChild(jcButton('✕', () => { jcClearColor(id); jcRenderRows(panel); }));
-            list.appendChild(row);
-        });
+        const state = { shown, rendered: 0, more: null };
+        state.more = (n) => {
+            const slice = shown.slice(state.rendered, state.rendered + n);
+            if (!slice.length) return;
+            const frag = document.createDocumentFragment();
+            slice.forEach(([id, count]) => frag.appendChild(jcBuildRow(panel, id, count)));
+            list.appendChild(frag);
+            state.rendered += slice.length;
+            if (!q) jcQueueNames(slice.map(([id]) => id), (id, resolved) => jcApplyResolvedName(panel, id, resolved));
+        };
+        panel.__jc = state;
+        state.more(resetDepth ? JC_BATCH : Math.max(JC_BATCH, prevRendered));
         list.scrollTop = scrollTop;
+
         const inView = entries.filter(([id]) => jcColors.has(id)).length;
         note.textContent = `${entries.length} user${entries.length === 1 ? '' : 's'} in view` +
-            (q ? ` · ${shown.length} match` : (entries.length > shown.length ? ` (top ${shown.length} shown)` : '')) +
+            (q ? ` · ${shown.length} match` : (entries.length > shown.length ? ` (top ${shown.length} listed)` : '')) +
             ` · ${jcColors.size} custom saved (${inView} in view)` +
             (jcScan.truncated ? ' · zoom in for a complete list' : '') +
             (jcIsViewOn() ? '' : ' · colors show once Janitor View is on');
     }
 
-    function jcRescan(panel) {
-        jcScan = jcScanView();
+    async function jcRescan(panel) {
+        const token = ++jcScanToken;
+        const result = await jcScanViewAsync(token);
+        if (!result || token !== jcScanToken || !document.getElementById(JC_PANEL_ID)) return;
+        jcScan = result;
+        jcViewKey = jcViewSignature();
         jcRenderRows(panel);
     }
 
@@ -711,6 +786,8 @@
         if (document.getElementById(JC_PANEL_ID)) { jcClosePanel(); return; }
         jcInstallHook();
         jcInjectStyle();
+        jcScan = null;
+        jcViewKey = '';
         const panel = jcEl('div');
         panel.id = JC_PANEL_ID;
 
@@ -745,13 +822,17 @@
         search.value = jcSearch;
         search.addEventListener('input', () => {
             jcSearch = search.value.trim().toLowerCase();
-            jcRenderRows(panel);
+            jcRenderRows(panel, true);
         });
         searchWrap.appendChild(search);
 
         const list = jcEl('div', 'gpp-jc-list');
         const note = jcEl('div', 'gpp-jc-note');
         panel.append(head, bar, searchWrap, list, note);
+        list.addEventListener('scroll', () => {
+            const st = panel.__jc;
+            if (st && st.rendered < st.shown.length && list.scrollTop + list.clientHeight > list.scrollHeight - 160) st.more(JC_BATCH);
+        }, { passive: true });
         document.body.appendChild(panel);
         jcMakeDraggable(panel, head);
 
@@ -759,15 +840,18 @@
         jcMoveHandler = () => {
             clearTimeout(timer);
             timer = setTimeout(() => {
+                // Skip hidden tabs and views that haven't actually changed.
+                if (document.hidden || !document.getElementById(JC_PANEL_ID)) return;
+                if (jcViewSignature() === jcViewKey) return;
                 // Don't rebuild rows out from under a field being edited.
-                if (!document.getElementById(JC_PANEL_ID)) return;
                 if (list.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
                 jcRescan(panel);
-            }, 500);
+            }, 900);
         };
         try {
             if (typeof map !== 'undefined' && map && typeof map.on === 'function') map.on('moveend', jcMoveHandler);
         } catch (_) {}
+        jcRenderRows(panel);
         jcRescan(panel);
     }
 
