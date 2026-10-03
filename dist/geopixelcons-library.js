@@ -1449,7 +1449,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             items: [
                 { type: 'added', text: 'Region Screenshot: captures the owner colors when Janitor View (toggleUserView) is on' },
                 { type: 'added', text: 'Palette hover tooltip (Ghost++ and Painting Menu Overhaul) shows completion % beside the hex' },
-                { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON' },
+                { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON; hovering a user flashes their pixels magenta' },
             ]
         },
         {
@@ -32636,16 +32636,131 @@ patch();
     function jcClosePanel() {
         const panel = document.getElementById(JC_PANEL_ID);
         if (panel) panel.remove();
+        jcStopHighlight();
         if (jcMoveHandler && typeof map !== 'undefined' && map && typeof map.off === 'function') {
             try { map.off('moveend', jcMoveHandler); } catch (_) {}
         }
         jcMoveHandler = null;
     }
 
+    // ── Hover highlight ──────────────────────────────────────────
+    // Hovering a row flashes that user's pixels magenta with a pulsing
+    // "bump". It is a lightweight overlay canvas rather than a tile
+    // regeneration: one pass over the cached ownership bitmaps builds a small
+    // per-tile mask, and an animation loop just re-projects those masks.
+    let jcHl = null;   // { id, masks, canvas, raf, timer }
+
+    function jcBuildMasks(id) {
+        const masks = [];
+        if (typeof map === 'undefined' || !map || typeof tileImageCache === 'undefined' || typeof turf === 'undefined') return masks;
+        const b = map.getBounds();
+        const sw = turf.toMercator(b.getSouthWest().toArray());
+        const ne = turf.toMercator(b.getNorthEast().toArray());
+        const gs = (typeof gridSize === 'number' && gridSize > 0) ? gridSize : JC_DEFAULT_GRID;
+        const minX = Math.floor(sw[0] / gs), maxX = Math.ceil(ne[0] / gs);
+        const minY = Math.floor(sw[1] / gs), maxY = Math.ceil(ne[1] / gs);
+        let budget = JC_SCAN_CAP;
+        for (const [key, entry] of tileImageCache.entries()) {
+            const bm = entry && entry.userBitmap;
+            if (!bm) continue;
+            const parts = key.split(',').map(Number);
+            const tx = parts[0], ty = parts[1];
+            if (!Number.isFinite(tx) || !Number.isFinite(ty)) continue;
+            const x0 = Math.max(minX, tx), x1 = Math.min(maxX, tx + (bm.width || JC_TILE_PX) - 1);
+            const y0 = Math.max(minY, ty), y1 = Math.min(maxY, ty + (bm.height || JC_TILE_PX) - 1);
+            const w = x1 - x0 + 1, h = y1 - y0 + 1;
+            if (w <= 0 || h <= 0) continue;
+            if (w * h > budget) continue;
+            budget -= w * h;
+            try {
+                const cv = new OffscreenCanvas(w, h);
+                const ctx = cv.getContext('2d', { willReadFrequently: true });
+                ctx.drawImage(bm, x0 - tx, y0 - ty, w, h, 0, 0, w, h);
+                const img = ctx.getImageData(0, 0, w, h);
+                const d = img.data;
+                let hit = false;
+                for (let i = 0; i < d.length; i += 4) {
+                    const match = d[i + 3] !== 0 && ((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]) === id;
+                    if (match) { d[i] = 255; d[i + 1] = 0; d[i + 2] = 255; d[i + 3] = 255; hit = true; }
+                    else { d[i + 3] = 0; }
+                }
+                if (!hit) continue;
+                ctx.putImageData(img, 0, 0);
+                // Cells are centred on grid coordinates, matching the site's tile placement.
+                masks.push({
+                    canvas: cv,
+                    west: x0 * gs - gs / 2, east: (x1 + 1) * gs - gs / 2,
+                    south: y0 * gs - gs / 2, north: (y1 + 1) * gs - gs / 2,
+                    cols: w
+                });
+            } catch (_) {}
+        }
+        return masks;
+    }
+
+    function jcStopHighlight() {
+        if (!jcHl) return;
+        clearTimeout(jcHl.timer);
+        if (jcHl.raf) cancelAnimationFrame(jcHl.raf);
+        if (jcHl.canvas) jcHl.canvas.remove();
+        jcHl = null;
+    }
+
+    function jcStartHighlight(id) {
+        jcStopHighlight();
+        const state = { id, masks: null, canvas: null, raf: 0, timer: 0 };
+        jcHl = state;
+        // Brief delay so sweeping the cursor down the list doesn't scan per row.
+        state.timer = setTimeout(() => {
+            if (jcHl !== state) return;
+            state.masks = jcBuildMasks(id);
+            if (!state.masks.length || typeof map === 'undefined' || !map) return;
+            const container = map.getContainer();
+            const canvas = document.createElement('canvas');
+            canvas.id = 'gpp-janitor-colors-highlight';
+            canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;';
+            container.appendChild(canvas);
+            state.canvas = canvas;
+            const start = performance.now();
+            const frame = (now) => {
+                if (jcHl !== state) return;
+                const rect = container.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                const cw = Math.round(rect.width * dpr), ch = Math.round(rect.height * dpr);
+                if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, rect.width, rect.height);
+                // 0..1 pulse; the bump is the mask swelling outward by up to ~2px.
+                const pulse = 0.5 - 0.5 * Math.cos(((now - start) / 700) * Math.PI * 2);
+                const bump = pulse * 2;
+                ctx.globalAlpha = 0.75 + 0.25 * pulse;
+                state.masks.forEach((m) => {
+                    const a = map.project(turf.toWgs84([m.west, m.south]));
+                    const z = map.project(turf.toWgs84([m.east, m.north]));
+                    const x = a.x, y = z.y, w = z.x - a.x, h = a.y - z.y;
+                    if (w <= 0 || h <= 0) return;
+                    if (x > rect.width || y > rect.height || x + w < 0 || y + h < 0) return;
+                    ctx.imageSmoothingEnabled = (w / m.cols) < 1;
+                    ctx.drawImage(m.canvas, x, y, w, h);
+                    if (bump > 0.05) {
+                        ctx.drawImage(m.canvas, x - bump, y, w, h);
+                        ctx.drawImage(m.canvas, x + bump, y, w, h);
+                        ctx.drawImage(m.canvas, x, y - bump, w, h);
+                        ctx.drawImage(m.canvas, x, y + bump, w, h);
+                    }
+                });
+                state.raf = requestAnimationFrame(frame);
+            };
+            state.raf = requestAnimationFrame(frame);
+        }, 90);
+    }
+
     function jcRenderRows(panel) {
         const list = panel.querySelector('.gpp-jc-list');
         const note = panel.querySelector('.gpp-jc-note');
         const scrollTop = list.scrollTop;
+        jcStopHighlight();
         list.textContent = '';
         if (!jcScan || !jcScan.ready) {
             list.appendChild(jcEl('div', 'gpp-jc-sub', 'The map is still loading.'));
@@ -32694,6 +32809,8 @@ patch();
             hex.addEventListener('keydown', (e) => { if (e.key === 'Enter') hex.blur(); });
             chip.addEventListener('change', () => commit(chip.value));
 
+            row.addEventListener('mouseenter', () => jcStartHighlight(id));
+            row.addEventListener('mouseleave', jcStopHighlight);
             row.append(chip, name, sub, hex);
             if (custom) row.appendChild(jcButton('✕', () => { jcClearColor(id); jcRenderRows(panel); }));
             list.appendChild(row);
@@ -32735,7 +32852,7 @@ patch();
             jcButton('🔄 Refresh', () => jcRescan(panel), true),
             jcButton('📥 Import', () => jcOpenImport(() => jcRescan(panel))),
             exportBtn,
-            jcButton('🗑️ Clear all', () => {
+            jcButton('🗑️ Clear settings', () => {
                 if (!jcColors.size || !confirm('Remove all ' + jcColors.size + ' custom janitor colors?')) return;
                 jcColors.clear();
                 jcRgb.clear();
