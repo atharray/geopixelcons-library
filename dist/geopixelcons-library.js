@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.17.0 - readable release bundle */
+/* GeoPixelcons Library v2.18.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.18.0'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.18.0';
+    const VERSION = '2.19.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1443,6 +1443,14 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.19.0',
+            date: '2026-10-03',
+            items: [
+                { type: 'added', text: 'Region Screenshot: captures the owner colors when Janitor View (toggleUserView) is on' },
+                { type: 'added', text: 'Palette hover tooltip (Ghost++ and Painting Menu Overhaul) shows completion % beside the hex' },
+            ]
+        },
         {
             version: '2.18.0',
             date: '2026-09-30',
@@ -11844,6 +11852,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 display: inline-block; width: 10px; height: 10px; border-radius: 3px;
                 border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
             }
+            #gpp-palette-tooltip .gpp-palette-tooltip-pct {
+                font-weight: 400; color: ${t2('#64748b', '#a6adc8')};
+            }
             #gpp-palette-tooltip .gpp-palette-tooltip-stats {
                 margin-top: 2px; color: ${t2('#64748b', '#a6adc8')};
             }
@@ -12194,6 +12205,16 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         swatchDot.className = 'gpp-palette-tooltip-swatch';
         swatchDot.style.backgroundColor = hex;
         hexLine.append(swatchDot, document.createTextNode(hex));
+        // Completion percentage right of the hex — only once a scan exists
+        // (otherwise progress is unknown, not 0%). Floored to one decimal so
+        // an almost-done colour reads 99.9%, never a rounded-up 100.0%.
+        if (hasProgress && stats.total > 0) {
+            const pct = Math.floor(Math.min(1, stats.completed / stats.total) * 1000) / 10;
+            const pctEl = document.createElement('span');
+            pctEl.className = 'gpp-palette-tooltip-pct';
+            pctEl.textContent = pct.toFixed(1) + '%';
+            hexLine.appendChild(pctEl);
+        }
         const statsLine = document.createElement('div');
         statsLine.className = 'gpp-palette-tooltip-stats';
         statsLine.textContent = hasProgress
@@ -28649,6 +28670,29 @@ patch();
         return opacities;
     }
 
+    // Janitor view (the site's toggleUserView) recolours every pixel by its
+    // owner. Those are page-realm lexical globals, so read them defensively;
+    // reusing the site's own generator keeps the export identical to the
+    // on-screen colours, including the per-session random user palette.
+    function isJanitorViewActive() {
+        try {
+            return typeof isUserViewEnabled !== 'undefined' && isUserViewEnabled === true &&
+                typeof generateUserViewBitmap === 'function';
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function getJanitorColorForUser(userId) {
+        try {
+            if (typeof getColorForUser === 'function' && Number.isInteger(userId)) {
+                const c = getColorForUser(userId);
+                if (c) return `rgb(${c.r},${c.g},${c.b})`;
+            }
+        } catch (_) {}
+        return null;
+    }
+
     // ==================== BACKGROUND PREFERENCES ====================
     function loadBackgroundPreference() {
         try {
@@ -29386,6 +29430,7 @@ patch();
         const outWidth  = maxX - minX + 1;
         const outHeight = maxY - minY + 1;
         const blockedOpacities = getBlockedUserOpacities();
+        const janitorView = isJanitorViewActive();
 
         // Output canvas — transparent background, 1px = 1 grid cell
         const outputCanvas = new OffscreenCanvas(outWidth, outHeight);
@@ -29443,8 +29488,9 @@ patch();
             }
 
             // Older cache entries may have color data without ownership data.
-            // Fetch a paired tile only when a blocked export actually needs it.
-            if (colorBitmap && blockedOpacities.size > 0 && !userBitmap) {
+            // Fetch a paired tile only when a blocked or janitor-view export
+            // actually needs it.
+            if (colorBitmap && (blockedOpacities.size > 0 || janitorView) && !userBitmap) {
                 try {
                     const fetched = await fetchTileColorBitmap(tileX, tileY);
                     if (fetched.userBitmap) {
@@ -29476,12 +29522,28 @@ patch();
             const destX = tileMinX - minX;
             const destY = tileMinY - minY;
 
+            // In janitor view the source is the owner-coloured bitmap the live
+            // map shows, not the real paint colours.
+            let drawSource = colorBitmap;
+            let janitorTile = null;
+            if (janitorView && userBitmap) {
+                try {
+                    janitorTile = await generateUserViewBitmap(userBitmap);
+                    drawSource = janitorTile;
+                } catch (err) {
+                    console.warn(`[Region Screenshot] Janitor view recolor failed for tile ${tileKey}:`, err);
+                    janitorTile = null;
+                }
+            }
+            const janitorTileActive = !!janitorTile;
+
             // Draw this tile's color section onto the output canvas
             outputCtx.drawImage(
-                colorBitmap,
+                drawSource,
                 localStartX, localStartY, regionW, regionH,
                 destX, destY, regionW, regionH
             );
+            if (janitorTile && !janitorTile.closed) janitorTile.close();
 
             // ---- Apply any recent in-memory deltas on top ----
             // These are pixel updates that have arrived since the last full sync
@@ -29500,6 +29562,15 @@ patch();
                     if (delta.color === '#00000000' || delta.color === null) {
                         // Erased pixel — clear it
                         outputCtx.clearRect(ox, oy, 1, 1);
+                    } else if (janitorTileActive) {
+                        // Owner-coloured export: paint the owner's colour, and
+                        // skip deltas whose owner is unknown rather than
+                        // leaking a real paint colour into the janitor view.
+                        const ownerColor = getJanitorColorForUser(delta.userId);
+                        if (ownerColor) {
+                            outputCtx.fillStyle = ownerColor;
+                            outputCtx.fillRect(ox, oy, 1, 1);
+                        }
                     } else if (delta.color) {
                         outputCtx.fillStyle = delta.color;
                         outputCtx.fillRect(ox, oy, 1, 1);

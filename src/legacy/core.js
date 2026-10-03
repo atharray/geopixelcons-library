@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.18.0';
+    const VERSION = '2.19.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1431,6 +1431,14 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.19.0',
+            date: '2026-10-03',
+            items: [
+                { type: 'added', text: 'Region Screenshot: captures the owner colors when Janitor View (toggleUserView) is on' },
+                { type: 'added', text: 'Palette hover tooltip (Ghost++ and Painting Menu Overhaul) shows completion % beside the hex' },
+            ]
+        },
         {
             version: '2.18.0',
             date: '2026-09-30',
