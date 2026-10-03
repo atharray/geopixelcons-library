@@ -41,7 +41,8 @@ test('organizes settings into the requested visual extension categories', () => 
     assert.match(artifact, /const EXTENSION_CATEGORIES = \[/);
     assert.match(artifact, /name: 'Painting', keys: \['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'\]/);
     assert.match(artifact, /name: 'Ghost Template', keys: \['ghostPlusPlus', 'showSyncGhostBtn'\]/);
-    assert.match(artifact, /name: 'Map', keys: \['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers', 'extCanvasToggle', 'extImprovedMapRendering'\]/);
+    assert.match(artifact, /name: 'Map', keys: \['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extBlockedUsers', 'extCanvasToggle', 'extImprovedMapRendering'\]/);
+    assert.match(artifact, /name: 'Janitor settings', keys: \['extJanitorView', 'extJanitorColors'\]/);
     assert.match(artifact, /name: 'Menuing', keys: \['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'\]/);
     assert.match(artifact, /name: 'Misc', keys: \['extGoToLastLocation'\]/);
     assert.match(artifact, /name: 'Deprecated', keys: \['ghostPaletteSearch', 'ghostTemplateManager'\]/);

@@ -699,7 +699,12 @@
     }
 
     function initJanitorColors() {
+        if (!_settings.extJanitorColors) {
+            _featureStatus.extJanitorColors = 'disabled';
+            return;
+        }
         jcLoad();
+        _featureStatus.extJanitorColors = 'ok';
         // The page script defines getColorForUser; poll until it exists.
         let tries = 0;
         const hookTimer = setInterval(() => {
