@@ -299,9 +299,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         const modal = document.createElement('div');
         modal.style.cssText = `
             background: ${dark ? '#1e1e2e' : '#ffffff'};
-            color: ${dark ? '#cdd6f4' : '#1e293b'};
-            border-radius: 12px; padding: 0; width: 460px; max-width: 95vw;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            color: ${dark ? '#f5f5f5' : '#111827'};
+            border-radius: .75rem; padding: 0; width: 460px; max-width: 95vw;
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
+            box-shadow: 0 12px 32px ${dark ? 'rgba(0,0,0,.62)' : 'rgba(15,23,42,.28)'};
             overflow: hidden;
         `;
 
@@ -310,8 +311,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         header.style.cssText = `
             padding: 16px 20px; display: flex; align-items: center;
             justify-content: space-between;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border-bottom: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border-bottom: 1px solid ${dark ? '#45475a' : '#d1d5db'};
         `;
         header.innerHTML = `<span style="font-weight:700;font-size:16px;">⚙️ GeoPixelcons++</span>`;
 
@@ -321,7 +322,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             background:none; border:none; font-size:18px; cursor:pointer;
             color:${dark ? '#a6adc8' : '#64748b'}; padding:4px 8px; border-radius:4px;
         `;
-        closeBtn.onmouseenter = () => closeBtn.style.background = dark ? '#45475a' : '#e2e8f0';
+        closeBtn.onmouseenter = () => closeBtn.style.background = dark ? '#45475a' : '#d1d5db';
         closeBtn.onmouseleave = () => closeBtn.style.background = 'none';
         closeBtn.onclick = () => overlay.remove();
         header.appendChild(closeBtn);
@@ -331,7 +332,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         const tabBar = document.createElement('div');
         tabBar.style.cssText = `
             display: flex; background: ${dark ? '#1e1e2e' : '#ffffff'};
-            border-bottom: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            border-bottom: 1px solid ${dark ? '#45475a' : '#d1d5db'};
         `;
         const tabs = ['Extensions', 'Keybindings'];
         const tabBtns = [];
@@ -343,8 +344,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             btn.style.cssText = `
                 flex: 1; padding: 10px 16px; font-size: 13px; font-weight: 600;
                 border: none; cursor: pointer; transition: 0.2s;
-                background: ${i === 0 ? (dark ? '#1e1e2e' : '#ffffff') : (dark ? '#313244' : '#f1f5f9')};
-                color: ${i === 0 ? (dark ? '#cdd6f4' : '#1e293b') : (dark ? '#6c7086' : '#94a3b8')};
+                background: ${i === 0 ? (dark ? '#1e1e2e' : '#ffffff') : (dark ? '#181825' : '#f8fafc')};
+                color: ${i === 0 ? (dark ? '#f5f5f5' : '#111827') : (dark ? '#6c7086' : '#94a3b8')};
                 border-bottom: 2px solid ${i === 0 ? '#22c55e' : 'transparent'};
             `;
             btn.addEventListener('click', () => switchTab(i));
@@ -356,8 +357,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         function switchTab(idx) {
             tabBtns.forEach((b, i) => {
                 const active = i === idx;
-                b.style.background = active ? (dark ? '#1e1e2e' : '#ffffff') : (dark ? '#313244' : '#f1f5f9');
-                b.style.color = active ? (dark ? '#cdd6f4' : '#1e293b') : (dark ? '#6c7086' : '#94a3b8');
+                b.style.background = active ? (dark ? '#1e1e2e' : '#ffffff') : (dark ? '#181825' : '#f8fafc');
+                b.style.color = active ? (dark ? '#f5f5f5' : '#111827') : (dark ? '#6c7086' : '#94a3b8');
                 b.style.borderBottom = active ? '2px solid #22c55e' : '2px solid transparent';
             });
             tabPanels.forEach((p, i) => {
@@ -389,9 +390,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             const tip = document.createElement('div');
             tip.style.cssText = `
                 position: fixed; z-index: 100001; padding: 12px 16px; border-radius: 8px;
-                background: ${dark ? '#313244' : '#ffffff'}; color: ${dark ? '#cdd6f4' : '#1e293b'};
+                background: ${dark ? '#313244' : '#ffffff'}; color: ${dark ? '#f5f5f5' : '#111827'};
                 box-shadow: 0 8px 24px rgba(0,0,0,0.25); font-size: 13px; max-width: 280px;
-                border: 1px solid ${dark ? '#45475a' : '#e2e8f0'}; pointer-events: none;
+                border: 1px solid ${dark ? '#45475a' : '#d1d5db'}; pointer-events: none;
             `;
             let html = `<div style="font-weight:700;margin-bottom:6px;">${feature.icon} ${feature.name}</div>`;
             html += `<div style="margin-bottom:6px;color:${dark ? '#a6adc8' : '#64748b'};">${feature.desc}</div>`;
@@ -415,9 +416,9 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             const tip = document.createElement('div');
             tip.style.cssText = `
                 position: fixed; z-index: 100001; padding: 10px 14px; border-radius: 8px;
-                background: ${dark ? '#313244' : '#ffffff'}; color: ${dark ? '#cdd6f4' : '#1e293b'};
+                background: ${dark ? '#313244' : '#ffffff'}; color: ${dark ? '#f5f5f5' : '#111827'};
                 box-shadow: 0 8px 24px rgba(0,0,0,0.25); font-size: 13px; max-width: 260px;
-                border: 1px solid ${dark ? '#45475a' : '#e2e8f0'}; pointer-events: none; line-height: 1.5;
+                border: 1px solid ${dark ? '#45475a' : '#d1d5db'}; pointer-events: none; line-height: 1.5;
             `;
             tip.textContent = text;
             document.body.appendChild(tip);
@@ -671,7 +672,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 
         EXTENSION_CATEGORIES.forEach((category) => {
             const section = document.createElement('section');
-            section.style.cssText = `display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:10px;background:${dark ? '#181825' : '#f8fafc'};border:1px solid ${dark ? '#313244' : '#e2e8f0'};`;
+            section.style.cssText = `display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:10px;background:${dark ? '#181825' : '#f8fafc'};border:1px solid ${dark ? '#313244' : '#d1d5db'};`;
             const heading = document.createElement('div');
             heading.style.cssText = `font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:${dark ? '#a6adc8' : '#64748b'};padding:0 4px 2px;`;
             heading.textContent = category.name;
@@ -710,7 +711,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             `;
             const inputCss = `
                 width: 72px; padding: 4px 8px; border-radius: 6px; font-size: 13px; text-align: right;
-                background: ${dark ? '#181825' : '#ffffff'}; color: ${dark ? '#cdd6f4' : '#1e293b'};
+                background: ${dark ? '#181825' : '#ffffff'}; color: ${dark ? '#f5f5f5' : '#111827'};
                 border: 1px solid ${dark ? '#45475a' : '#cbd5e1'};
             `;
 
@@ -823,8 +824,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         emojiRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
         `;
         const emojiLabel = document.createElement('div');
         emojiLabel.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;';
@@ -886,8 +887,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         compactRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const compactLabel = document.createElement('div');
@@ -938,8 +939,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         noiseRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const noiseLabel = document.createElement('div');
@@ -990,8 +991,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         shiftRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const shiftLabel = document.createElement('div');
@@ -1041,8 +1042,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         inspectRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const inspectLabel = document.createElement('div');
@@ -1092,8 +1093,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         smoothZoomRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const smoothZoomLabel = document.createElement('div');
@@ -1149,8 +1150,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         debugRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const debugLabel = document.createElement('div');
@@ -1201,8 +1202,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         modernBtnsRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const modernBtnsLabel = document.createElement('div');
@@ -1256,8 +1257,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         ghostPosRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const ghostPosLabel = document.createElement('div');
@@ -1324,13 +1325,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             const row = document.createElement('div');
             row.style.cssText = `
                 padding: 10px 14px; border-radius: 8px;
-                background: ${dark ? '#313244' : '#f1f5f9'};
-                border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+                background: ${dark ? '#181825' : '#f8fafc'};
+                border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
                 margin-bottom: 8px;
             `;
 
             const rowLabel = document.createElement('div');
-            rowLabel.style.cssText = `font-size:13px;font-weight:600;margin-bottom:8px;color:${dark ? '#cdd6f4' : '#1e293b'};`;
+            rowLabel.style.cssText = `font-size:13px;font-weight:600;margin-bottom:8px;color:${dark ? '#f5f5f5' : '#111827'};`;
             rowLabel.textContent = label;
 
             const controlsRow = document.createElement('div');
@@ -1338,7 +1339,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 
             // Ctrl checkbox
             const ctrlLabelEl = document.createElement('label');
-            ctrlLabelEl.style.cssText = `display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;color:${dark ? '#cdd6f4' : '#1e293b'};`;
+            ctrlLabelEl.style.cssText = `display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;color:${dark ? '#f5f5f5' : '#111827'};`;
             const ctrlCb = document.createElement('input');
             ctrlCb.type = 'checkbox'; ctrlCb.checked = !!cur.ctrl;
             ctrlLabelEl.appendChild(ctrlCb);
@@ -1354,7 +1355,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 
             // Key text input
             const keyWrap = document.createElement('label');
-            keyWrap.style.cssText = `display:flex;align-items:center;gap:6px;font-size:13px;color:${dark ? '#cdd6f4' : '#1e293b'};`;
+            keyWrap.style.cssText = `display:flex;align-items:center;gap:6px;font-size:13px;color:${dark ? '#f5f5f5' : '#111827'};`;
             keyWrap.appendChild(Object.assign(document.createElement('span'), { textContent: 'Key:' }));
             const keyIn = document.createElement('input');
             keyIn.type = 'text'; keyIn.maxLength = 1;
@@ -1364,7 +1365,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 text-transform:uppercase; font-family:monospace; font-size:13px; font-weight:700;
                 border:1px solid ${dark ? '#45475a' : '#d1d5db'};
                 background:${dark ? '#181825' : '#fff'};
-                color:${dark ? '#cdd6f4' : '#1e293b'};
+                color:${dark ? '#f5f5f5' : '#111827'};
             `;
             keyIn.addEventListener('input', () => {
                 keyIn.value = keyIn.value.replace(/[^a-zA-Z0-9]/g, '').slice(-1).toUpperCase();
@@ -1430,7 +1431,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         footer.style.cssText = `
             padding: 12px 20px;
             background: ${dark ? '#313244' : '#f8fafc'};
-            border-top: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            border-top: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             font-size: 11px;
             color: ${dark ? '#6c7086' : '#94a3b8'};
             text-align: center;
@@ -1443,6 +1444,18 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             if (e.target === overlay) { removeTooltip(); overlay.remove(); }
         });
         document.body.appendChild(overlay);
+
+        // Follow a live light/dark switch like Ghost++ does: this modal is built
+        // once with the theme at open time, so rebuild it if the theme flips.
+        const themeWatch = setInterval(() => {
+            if (!overlay.isConnected) { clearInterval(themeWatch); return; }
+            if (isDarkMode() !== dark) {
+                clearInterval(themeWatch);
+                removeTooltip();
+                overlay.remove();
+                createSettingsModal();
+            }
+        }, 1000);
     }
 
     // Open the actual Settings modal from anywhere on the page. Capture phase
@@ -1476,6 +1489,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Improved Map Rendering: a tile whose texture upload failed no longer stays as a permanent black box; it is dropped and re-uploaded' },
                 { type: 'added', text: 'Region Screenshot: captures the owner colors when Janitor View (toggleUserView) is on' },
                 { type: 'added', text: 'Palette hover tooltip (Ghost++ and Painting Menu Overhaul) shows completion % beside the hex' },
+                { type: 'changed', text: 'Settings and Janitor Colors windows now use the same colors as Ghost++ and follow the GeoPixels++ light/dark theme live' },
                 { type: 'changed', text: 'Settings: Janitor View and the new Janitor Colors toggle have their own "Janitor settings" section; Janitor Colors is disabled while Janitor View is off' },
                 { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON; hovering a user highlights their pixels in magenta; search by name/ID; click a name to open their profile; users on the Blocked User List are left out; the list scans and loads rows in small slices so it stays smooth; usernames are remembered between sessions to avoid repeat lookups; hover highlight is now instant' },
             ]
@@ -32612,8 +32626,28 @@ patch();
         }
     }
 
+    // Same theme signal Ghost++ uses (the GeoPixels++ theme choice first, then
+    // body.dark / the OS scheme), so this panel matches Ghost++ in light and dark.
     function jcIsDark() {
-        return document.body.classList.contains('dark') || window.matchMedia('(prefers-color-scheme: dark)').matches;
+        return isDarkMode();
+    }
+
+    let jcThemeTimer = 0;
+    let jcLastDark = null;
+    // Every color lives in the injected stylesheet, so re-injecting it is all a
+    // live theme switch needs. Only runs while the panel or import modal is open.
+    function jcStartThemeWatch() {
+        jcLastDark = jcIsDark();
+        clearInterval(jcThemeTimer);
+        jcThemeTimer = setInterval(() => {
+            if (!document.getElementById(JC_PANEL_ID) && !document.getElementById(JC_IMPORT_ID)) {
+                clearInterval(jcThemeTimer);
+                jcThemeTimer = 0;
+                return;
+            }
+            const d = jcIsDark();
+            if (d !== jcLastDark) { jcLastDark = d; jcInjectStyle(); }
+        }, 1000);
     }
 
     function jcIsViewOn() {
@@ -32627,24 +32661,27 @@ patch();
         if (!style) { style = document.createElement('style'); style.id = JC_STYLE_ID; document.head.appendChild(style); }
         style.textContent = `
             #${JC_PANEL_ID} {
-                position: fixed; top: 70px; left: 70px; z-index: 10060; width: 360px; max-width: calc(100vw - 16px);
-                max-height: 70vh; display: flex; flex-direction: column; border-radius: 12px; overflow: hidden;
+                position: fixed; top: 70px; left: 70px; z-index: 10060; width: 410px; max-width: calc(100vw - 16px);
+                max-height: 70vh; display: flex; flex-direction: column; border-radius: .75rem; overflow: hidden;
                 background: ${t('#ffffff', '#1e1e2e')}; color: ${t('#111827', '#f5f5f5')};
-                border: 1px solid ${t('#d1d5db', '#45475a')}; box-shadow: 0 20px 60px rgba(0,0,0,.3);
-                font-size: 12px;
+                border: 1px solid ${t('#d1d5db', '#45475a')};
+                box-shadow: 0 12px 32px ${t('rgba(15,23,42,.28)', 'rgba(0,0,0,.62)')};
+                font: 13px system-ui, sans-serif;
             }
             #${JC_PANEL_ID} .gpp-jc-head {
                 display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: move; user-select: none;
-                background: ${t('#f1f5f9', '#313244')}; border-bottom: 1px solid ${t('#e2e8f0', '#45475a')};
+                background: ${t('#f8fafc', '#181825')}; border-bottom: 1px solid ${t('#d1d5db', '#45475a')};
             }
             #${JC_PANEL_ID} .gpp-jc-title { font-weight: 700; flex: 1; font-size: 13px; }
-            #${JC_PANEL_ID} .gpp-jc-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border-bottom: 1px solid ${t('#e2e8f0', '#45475a')}; }
+            #${JC_PANEL_ID} .gpp-jc-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border-bottom: 1px solid ${t('#e5e7eb', '#313244')}; }
             .gpp-jc-btn {
-                padding: 4px 9px; border-radius: 6px; border: none; cursor: pointer; font-size: 11px; font-weight: 600;
-                background: ${t('#e2e8f0', '#585b70')}; color: ${t('#1e293b', '#cdd6f4')};
+                padding: 4px 9px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600;
+                border: 2px solid ${t('#d1d5db', '#45475a')};
+                background: ${t('#ffffff', '#11111b')}; color: ${t('#111827', '#f5f5f5')};
             }
-            .gpp-jc-btn:hover { filter: brightness(${dark ? '1.15' : '0.95'}); }
-            .gpp-jc-btn-primary { background: ${t('#3b82f6', '#89b4fa')}; color: ${t('#ffffff', '#1e1e2e')}; }
+            .gpp-jc-btn:hover { background: ${t('#f3f4f6', '#313244')}; }
+            .gpp-jc-btn-primary { background: ${t('#3b82f6', '#89b4fa')}; border-color: ${t('#3b82f6', '#89b4fa')}; color: ${t('#ffffff', '#1e1e2e')}; }
+            .gpp-jc-btn-primary:hover { background: ${t('#2563eb', '#74a0f0')}; }
             #${JC_PANEL_ID} .gpp-jc-list { overflow-y: auto; padding: 6px 8px; flex: 1; min-height: 60px; }
             #${JC_PANEL_ID} .gpp-jc-row {
                 display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px;
@@ -32670,7 +32707,7 @@ patch();
             }
             #${JC_PANEL_ID} .gpp-jc-hex { width: 74px; padding: 2px 5px; font-size: 11px; flex-shrink: 0; }
             #${JC_PANEL_ID} .gpp-jc-hex.gpp-jc-custom { border-color: ${t('#3b82f6', '#89b4fa')}; }
-            #${JC_PANEL_ID} .gpp-jc-note { padding: 6px 10px; color: ${t('#64748b', '#a6adc8')}; font-size: 11px; border-top: 1px solid ${t('#e2e8f0', '#45475a')}; }
+            #${JC_PANEL_ID} .gpp-jc-note { padding: 6px 10px; color: ${t('#64748b', '#a6adc8')}; font-size: 11px; border-top: 1px solid ${t('#e5e7eb', '#313244')}; }
             #${JC_IMPORT_ID} {
                 position: fixed; inset: 0; z-index: 10080; background: rgba(0,0,0,.5);
                 display: flex; align-items: center; justify-content: center;
@@ -32678,8 +32715,9 @@ patch();
             #${JC_IMPORT_ID} .gpp-jc-modal {
                 width: 440px; max-width: calc(100vw - 24px); border-radius: 12px; padding: 14px;
                 background: ${t('#ffffff', '#1e1e2e')}; color: ${t('#111827', '#f5f5f5')};
-                border: 1px solid ${t('#d1d5db', '#45475a')}; box-shadow: 0 20px 60px rgba(0,0,0,.3);
-                display: flex; flex-direction: column; gap: 8px; font-size: 12px;
+                border: 1px solid ${t('#d1d5db', '#45475a')};
+                box-shadow: 0 12px 32px ${t('rgba(15,23,42,.28)', 'rgba(0,0,0,.62)')};
+                display: flex; flex-direction: column; gap: 8px; font: 13px system-ui, sans-serif;
             }
             #${JC_IMPORT_ID} textarea { width: 100%; height: 180px; padding: 8px; font-size: 11px; resize: vertical; }
             #${JC_IMPORT_ID} .gpp-jc-error { color: ${t('#dc2626', '#f38ba8')}; min-height: 14px; }
@@ -32742,6 +32780,7 @@ patch();
         const existing = document.getElementById(JC_IMPORT_ID);
         if (existing) existing.remove();
         jcInjectStyle();
+        jcStartThemeWatch();
         const overlay = jcEl('div');
         overlay.id = JC_IMPORT_ID;
         const modal = jcEl('div', 'gpp-jc-modal');
@@ -33161,6 +33200,7 @@ patch();
         jcInjectStyle();
         jcScan = null;
         jcViewKey = '';
+        jcStartThemeWatch();
         const panel = jcEl('div');
         panel.id = JC_PANEL_ID;
 
