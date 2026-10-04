@@ -205,6 +205,8 @@
         return '#808080';
     }
 
+    const JC_INDEX_CAP = 8000000;      // pixels remembered per scan so a hover never has to re-read tiles
+    const JC_TILE_STRIDE = 2097152;    // 2^21 > any region's texel count; packs (tile, texel) into one number
     const JC_SLICE_TEXELS = 150000;   // texels processed per slice before yielding to the page
     let jcScanToken = 0;
     let jcViewKey = '';
@@ -268,13 +270,21 @@
         const view = jcViewTiles();
         const counts = new Map();
         const samples = new Map();   // id -> [gridX, gridY] of one of their pixels, for inspecting
-        const result = { counts, samples, truncated: view.truncated, ready: view.ready };
+        // Per-user pixel index, filled as a by-product of the scan, so hovering a
+        // row can draw straight from it instead of re-reading every tile.
+        const lists = new Map();     // id -> packed (tileIndex * STRIDE + texel) numbers, tile-ordered
+        const tiles = [];
+        let indexed = 0;
+        let indexComplete = true;
+        const result = { counts, samples, lists, tiles, indexComplete, truncated: view.truncated, ready: view.ready };
         for (const t of view.tiles) {
             if (token !== jcScanToken) return null;
             await jcYield();
             if (token !== jcScanToken) return null;
             let d;
             try { d = jcReadTile(t).img.data; } catch (_) { continue; }
+            const base = tiles.length * JC_TILE_STRIDE;
+            tiles.push(t);
             const rowsPerSlice = Math.max(1, Math.floor(JC_SLICE_TEXELS / t.w));
             for (let r0 = 0; r0 < t.h; r0 += rowsPerSlice) {
                 const r1 = Math.min(t.h, r0 + rowsPerSlice);
@@ -282,13 +292,21 @@
                     if (d[i + 3] === 0) continue;
                     const id = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2];
                     if (id === 0) continue;
+                    const px = i >> 2;
                     const seen = counts.get(id);
                     if (seen === undefined) {
-                        const px = i >> 2;
                         samples.set(id, [t.x0 + (px % t.w), t.y0 + Math.floor(px / t.w)]);
                         counts.set(id, 1);
                     } else {
                         counts.set(id, seen + 1);
+                    }
+                    if (indexed < JC_INDEX_CAP) {
+                        let arr = lists.get(id);
+                        if (arr === undefined) { arr = []; lists.set(id, arr); }
+                        arr.push(base + px);
+                        indexed++;
+                    } else {
+                        indexComplete = false;
                     }
                 }
                 if (r1 < t.h) {
@@ -297,6 +315,7 @@
                 }
             }
         }
+        result.indexComplete = indexComplete;
         return result;
     }
 
@@ -554,6 +573,52 @@
     // re-projected only when the map moves.
     let jcHl = null;   // { id, masks, canvas, redraw, timer }
 
+    // Instant path: build the highlight masks from the scan's per-user pixel
+    // index. Work is proportional to this user's pixel count only.
+    function jcMasksFromIndex(id) {
+        const masks = [];
+        const arr = jcScan && jcScan.lists && jcScan.lists.get(id);
+        if (!arr || !arr.length) return masks;
+        const MAGENTA = 0xFFFF00FF;   // ABGR byte order: R=FF G=00 B=FF A=FF
+        let start = 0;
+        while (start < arr.length) {
+            const ti = Math.floor(arr[start] / JC_TILE_STRIDE);
+            let end = start;
+            while (end < arr.length && Math.floor(arr[end] / JC_TILE_STRIDE) === ti) end++;
+            const t = jcScan.tiles[ti];
+            const lo = ti * JC_TILE_STRIDE;
+            let bx0 = t.w, by0 = t.h, bx1 = -1, by1 = -1;
+            for (let k = start; k < end; k++) {
+                const idx = arr[k] - lo;
+                const px = idx % t.w, py = (idx - px) / t.w;
+                if (px < bx0) bx0 = px;
+                if (px > bx1) bx1 = px;
+                if (py < by0) by0 = py;
+                if (py > by1) by1 = py;
+            }
+            const bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
+            const cv = new OffscreenCanvas(bw, bh);
+            const ctx = cv.getContext('2d');
+            const img = ctx.createImageData(bw, bh);
+            const px32 = new Uint32Array(img.data.buffer);
+            for (let k = start; k < end; k++) {
+                const idx = arr[k] - lo;
+                const px = idx % t.w, py = (idx - px) / t.w;
+                px32[(py - by0) * bw + (px - bx0)] = MAGENTA;
+            }
+            ctx.putImageData(img, 0, 0);
+            const gx0 = t.x0 + bx0, gy0 = t.y0 + by0;
+            masks.push({
+                canvas: cv,
+                west: gx0 * t.gs - t.gs / 2, east: (gx0 + bw) * t.gs - t.gs / 2,
+                south: gy0 * t.gs - t.gs / 2, north: (gy0 + bh) * t.gs - t.gs / 2,
+                cols: bw
+            });
+            start = end;
+        }
+        return masks;
+    }
+
     async function jcBuildMasks(id, state) {
         const masks = [];
         const view = jcViewTiles();
@@ -606,10 +671,11 @@
         jcStopHighlight();
         const state = { id, masks: null, canvas: null, redraw: null, timer: 0 };
         jcHl = state;
-        // Brief delay so sweeping the cursor down the list doesn't scan per row.
+        // Brief delay so sweeping the cursor down the list doesn't build per row.
         state.timer = setTimeout(async () => {
             if (jcHl !== state) return;
-            const masks = await jcBuildMasks(id, state);
+            // Indexed scan: instant. Otherwise (pixel cap exceeded) re-read the tiles.
+            const masks = (jcScan && jcScan.indexComplete) ? jcMasksFromIndex(id) : await jcBuildMasks(id, state);
             if (jcHl !== state || !masks) return;
             state.masks = masks;
             if (!state.masks.length || typeof map === 'undefined' || !map) return;
@@ -649,7 +715,7 @@
             state.redraw = draw;
             try { map.on('move', draw); } catch (_) {}
             draw();
-        }, 90);
+        }, 50);
     }
 
     // Same result as clicking one of the user's pixels with the site's inspect
