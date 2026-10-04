@@ -32788,6 +32788,9 @@ patch();
         if (panel) panel.remove();
         jcScanToken++;
         jcStopHighlight();
+        // Drop the scan (and its per-user pixel index) so a closed panel holds no memory.
+        jcScan = null;
+        jcViewKey = '';
         if (jcMoveHandler && typeof map !== 'undefined' && map && typeof map.off === 'function') {
             try { map.off('moveend', jcMoveHandler); } catch (_) {}
         }
