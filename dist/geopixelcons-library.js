@@ -1476,7 +1476,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'added', text: 'Region Screenshot: captures the owner colors when Janitor View (toggleUserView) is on' },
                 { type: 'added', text: 'Palette hover tooltip (Ghost++ and Painting Menu Overhaul) shows completion % beside the hex' },
                 { type: 'changed', text: 'Settings: Janitor View and the new Janitor Colors toggle have their own "Janitor settings" section; Janitor Colors is disabled while Janitor View is off' },
-                { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON; hovering a user highlights their pixels in magenta; search by name/ID; click a name to open their profile; users on the Blocked User List are left out; the list scans and loads rows in small slices so it stays smooth' },
+                { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON; hovering a user highlights their pixels in magenta; search by name/ID; click a name to open their profile; users on the Blocked User List are left out; the list scans and loads rows in small slices so it stays smooth; usernames are remembered between sessions to avoid repeat lookups' },
             ]
         },
         {
@@ -32282,6 +32282,9 @@ patch();
     const JC_DEFAULT_GRID = 25;
     const JC_SCAN_CAP  = 16000000;  // texels read per scan, keeps zoomed-out views responsive
     const JC_ROW_CAP   = 300;
+    const JC_NAMES_KEY = 'gpc-janitor-names-v1';
+    const JC_NAMES_TTL = 7 * 24 * 60 * 60 * 1000;   // usernames rarely change; refetch weekly
+    const JC_NAMES_MAX = 4000;
     const _jcPw = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
 
     const jcColors = new Map();   // id -> { hex, name }
@@ -32310,6 +32313,40 @@ patch();
 
     function jcRgbToHex(c) {
         return '#' + [c.r, c.g, c.b].map((n) => (n & 255).toString(16).toUpperCase().padStart(2, '0')).join('');
+    }
+
+    // Usernames come only from /GetUserProfile (the tile endpoint carries just
+    // owner ids), so remember them between sessions and skip repeat lookups.
+    const jcNameTimes = new Map();   // id -> time resolved
+    let jcNamesSaveTimer = 0;
+
+    function jcLoadNames() {
+        try {
+            const raw = localStorage.getItem(JC_NAMES_KEY);
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            const now = Date.now();
+            Object.keys(parsed || {}).forEach((k) => {
+                const e = parsed[k];
+                const id = Number(k);
+                if (!Number.isInteger(id) || !Array.isArray(e) || !e[0] || now - Number(e[1]) > JC_NAMES_TTL) return;
+                jcNames.set(id, String(e[0]));
+                jcNameTimes.set(id, Number(e[1]));
+            });
+        } catch (_) {}
+    }
+
+    function jcSaveNamesSoon() {
+        clearTimeout(jcNamesSaveTimer);
+        jcNamesSaveTimer = setTimeout(() => {
+            try {
+                const entries = Array.from(jcNameTimes.entries()).filter(([id]) => jcNames.get(id));
+                entries.sort((a, b) => b[1] - a[1]);
+                const out = {};
+                entries.slice(0, JC_NAMES_MAX).forEach(([id, t]) => { out[id] = [jcNames.get(id), t]; });
+                localStorage.setItem(JC_NAMES_KEY, JSON.stringify(out));
+            } catch (_) {}
+        }, 2000);
     }
 
     function jcLoad() {
@@ -32518,6 +32555,7 @@ patch();
                     const id = jcNameQueue.shift();
                     const name = await jcResolveName(id);
                     jcNames.set(id, name);
+                    if (name) { jcNameTimes.set(id, Date.now()); jcSaveNamesSoon(); }
                     const saved = jcColors.get(id);
                     if (saved && name && !saved.name) { saved.name = name; jcSave(); }
                     onResolved(id, name);
@@ -33104,6 +33142,7 @@ patch();
             return;
         }
         jcLoad();
+        jcLoadNames();
         _featureStatus.extJanitorColors = 'ok';
         // The page script defines getColorForUser; poll until it exists.
         let tries = 0;
