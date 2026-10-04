@@ -489,9 +489,13 @@
         const overlay = jcEl('div');
         overlay.id = JC_IMPORT_ID;
         const modal = jcEl('div', 'gpp-jc-modal');
-        const title = jcEl('div', '', 'Import janitor colors');
+        const title = jcEl('div', '', 'Import / Export janitor colors');
         title.style.cssText = 'font-weight:700;font-size:14px;';
         const area = document.createElement('textarea');
+        // Pre-filled with the current colors so Copy doubles as the export.
+        area.value = jcColors.size
+            ? JSON.stringify({ type: 'gpc-janitor-colors', version: 1, colors: jcExportList() }, null, 2)
+            : '';
         area.placeholder = '{"type":"gpc-janitor-colors","version":1,"colors":[{"id":123,"hex":"#FF00AA"}]}';
         const err = jcEl('div', 'gpp-jc-error');
         const file = document.createElement('input');
@@ -529,7 +533,13 @@
                 }
             }, true)
         );
-        modal.append(title, area, file, mode, err, row);
+        const areaHead = jcEl('div');
+        areaHead.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;';
+        const areaLabel = jcEl('span', 'gpp-jc-sub', 'Your colors as JSON. Copy to export, or paste / choose a file to import.');
+        areaLabel.style.flex = '1';
+        const copyBtn = jcButton('📋 Copy', () => jcCopy(area.value, copyBtn));
+        areaHead.append(areaLabel, copyBtn);
+        modal.append(title, areaHead, area, file, mode, err, row);
         overlay.appendChild(modal);
         overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
         document.body.appendChild(overlay);
@@ -902,13 +912,9 @@
         head.append(jcEl('span', 'gpp-jc-title', '🎨 Janitor Colors'), jcButton('✕', jcClosePanel));
 
         const bar = jcEl('div', 'gpp-jc-bar');
-        const exportBtn = jcButton('📋 Export', () => {
-            jcCopy(JSON.stringify({ type: 'gpc-janitor-colors', version: 1, colors: jcExportList() }, null, 2), exportBtn);
-        });
         bar.append(
             jcButton('🔄 Refresh', () => jcRescan(panel), true),
-            jcButton('📥 Import', () => jcOpenImport(() => jcRescan(panel))),
-            exportBtn,
+            jcButton('📥📋 Import / Export', () => jcOpenImport(() => jcRescan(panel))),
             jcButton('🗑️ Clear settings', () => {
                 if (!jcColors.size || !confirm('Remove all ' + jcColors.size + ' custom janitor colors?')) return;
                 jcColors.clear();
