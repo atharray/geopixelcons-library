@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.18.0';
+    const VERSION = '2.19.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -25,7 +25,8 @@
         { key: 'extAutoHoverMenus', name: 'Auto-open Menus on Hover', icon: '🖱️', desc: 'Automatically opens group button dropdown menus when you hover over them.', features: ['Hover over any group button to auto-open its dropdown', 'Configurable vertical hover zone (250px)', 'Per-button cooldown to prevent rapid toggles', 'MutationObserver-based — detects new buttons automatically'] },
         { key: 'extGoToLastLocation', name: 'Auto-Go to Last Location', icon: '📍', desc: 'Automatically returns you to your last location on page load if you spawned at the default area.', features: ['Detects if you spawned in the default area', 'Auto-clicks the "Last Location" button on load', 'One-shot — only fires once per page load', 'Automatic cleanup after 10 seconds to prevent leaks'] },
         { key: 'extPillHoverLabels', name: 'Hover Labels', icon: '💊', desc: 'Adds the expanding pill-style hover animation with text labels to all submenu buttons under controls-left.', features: ['Expanding pill animation on hover', 'Shows button title/name as a label', 'Applies to all native dropdown submenu buttons', 'Respects dark mode colors', 'MutationObserver-based — detects dynamically added buttons'] },
-        { key: 'extJanitorView', name: 'Janitor View', icon: '🛡️', desc: 'Reveals the hidden moderation button for janitors/moderators.', features: ['Removes the hidden class from the moderation group button', 'Makes the 🛡️ Moderation button visible in the controls'] },
+        { key: 'extJanitorView', name: 'Janitor View', icon: '🛡️', desc: 'Reveals the hidden moderation button for janitors/moderators.', features: ['Removes the hidden class from the moderation group button', 'Makes the 🛡️ Moderation button visible in the controls', 'Adds a 🎨 Janitor Colors panel to set persistent per-user colors for Janitor View (import/export JSON)'] },
+        { key: 'extJanitorColors', name: 'Janitor Colors', icon: '🎨', requires: 'extJanitorView', desc: 'Adds a 🎨 Janitor Colors panel under Toggle User View. Requires Janitor View.', features: ['Lists users currently in view', 'Saves a custom hex color per user ID for Janitor View', 'Import/export colors as JSON', 'Hover a user to flash their pixels'] },
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
         { key: 'extBlockedUsers', name: 'Blocked User List', icon: '🚷', desc: 'Fades out canvas pixels based on who placed them. Local rendering only — it changes nothing for other players and does not stop anyone painting.', features: ['🚷 Blocked Users entry in the GeoPixelcons++ menu opens the manager', '🚷 button in the pixel info panel queues the selected user, ready to block', 'Per-user opacity slider with one-click Hide and Show buttons at each end', 'Global slider fades every blocked user at once without losing their individual settings', 'Warns before painting over pixels placed by a blocked user', 'Paste in many IDs at once with a live preview, and unblock several at a time', 'Private per-user notes, plus JSON import/export by clipboard or file', 'Reads the per-pixel ownership data the site already loads — no extra requests'] },
         { key: 'extCanvasToggle', name: 'Canvas Visibility Toggle', icon: '👁️', desc: 'Adds a button to the Image Tools (🖼️) dropdown that fades or hides the entire pixel canvas, leaving the base map visible.', features: ['Click the button for an opacity slider with Hide and Show buttons at each end', 'Any partial fade works, which is handy for tracing over existing art', 'Costs nothing to change — it sets the tile layer\'s opacity rather than redrawing anything', 'Always starts visible after a reload so a hidden canvas can never be mistaken for a broken site'] },
@@ -43,7 +44,8 @@
     const EXTENSION_CATEGORIES = [
         { name: 'Painting', keys: ['paintBrushSwap', 'hidePaintMenu', 'mobilePaintingExtension', 'bulkPurchaseColors'] },
         { name: 'Ghost Template', keys: ['ghostPlusPlus', 'showSyncGhostBtn'] },
-        { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extJanitorView', 'extBlockedUsers', 'extCanvasToggle', 'extImprovedMapRendering'] },
+        { name: 'Map', keys: ['mapMarkers', 'extMapMovementLock', 'regionScreenshot', 'regionsHighscore', 'themeEditor', 'extBlockedUsers', 'extCanvasToggle', 'extImprovedMapRendering'] },
+        { name: 'Janitor settings', keys: ['extJanitorView', 'extJanitorColors'] },
         { name: 'Menuing', keys: ['guildOverhaul', 'extGuildSearch', 'profileColorsCollapse', 'extAutoHoverMenus', 'extPillHoverLabels', 'extLogOutButton'] },
         { name: 'Misc', keys: ['extGoToLastLocation'] },
         { name: 'Deprecated', keys: ['ghostPaletteSearch', 'ghostTemplateManager'] },
@@ -56,6 +58,8 @@
     // force on every user silently. New installs get it off until they enable it themselves.
     DEFAULT_SETTINGS.ghostPlusPlus = false;
     EXTENSION_LIST.forEach(f => DEFAULT_SETTINGS[f.key] = f.key === 'extPillHoverLabels' ? true : false);
+    // Janitor Colors only matters once Janitor View is on, so it ships enabled and simply follows that toggle.
+    DEFAULT_SETTINGS.extJanitorColors = true;
 
     function loadSettings() {
         try {
@@ -283,9 +287,10 @@
         const modal = document.createElement('div');
         modal.style.cssText = `
             background: ${dark ? '#1e1e2e' : '#ffffff'};
-            color: ${dark ? '#cdd6f4' : '#1e293b'};
-            border-radius: 12px; padding: 0; width: 460px; max-width: 95vw;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            color: ${dark ? '#f5f5f5' : '#111827'};
+            border-radius: .75rem; padding: 0; width: 460px; max-width: 95vw;
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
+            box-shadow: 0 12px 32px ${dark ? 'rgba(0,0,0,.62)' : 'rgba(15,23,42,.28)'};
             overflow: hidden;
         `;
 
@@ -294,8 +299,8 @@
         header.style.cssText = `
             padding: 16px 20px; display: flex; align-items: center;
             justify-content: space-between;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border-bottom: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border-bottom: 1px solid ${dark ? '#45475a' : '#d1d5db'};
         `;
         header.innerHTML = `<span style="font-weight:700;font-size:16px;">⚙️ GeoPixelcons++</span>`;
 
@@ -305,7 +310,7 @@
             background:none; border:none; font-size:18px; cursor:pointer;
             color:${dark ? '#a6adc8' : '#64748b'}; padding:4px 8px; border-radius:4px;
         `;
-        closeBtn.onmouseenter = () => closeBtn.style.background = dark ? '#45475a' : '#e2e8f0';
+        closeBtn.onmouseenter = () => closeBtn.style.background = dark ? '#45475a' : '#d1d5db';
         closeBtn.onmouseleave = () => closeBtn.style.background = 'none';
         closeBtn.onclick = () => overlay.remove();
         header.appendChild(closeBtn);
@@ -315,7 +320,7 @@
         const tabBar = document.createElement('div');
         tabBar.style.cssText = `
             display: flex; background: ${dark ? '#1e1e2e' : '#ffffff'};
-            border-bottom: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            border-bottom: 1px solid ${dark ? '#45475a' : '#d1d5db'};
         `;
         const tabs = ['Extensions', 'Keybindings'];
         const tabBtns = [];
@@ -327,8 +332,8 @@
             btn.style.cssText = `
                 flex: 1; padding: 10px 16px; font-size: 13px; font-weight: 600;
                 border: none; cursor: pointer; transition: 0.2s;
-                background: ${i === 0 ? (dark ? '#1e1e2e' : '#ffffff') : (dark ? '#313244' : '#f1f5f9')};
-                color: ${i === 0 ? (dark ? '#cdd6f4' : '#1e293b') : (dark ? '#6c7086' : '#94a3b8')};
+                background: ${i === 0 ? (dark ? '#1e1e2e' : '#ffffff') : (dark ? '#181825' : '#f8fafc')};
+                color: ${i === 0 ? (dark ? '#f5f5f5' : '#111827') : (dark ? '#6c7086' : '#94a3b8')};
                 border-bottom: 2px solid ${i === 0 ? '#22c55e' : 'transparent'};
             `;
             btn.addEventListener('click', () => switchTab(i));
@@ -340,8 +345,8 @@
         function switchTab(idx) {
             tabBtns.forEach((b, i) => {
                 const active = i === idx;
-                b.style.background = active ? (dark ? '#1e1e2e' : '#ffffff') : (dark ? '#313244' : '#f1f5f9');
-                b.style.color = active ? (dark ? '#cdd6f4' : '#1e293b') : (dark ? '#6c7086' : '#94a3b8');
+                b.style.background = active ? (dark ? '#1e1e2e' : '#ffffff') : (dark ? '#181825' : '#f8fafc');
+                b.style.color = active ? (dark ? '#f5f5f5' : '#111827') : (dark ? '#6c7086' : '#94a3b8');
                 b.style.borderBottom = active ? '2px solid #22c55e' : '2px solid transparent';
             });
             tabPanels.forEach((p, i) => {
@@ -373,9 +378,9 @@
             const tip = document.createElement('div');
             tip.style.cssText = `
                 position: fixed; z-index: 100001; padding: 12px 16px; border-radius: 8px;
-                background: ${dark ? '#313244' : '#ffffff'}; color: ${dark ? '#cdd6f4' : '#1e293b'};
+                background: ${dark ? '#313244' : '#ffffff'}; color: ${dark ? '#f5f5f5' : '#111827'};
                 box-shadow: 0 8px 24px rgba(0,0,0,0.25); font-size: 13px; max-width: 280px;
-                border: 1px solid ${dark ? '#45475a' : '#e2e8f0'}; pointer-events: none;
+                border: 1px solid ${dark ? '#45475a' : '#d1d5db'}; pointer-events: none;
             `;
             let html = `<div style="font-weight:700;margin-bottom:6px;">${feature.icon} ${feature.name}</div>`;
             html += `<div style="margin-bottom:6px;color:${dark ? '#a6adc8' : '#64748b'};">${feature.desc}</div>`;
@@ -399,9 +404,9 @@
             const tip = document.createElement('div');
             tip.style.cssText = `
                 position: fixed; z-index: 100001; padding: 10px 14px; border-radius: 8px;
-                background: ${dark ? '#313244' : '#ffffff'}; color: ${dark ? '#cdd6f4' : '#1e293b'};
+                background: ${dark ? '#313244' : '#ffffff'}; color: ${dark ? '#f5f5f5' : '#111827'};
                 box-shadow: 0 8px 24px rgba(0,0,0,0.25); font-size: 13px; max-width: 260px;
-                border: 1px solid ${dark ? '#45475a' : '#e2e8f0'}; pointer-events: none; line-height: 1.5;
+                border: 1px solid ${dark ? '#45475a' : '#d1d5db'}; pointer-events: none; line-height: 1.5;
             `;
             tip.textContent = text;
             document.body.appendChild(tip);
@@ -479,6 +484,9 @@
                     const modBtn = document.getElementById('modGroupBtn');
                     if (modBtn) flashEl(modBtn);
                 },
+                extJanitorColors: () => {
+                    flashEl(document.getElementById('gpp-janitor-colors-btn'));
+                },
                 extMapMovementLock: () => {
                     flashEl(document.getElementById('gpc-map-movement-lock-btn'));
                 },
@@ -509,6 +517,20 @@
             ghostPlusPlusDependentRows.forEach((row) => {
                 row.style.opacity = gray ? '0.58' : '';
                 row.style.filter = gray ? 'grayscale(0.75)' : '';
+            });
+        }
+
+        // Rows whose feature needs another feature on (f.requires) gray out
+        // and lock while that parent is off.
+        const requiresRows = new Set();
+        function refreshRequiresRows() {
+            requiresRows.forEach(({ row, input, parentKey }) => {
+                const locked = _settings[parentKey] === false;
+                row.style.opacity = locked ? '0.45' : '';
+                row.style.filter = locked ? 'grayscale(0.85)' : '';
+                row.style.pointerEvents = locked ? 'none' : '';
+                row.title = locked ? 'Enable Janitor View to use this' : '';
+                input.disabled = locked;
             });
         }
 
@@ -590,6 +612,7 @@
                     ? (dark ? '#a6e3a144' : '#bbf7d0')
                     : (dark ? '#f38ba844' : '#fecaca');
                 if (f.key === 'ghostPlusPlus') refreshGhostPlusPlusDependentRows();
+                if (requiresRows.size) refreshRequiresRows();
                 banner.style.display = 'block';
             });
 
@@ -598,6 +621,10 @@
 
             row.appendChild(labelWrap);
             row.appendChild(toggle);
+            if (f.requires) {
+                requiresRows.add({ row, input, parentKey: f.requires });
+                refreshRequiresRows();
+            }
             if (f.ghostPlusPlusGray) {
                 row.dataset.deprecated = 'true';
                 ghostPlusPlusDependentRows.add(row);
@@ -633,7 +660,7 @@
 
         EXTENSION_CATEGORIES.forEach((category) => {
             const section = document.createElement('section');
-            section.style.cssText = `display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:10px;background:${dark ? '#181825' : '#f8fafc'};border:1px solid ${dark ? '#313244' : '#e2e8f0'};`;
+            section.style.cssText = `display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:10px;background:${dark ? '#181825' : '#f8fafc'};border:1px solid ${dark ? '#313244' : '#d1d5db'};`;
             const heading = document.createElement('div');
             heading.style.cssText = `font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:${dark ? '#a6adc8' : '#64748b'};padding:0 4px 2px;`;
             heading.textContent = category.name;
@@ -672,7 +699,7 @@
             `;
             const inputCss = `
                 width: 72px; padding: 4px 8px; border-radius: 6px; font-size: 13px; text-align: right;
-                background: ${dark ? '#181825' : '#ffffff'}; color: ${dark ? '#cdd6f4' : '#1e293b'};
+                background: ${dark ? '#181825' : '#ffffff'}; color: ${dark ? '#f5f5f5' : '#111827'};
                 border: 1px solid ${dark ? '#45475a' : '#cbd5e1'};
             `;
 
@@ -785,8 +812,8 @@
         emojiRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
         `;
         const emojiLabel = document.createElement('div');
         emojiLabel.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;';
@@ -848,8 +875,8 @@
         compactRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const compactLabel = document.createElement('div');
@@ -900,8 +927,8 @@
         noiseRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const noiseLabel = document.createElement('div');
@@ -952,8 +979,8 @@
         shiftRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const shiftLabel = document.createElement('div');
@@ -1003,8 +1030,8 @@
         inspectRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const inspectLabel = document.createElement('div');
@@ -1054,8 +1081,8 @@
         smoothZoomRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const smoothZoomLabel = document.createElement('div');
@@ -1111,8 +1138,8 @@
         debugRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const debugLabel = document.createElement('div');
@@ -1163,8 +1190,8 @@
         modernBtnsRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const modernBtnsLabel = document.createElement('div');
@@ -1218,8 +1245,8 @@
         ghostPosRow.style.cssText = `
             display: flex; align-items: center; justify-content: space-between;
             padding: 10px 14px; border-radius: 8px;
-            background: ${dark ? '#313244' : '#f1f5f9'};
-            border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            background: ${dark ? '#181825' : '#f8fafc'};
+            border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             margin-top: 4px;
         `;
         const ghostPosLabel = document.createElement('div');
@@ -1286,13 +1313,13 @@
             const row = document.createElement('div');
             row.style.cssText = `
                 padding: 10px 14px; border-radius: 8px;
-                background: ${dark ? '#313244' : '#f1f5f9'};
-                border: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+                background: ${dark ? '#181825' : '#f8fafc'};
+                border: 1px solid ${dark ? '#45475a' : '#d1d5db'};
                 margin-bottom: 8px;
             `;
 
             const rowLabel = document.createElement('div');
-            rowLabel.style.cssText = `font-size:13px;font-weight:600;margin-bottom:8px;color:${dark ? '#cdd6f4' : '#1e293b'};`;
+            rowLabel.style.cssText = `font-size:13px;font-weight:600;margin-bottom:8px;color:${dark ? '#f5f5f5' : '#111827'};`;
             rowLabel.textContent = label;
 
             const controlsRow = document.createElement('div');
@@ -1300,7 +1327,7 @@
 
             // Ctrl checkbox
             const ctrlLabelEl = document.createElement('label');
-            ctrlLabelEl.style.cssText = `display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;color:${dark ? '#cdd6f4' : '#1e293b'};`;
+            ctrlLabelEl.style.cssText = `display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;color:${dark ? '#f5f5f5' : '#111827'};`;
             const ctrlCb = document.createElement('input');
             ctrlCb.type = 'checkbox'; ctrlCb.checked = !!cur.ctrl;
             ctrlLabelEl.appendChild(ctrlCb);
@@ -1316,7 +1343,7 @@
 
             // Key text input
             const keyWrap = document.createElement('label');
-            keyWrap.style.cssText = `display:flex;align-items:center;gap:6px;font-size:13px;color:${dark ? '#cdd6f4' : '#1e293b'};`;
+            keyWrap.style.cssText = `display:flex;align-items:center;gap:6px;font-size:13px;color:${dark ? '#f5f5f5' : '#111827'};`;
             keyWrap.appendChild(Object.assign(document.createElement('span'), { textContent: 'Key:' }));
             const keyIn = document.createElement('input');
             keyIn.type = 'text'; keyIn.maxLength = 1;
@@ -1326,7 +1353,7 @@
                 text-transform:uppercase; font-family:monospace; font-size:13px; font-weight:700;
                 border:1px solid ${dark ? '#45475a' : '#d1d5db'};
                 background:${dark ? '#181825' : '#fff'};
-                color:${dark ? '#cdd6f4' : '#1e293b'};
+                color:${dark ? '#f5f5f5' : '#111827'};
             `;
             keyIn.addEventListener('input', () => {
                 keyIn.value = keyIn.value.replace(/[^a-zA-Z0-9]/g, '').slice(-1).toUpperCase();
@@ -1392,7 +1419,7 @@
         footer.style.cssText = `
             padding: 12px 20px;
             background: ${dark ? '#313244' : '#f8fafc'};
-            border-top: 1px solid ${dark ? '#45475a' : '#e2e8f0'};
+            border-top: 1px solid ${dark ? '#45475a' : '#d1d5db'};
             font-size: 11px;
             color: ${dark ? '#6c7086' : '#94a3b8'};
             text-align: center;
@@ -1405,6 +1432,18 @@
             if (e.target === overlay) { removeTooltip(); overlay.remove(); }
         });
         document.body.appendChild(overlay);
+
+        // Follow a live light/dark switch like Ghost++ does: this modal is built
+        // once with the theme at open time, so rebuild it if the theme flips.
+        const themeWatch = setInterval(() => {
+            if (!overlay.isConnected) { clearInterval(themeWatch); return; }
+            if (isDarkMode() !== dark) {
+                clearInterval(themeWatch);
+                removeTooltip();
+                overlay.remove();
+                createSettingsModal();
+            }
+        }, 1000);
     }
 
     // Open the actual Settings modal from anywhere on the page. Capture phase
@@ -1431,6 +1470,18 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.19.0',
+            date: '2026-10-03',
+            items: [
+                { type: 'fixed', text: 'Improved Map Rendering: a tile whose texture upload failed no longer stays as a permanent black box; it is dropped and re-uploaded' },
+                { type: 'added', text: 'Region Screenshot: captures the owner colors when Janitor View (toggleUserView) is on' },
+                { type: 'added', text: 'Palette hover tooltip (Ghost++ and Painting Menu Overhaul) shows completion % beside the hex' },
+                { type: 'changed', text: 'Settings and Janitor Colors windows now use the same colors as Ghost++ and follow the GeoPixels++ light/dark theme live' },
+                { type: 'changed', text: 'Settings: Janitor View and the new Janitor Colors toggle have their own "Janitor settings" section; Janitor Colors is disabled while Janitor View is off' },
+                { type: 'added', text: 'Janitor View: new 🎨 Janitor Colors button under Toggle User View — lists users in view, saves custom hex colors per user ID, import/export JSON; hovering a user highlights their pixels in magenta; search by name/ID; click a name to open their profile; users on the Blocked User List are left out; the list scans and loads rows in small slices so it stays smooth; usernames are remembered between sessions to avoid repeat lookups; hover highlight is now instant' },
+            ]
+        },
         {
             version: '2.18.0',
             date: '2026-09-30',

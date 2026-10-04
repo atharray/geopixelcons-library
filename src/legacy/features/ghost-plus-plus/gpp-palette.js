@@ -116,6 +116,9 @@
                 display: inline-block; width: 10px; height: 10px; border-radius: 3px;
                 border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
             }
+            #gpp-palette-tooltip .gpp-palette-tooltip-pct {
+                font-weight: 400; color: ${t2('#64748b', '#a6adc8')};
+            }
             #gpp-palette-tooltip .gpp-palette-tooltip-stats {
                 margin-top: 2px; color: ${t2('#64748b', '#a6adc8')};
             }
@@ -466,6 +469,16 @@
         swatchDot.className = 'gpp-palette-tooltip-swatch';
         swatchDot.style.backgroundColor = hex;
         hexLine.append(swatchDot, document.createTextNode(hex));
+        // Completion percentage right of the hex — only once a scan exists
+        // (otherwise progress is unknown, not 0%). Floored to one decimal so
+        // an almost-done colour reads 99.9%, never a rounded-up 100.0%.
+        if (hasProgress && stats.total > 0) {
+            const pct = Math.floor(Math.min(1, stats.completed / stats.total) * 1000) / 10;
+            const pctEl = document.createElement('span');
+            pctEl.className = 'gpp-palette-tooltip-pct';
+            pctEl.textContent = pct.toFixed(1) + '%';
+            hexLine.appendChild(pctEl);
+        }
         const statsLine = document.createElement('div');
         statsLine.className = 'gpp-palette-tooltip-stats';
         statsLine.textContent = hasProgress
