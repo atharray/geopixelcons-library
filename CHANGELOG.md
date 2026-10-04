@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.19.0](https://github.com/atharray/geopixelcons-library/compare/v2.18.0...v2.19.0) (2026-10-04)
+
+
+### Features
+
+* Janitor Colors, janitor-view screenshots, palette completion percent, shared theme ([#72](https://github.com/atharray/geopixelcons-library/issues/72)) ([49ce309](https://github.com/atharray/geopixelcons-library/commit/49ce3090e7d521ce33eaf9e9d1de52d529e73a6c))
+
 ## [2.18.0](https://github.com/atharray/geopixelcons-library/compare/v2.17.0...v2.18.0) (2026-10-01)
 
 
