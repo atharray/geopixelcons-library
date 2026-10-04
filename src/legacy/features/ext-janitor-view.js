@@ -40,11 +40,12 @@
     //  Janitor Colors — persistent per-user colour overrides
     // ============================================================
     // The site recolours Janitor View with getColorForUser(userId), which
-    // draws a fresh random colour per user each time the view is toggled on.
-    // We wrap that one function so a saved hex wins for its user id, and
-    // everyone without an override keeps the site's random colour. Because
-    // generateUserViewBitmap and Region Screenshot both resolve colours
-    // through the same function, overrides apply to the map and exports alike.
+    // draws a fresh random colour per user each time the view is toggled on and
+    // memoizes it in userColorCache. We pre-fill that cache with the saved hex
+    // for each overridden user id (see jcInstallHook), so everyone else keeps
+    // the site's random colour. Because generateUserViewBitmap and Region
+    // Screenshot both resolve colours through the same function, overrides
+    // apply to the map and exports alike.
     const JC_STORE_KEY = 'gpc-janitor-colors-v1';
     const JC_BTN_ID    = 'gpp-janitor-colors-btn';
     const JC_PANEL_ID  = 'gpp-janitor-colors-panel';
@@ -62,7 +63,6 @@
     const jcColors = new Map();   // id -> { hex, name }
     const jcRgb = new Map();      // id -> { r, g, b } served to getColorForUser
     const jcNames = new Map();    // id -> resolved username (session cache)
-    let jcOriginal = null;
     let jcScan = null;            // last scan result, reused when only an override changes
     let jcMoveHandler = null;
     let jcSearch = '';            // lowercase filter text for the panel's search box
@@ -148,7 +148,10 @@
 
     function jcSetLocal(id, hex, name) {
         jcColors.set(id, { hex, name: name || '' });
-        jcRgb.set(id, jcHexToRgb(hex));
+        const rgb = jcHexToRgb(hex);
+        jcRgb.set(id, rgb);
+        const cache = jcCacheMap();
+        if (cache) cache.set(id, rgb);
     }
 
     function jcSetColor(id, hex) {
@@ -161,27 +164,51 @@
     function jcClearColor(id) {
         jcColors.delete(id);
         jcRgb.delete(id);
+        jcUnseed(id);
         jcSave();
         jcRefreshMap();
     }
 
+    // Custom colors reach the site through its own userColorCache, which
+    // getColorForUser checks before generating a random color. Seeding that
+    // Map costs nothing per pixel (wrapping getColorForUser itself would run
+    // millions of times per tile regeneration). toggleUserView clears the cache
+    // each time Janitor View turns on, so clear() is wrapped to re-seed.
+    function jcCacheMap() {
+        try { return (typeof userColorCache !== 'undefined' && userColorCache instanceof Map) ? userColorCache : null; } catch (_) { return null; }
+    }
+
+    function jcSeedCache() {
+        const cache = jcCacheMap();
+        if (!cache) return;
+        jcRgb.forEach((rgb, id) => cache.set(id, rgb));
+    }
+
+    function jcUnseed(id) {
+        const cache = jcCacheMap();
+        if (cache) cache.delete(id);
+    }
+
     function jcInstallHook() {
-        if (jcOriginal) return true;
-        const orig = _jcPw.getColorForUser;
-        if (typeof orig !== 'function') return false;
-        if (orig.__gpcJanitorOriginal) { jcOriginal = orig.__gpcJanitorOriginal; return true; }
-        // Called once per pixel while the site recolours a tile, so keep it lean.
-        const wrapped = function (userId) {
-            if (jcRgb.size !== 0) {
-                const custom = jcRgb.get(userId);
-                if (custom !== undefined) return custom;
-            }
-            return orig(userId);
-        };
-        wrapped.__gpcJanitorOriginal = orig;
-        _jcPw.getColorForUser = wrapped;
-        jcOriginal = orig;
+        const cache = jcCacheMap();
+        if (!cache) return false;
+        if (!cache.__gpcJanitorClearPatched) {
+            const origClear = cache.clear;
+            cache.clear = function () {
+                origClear.call(this);
+                jcSeedCache();
+            };
+            cache.__gpcJanitorClearPatched = true;
+        }
+        jcSeedCache();
         return true;
+    }
+
+    // Remove every custom color (cache entries too, so the random one returns).
+    function jcResetColors() {
+        jcRgb.forEach((_rgb, id) => jcUnseed(id));
+        jcColors.clear();
+        jcRgb.clear();
     }
 
     // Same invalidate-and-redraw the site uses after it edits tiles, so the
@@ -522,7 +549,7 @@
                 try {
                     const entries = jcParseImport(area.value);
                     if (!entries.length) { err.textContent = 'No valid {id, hex} entries found.'; return; }
-                    if (mode.value === 'replace') { jcColors.clear(); jcRgb.clear(); }
+                    if (mode.value === 'replace') jcResetColors();
                     entries.forEach((e) => jcSetLocal(e.id, e.hex, e.name));
                     jcSave();
                     jcRefreshMap();
@@ -917,8 +944,7 @@
             jcButton('📥📋 Import / Export', () => jcOpenImport(() => jcRescan(panel))),
             jcButton('🗑️ Clear settings', () => {
                 if (!jcColors.size || !confirm('Remove all ' + jcColors.size + ' custom janitor colors?')) return;
-                jcColors.clear();
-                jcRgb.clear();
+                jcResetColors();
                 jcSave();
                 jcRefreshMap();
                 jcRenderRows(panel);
