@@ -48,6 +48,29 @@
         return opacities;
     }
 
+    // Janitor view (the site's toggleUserView) recolours every pixel by its
+    // owner. Those are page-realm lexical globals, so read them defensively;
+    // reusing the site's own generator keeps the export identical to the
+    // on-screen colours, including the per-session random user palette.
+    function isJanitorViewActive() {
+        try {
+            return typeof isUserViewEnabled !== 'undefined' && isUserViewEnabled === true &&
+                typeof generateUserViewBitmap === 'function';
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function getJanitorColorForUser(userId) {
+        try {
+            if (typeof getColorForUser === 'function' && Number.isInteger(userId)) {
+                const c = getColorForUser(userId);
+                if (c) return `rgb(${c.r},${c.g},${c.b})`;
+            }
+        } catch (_) {}
+        return null;
+    }
+
     // ==================== BACKGROUND PREFERENCES ====================
     function loadBackgroundPreference() {
         try {
@@ -785,6 +808,7 @@
         const outWidth  = maxX - minX + 1;
         const outHeight = maxY - minY + 1;
         const blockedOpacities = getBlockedUserOpacities();
+        const janitorView = isJanitorViewActive();
 
         // Output canvas — transparent background, 1px = 1 grid cell
         const outputCanvas = new OffscreenCanvas(outWidth, outHeight);
@@ -842,8 +866,9 @@
             }
 
             // Older cache entries may have color data without ownership data.
-            // Fetch a paired tile only when a blocked export actually needs it.
-            if (colorBitmap && blockedOpacities.size > 0 && !userBitmap) {
+            // Fetch a paired tile only when a blocked or janitor-view export
+            // actually needs it.
+            if (colorBitmap && (blockedOpacities.size > 0 || janitorView) && !userBitmap) {
                 try {
                     const fetched = await fetchTileColorBitmap(tileX, tileY);
                     if (fetched.userBitmap) {
@@ -875,12 +900,28 @@
             const destX = tileMinX - minX;
             const destY = tileMinY - minY;
 
+            // In janitor view the source is the owner-coloured bitmap the live
+            // map shows, not the real paint colours.
+            let drawSource = colorBitmap;
+            let janitorTile = null;
+            if (janitorView && userBitmap) {
+                try {
+                    janitorTile = await generateUserViewBitmap(userBitmap);
+                    drawSource = janitorTile;
+                } catch (err) {
+                    console.warn(`[Region Screenshot] Janitor view recolor failed for tile ${tileKey}:`, err);
+                    janitorTile = null;
+                }
+            }
+            const janitorTileActive = !!janitorTile;
+
             // Draw this tile's color section onto the output canvas
             outputCtx.drawImage(
-                colorBitmap,
+                drawSource,
                 localStartX, localStartY, regionW, regionH,
                 destX, destY, regionW, regionH
             );
+            if (janitorTile && !janitorTile.closed) janitorTile.close();
 
             // ---- Apply any recent in-memory deltas on top ----
             // These are pixel updates that have arrived since the last full sync
@@ -899,6 +940,15 @@
                     if (delta.color === '#00000000' || delta.color === null) {
                         // Erased pixel — clear it
                         outputCtx.clearRect(ox, oy, 1, 1);
+                    } else if (janitorTileActive) {
+                        // Owner-coloured export: paint the owner's colour, and
+                        // skip deltas whose owner is unknown rather than
+                        // leaking a real paint colour into the janitor view.
+                        const ownerColor = getJanitorColorForUser(delta.userId);
+                        if (ownerColor) {
+                            outputCtx.fillStyle = ownerColor;
+                            outputCtx.fillRect(ox, oy, 1, 1);
+                        }
                     } else if (delta.color) {
                         outputCtx.fillStyle = delta.color;
                         outputCtx.fillRect(ox, oy, 1, 1);
