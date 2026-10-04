@@ -1473,6 +1473,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             version: '2.19.0',
             date: '2026-10-03',
             items: [
+                { type: 'fixed', text: 'Improved Map Rendering: a tile whose texture upload failed no longer stays as a permanent black box; it is dropped and re-uploaded' },
                 { type: 'added', text: 'Region Screenshot: captures the owner colors when Janitor View (toggleUserView) is on' },
                 { type: 'added', text: 'Palette hover tooltip (Ghost++ and Painting Menu Overhaul) shows completion % beside the hex' },
                 { type: 'changed', text: 'Settings: Janitor View and the new Janitor Colors toggle have their own "Janitor settings" section; Janitor Colors is disabled while Janitor View is off' },
@@ -35540,7 +35541,9 @@ window.__gpcCanvasToggle = {
         evictedBytes: 0,
         evictPending: false,
         uploadGuarded: false,
-        uploadsDropped: 0
+        uploadsDropped: 0,
+        failedUploads: 0,
+        healedTiles: 0
     };
 
     function getMap() {
@@ -35927,6 +35930,7 @@ window.__gpcCanvasToggle = {
     }
     function onTimer() {
         try { installUploadGuard(); } catch (e) {}
+        try { healEmptyTiles(); } catch (e) {}
         try { ringTick(); } catch (e) {}
         try { if (!state.evictPending) evict('tick'); } catch (e) {}
     }
@@ -36044,13 +36048,47 @@ window.__gpcCanvasToggle = {
                 state.uploadsDropped++;
                 return;
             }
-            return inner.apply(this, arguments);
+            try {
+                return inner.apply(this, arguments);
+            } catch (err) {
+                // setTile registers the tile and creates its texture BEFORE
+                // texImage2D, so a throw (typically a bitmap closed while its
+                // upload task was still queued) strands an empty texture the
+                // shader samples as opaque black. Drop it so the next draw
+                // re-uploads from the cache, then let the site handle the error.
+                state.failedUploads++;
+                dropEmptyTile(this, tileKey);
+                throw err;
+            }
         };
         guarded.__gpcImrGuarded = true;
         guarded.__gpcImrInner = inner;
         layer.setTile = guarded;
         state.uploadGuarded = true;
         return true;
+    }
+
+    // A tile whose upload threw is left registered in layer.tiles with w === 0
+    // (setTile assigns w only after texImage2D succeeds). Sweep any that slipped
+    // past the guard (e.g. the layer was not wrapped yet) so they re-upload.
+    function dropEmptyTile(layer, key) {
+        try {
+            var entry = layer.tiles.get(key);
+            if (!entry || entry.w) return false;
+            if (typeof layer.removeTile === 'function') layer.removeTile(key); else layer.tiles.delete(key);
+            if (typeof tileTextureState !== 'undefined' && tileTextureState && typeof tileTextureState.delete === 'function') tileTextureState.delete(key);
+            return true;
+        } catch (e) { return false; }
+    }
+    function healEmptyTiles() {
+        var layer = getLayer();
+        if (!layer) return 0;
+        var empty = [];
+        layer.tiles.forEach(function (entry, key) { if (entry && !entry.w) empty.push(key); });
+        var healed = 0;
+        for (var i = 0; i < empty.length; i++) if (dropEmptyTile(layer, empty[i])) healed++;
+        if (healed > 0) { state.healedTiles += healed; scheduleRestore('heal'); }
+        return healed;
     }
 
     // ---------- wiring ----------
@@ -36113,6 +36151,7 @@ window.__gpcCanvasToggle = {
         restore: function () { return restore('manual'); },
         evict: function () { return evict('manual'); },
         ringTick: function () { return ringTick(); },
+        heal: function () { return healEmptyTiles(); },
         getStats: function () {
             var s = cacheStats();
             return {
@@ -36127,7 +36166,9 @@ window.__gpcCanvasToggle = {
                 ringTilesCached: state.ringTilesCached,
                 ringInFlight: !!state.ringInFlight,
                 uploadGuarded: state.uploadGuarded,
-                uploadsDropped: state.uploadsDropped
+                uploadsDropped: state.uploadsDropped,
+                failedUploads: state.failedUploads,
+                healedTiles: state.healedTiles
             };
         },
         getState: function () {

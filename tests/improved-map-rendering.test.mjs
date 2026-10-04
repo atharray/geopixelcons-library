@@ -823,6 +823,28 @@ test('drops texture uploads that land after a fast zoom-out crossed the render l
     assert.equal(api.getStats().uploadsDropped, 5);
 });
 
+test('a throwing upload does not leave an empty (black) texture registered', async () => {
+    const site = makeFakeSite({ resident: [] });
+    // Mirror the real setTile: registers the tile (w = 0) before texImage2D throws.
+    site.pixelTileLayer.setTile = function (k) { this.tiles.set(k, { tex: {}, w: 0 }); throw new Error('InvalidStateError'); };
+    const api = site.install(); api.attach();
+    site.map._zoom = 14;
+    assert.throws(() => site.pixelTileLayer.setTile('1000,0', {}, []), /InvalidStateError/, 'the site still sees the error');
+    assert.equal(site.pixelTileLayer.tiles.has('1000,0'), false, 'empty tile dropped so it re-uploads');
+    assert.equal(api.getStats().failedUploads, 1);
+});
+
+test('heal() removes tiles stranded with an empty texture and keeps good ones', async () => {
+    const site = makeFakeSite({ resident: [] });
+    const api = site.install(); api.attach();
+    site.map._zoom = 14;
+    site.pixelTileLayer.tiles.set('21000,219000', { tex: {}, w: 0 });
+    site.pixelTileLayer.tiles.set('1000,0', { tex: {}, w: 1024 });
+    assert.equal(api.heal(), 1);
+    assert.deepEqual([...site.pixelTileLayer.tiles.keys()], ['1000,0']);
+    assert.equal(api.getStats().healedTiles, 1);
+});
+
 test('chains with a setTile wrapper that was installed first (Blocked User List style)', () => {
     const site = makeFakeSite({ resident: [] });
     const seen = [];

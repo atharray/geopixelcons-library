@@ -1461,6 +1461,7 @@
             version: '2.19.0',
             date: '2026-10-03',
             items: [
+                { type: 'fixed', text: 'Improved Map Rendering: a tile whose texture upload failed no longer stays as a permanent black box; it is dropped and re-uploaded' },
                 { type: 'added', text: 'Region Screenshot: captures the owner colors when Janitor View (toggleUserView) is on' },
                 { type: 'added', text: 'Palette hover tooltip (Ghost++ and Painting Menu Overhaul) shows completion % beside the hex' },
                 { type: 'changed', text: 'Settings: Janitor View and the new Janitor Colors toggle have their own "Janitor settings" section; Janitor Colors is disabled while Janitor View is off' },
