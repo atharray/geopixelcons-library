@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.19.1](https://github.com/atharray/geopixelcons-library/compare/v2.19.0...v2.19.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **janitor-view:** keep the Janitor button revealed after login/token refresh ([#74](https://github.com/atharray/geopixelcons-library/issues/74)) ([6a80f9c](https://github.com/atharray/geopixelcons-library/commit/6a80f9c82cf3267fa734a34e1476bbc51e4a729b))
+
 ## [2.19.0](https://github.com/atharray/geopixelcons-library/compare/v2.18.0...v2.19.0) (2026-10-04)
 
 
