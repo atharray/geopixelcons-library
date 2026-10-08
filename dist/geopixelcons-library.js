@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.18.0 - readable release bundle */
+/* GeoPixelcons Library v2.19.0 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.19.0'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.19.0';
+    const VERSION = '2.19.1';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1482,6 +1482,13 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.19.1',
+            date: '2026-10-08',
+            items: [
+                { type: 'fixed', text: 'Janitor View: the Janitor (tools) button no longer disappears after logging in or when the login token refreshes' },
+            ]
+        },
         {
             version: '2.19.0',
             date: '2026-10-03',
@@ -32249,34 +32256,40 @@ patch();
         try {
             (function _ext_janitorView() {
 
+    // The site re-hides (or rebuilds) #modGroupBtn when the login state changes
+    // (sign-in, token refresh), so the reveal must stay armed, not one-shot.
+    let jvBtnObserver = null;
+    let jvObservedBtn = null;
+    let jvRafPending = false;
+
     function revealModBtn() {
         const btn = document.getElementById('modGroupBtn');
-        if (btn && btn.classList.contains('hidden')) {
-            btn.classList.remove('hidden');
-            return true;
+        if (!btn) return;
+        if (btn.classList.contains('hidden')) btn.classList.remove('hidden');
+        if (btn !== jvObservedBtn) {
+            // New element (site re-rendered it): watch its own class changes.
+            if (jvBtnObserver) jvBtnObserver.disconnect();
+            jvObservedBtn = btn;
+            jvBtnObserver = new MutationObserver(() => {
+                if (btn.classList.contains('hidden')) btn.classList.remove('hidden');
+            });
+            jvBtnObserver.observe(btn, { attributes: true, attributeFilter: ['class'] });
         }
-        return false;
     }
 
     function init() {
-        if (revealModBtn()) return;
+        revealModBtn();
 
-        // Button may not exist yet — watch for it
-        const observer = new MutationObserver(() => {
-            if (revealModBtn()) {
-                observer.disconnect();
-            }
+        // Catch the button appearing late or being replaced after login.
+        const bodyObserver = new MutationObserver(() => {
+            if (jvRafPending) return;
+            jvRafPending = true;
+            requestAnimationFrame(() => {
+                jvRafPending = false;
+                revealModBtn();
+            });
         });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class']
-        });
-
-        // Safety cleanup
-        setTimeout(() => observer.disconnect(), 30000);
+        bodyObserver.observe(document.body, { childList: true, subtree: true });
     }
 
     // ============================================================

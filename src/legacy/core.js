@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.19.0';
+    const VERSION = '2.19.1';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1470,6 +1470,13 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.19.1',
+            date: '2026-10-08',
+            items: [
+                { type: 'fixed', text: 'Janitor View: the Janitor (tools) button no longer disappears after logging in or when the login token refreshes' },
+            ]
+        },
         {
             version: '2.19.0',
             date: '2026-10-03',
