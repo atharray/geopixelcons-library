@@ -1571,6 +1571,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Theme Editor, Janitor Colors and Map Markers windows drag by touch and can no longer be dragged off screen; Janitor Colors opens fully on screen on phones' },
                 { type: 'fixed', text: 'Saved-brushes menu always opens inside the screen on phones' },
                 { type: 'added', text: 'Hover Labels: long-press a menu button on touch screens to see its label' },
+                { type: 'changed', text: 'Guild Panel now uses the same look as Ghost++ and Janitor Colors and follows the GeoPixels++ light/dark theme live' },
             ]
         },
         {
