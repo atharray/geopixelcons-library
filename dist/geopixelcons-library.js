@@ -12104,6 +12104,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
                 cursor: pointer; display: flex; align-items: center; justify-content: center;
                 padding: 0; transition: transform .08s ease;
+                touch-action: pan-y;
             }
             .gpp-swatch:hover { transform: scale(1.15); z-index: 2; }
             /* Grayscale/opacity dimming is gated behind the grid's own
@@ -12868,13 +12869,18 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 
         // ── Drag-to-toggle: hold LEFT + drag to enable every swatch passed
         // over, hold RIGHT + drag to disable — mirrors the drag-paint
-        // interaction common in palette/selection UIs. Only engages once the
-        // pointer actually leaves the swatch it was pressed on (see the
-        // mousemove listener below), so a plain click/right-click keeps
+        // interaction common in palette/selection UIs. Driven by Pointer
+        // Events so touch works too. Only engages once the pointer actually
+        // leaves the swatch it was pressed on (mouse) or moves a few pixels
+        // mostly sideways (touch/pen, see below), so a plain click/tap keeps
         // behaving exactly like before (click handler in buildSwatch / native
         // context menu) — no double-toggle, no menu suppressed on a
         // stationary right-click.
-        let dragPaint = null; // { button, originEl, visited: Set<index> } while a press might turn into a drag
+        // Touch: swatches use touch-action: pan-y, so a vertical finger move
+        // still scrolls the palette (the browser then sends pointercancel).
+        // Only a mostly-horizontal move past the threshold starts a paint.
+        const GPP_PALETTE_DRAG_START_PX = 8;
+        let dragPaint = null; // { button, pointerType, originEl, startX, startY, dragging, visited: Set<index> } while a press might turn into a drag
         let suppressNextClick = false;
         // Tracks where the GESTURE started, not where the eventual contextmenu
         // event's target ends up — a real drag routinely finishes just past
@@ -12922,8 +12928,20 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             setSwatchMaskState(swatchEl, core.packedToHex(template.palette[index]), targetEnabled);
         }
 
-        grid.addEventListener('mousedown', event => {
-            if (event.button !== 0 && event.button !== 2) return;
+        // Touch pointers keep reporting the element the finger went down on,
+        // so the swatch under a touch is resolved from its coordinates. Mouse
+        // keeps event.target, exactly as before.
+        function dragSwatchAt(event) {
+            const el = event.pointerType === 'touch' ? document.elementFromPoint(event.clientX, event.clientY) : event.target;
+            return (el && el.closest && el.closest('.gpp-swatch')) || null;
+        }
+
+        grid.addEventListener('pointerdown', event => {
+            if (!event.isPrimary || (event.button !== 0 && event.button !== 2)) return;
+            // A new press always starts a fresh gesture. Clearing here also
+            // stops a drag that ended off a swatch (no click on one) from
+            // swallowing the next real swatch click.
+            suppressNextClick = false;
             const swatchEl = event.target.closest && event.target.closest('.gpp-swatch');
             if (!swatchEl || !controller.template) return;
             if (event.button === 2) {
@@ -12931,27 +12949,40 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 clearTimeout(rightMouseDownSafetyTimer);
                 rightMouseDownSafetyTimer = setTimeout(() => { rightMouseDownInGrid = false; }, 2000);
             }
-            dragPaint = { button: event.button, originEl: swatchEl, visited: new Set() };
+            dragPaint = { button: event.button, pointerType: event.pointerType, originEl: swatchEl, startX: event.clientX, startY: event.clientY, dragging: false, visited: new Set() };
         });
 
-        grid.addEventListener('mousemove', event => {
-            if (!dragPaint) return;
-            const swatchEl = event.target.closest && event.target.closest('.gpp-swatch');
-            if (!swatchEl) return;
-            if (dragPaint.visited.size === 0 && swatchEl !== dragPaint.originEl) {
+        grid.addEventListener('pointermove', event => {
+            if (!dragPaint || !event.isPrimary) return;
+            const swatchEl = dragSwatchAt(event);
+            if (!dragPaint.dragging) {
+                if (dragPaint.pointerType === 'mouse') {
+                    if (!swatchEl || swatchEl === dragPaint.originEl) return;
+                } else {
+                    // Touch/pen: wait for a small move. A mostly-vertical
+                    // move is a scroll, so give the gesture up and let the
+                    // browser pan the palette.
+                    const dx = Math.abs(event.clientX - dragPaint.startX);
+                    const dy = Math.abs(event.clientY - dragPaint.startY);
+                    if (Math.max(dx, dy) < GPP_PALETTE_DRAG_START_PX) return;
+                    if (dy > dx) { dragPaint = null; return; }
+                }
                 // Pointer has actually left the origin swatch — this is a
                 // real drag, not a plain click. Paint the origin too (it was
                 // "passed over" as part of the gesture) and stop the click
                 // that fires on release from acting on top of it.
+                dragPaint.dragging = true;
                 if (dragPaint.button === 0) suppressNextClick = true;
                 applyDragPaintTo(dragPaint.originEl);
             }
-            applyDragPaintTo(swatchEl);
+            if (swatchEl) applyDragPaintTo(swatchEl);
         });
 
         // Listen on document, not just grid, so a release outside the grid
-        // bounds (dragged past its edge) still ends the gesture.
-        document.addEventListener('mouseup', () => { dragPaint = null; });
+        // bounds (dragged past its edge) still ends the gesture. pointercancel
+        // covers the browser taking a touch over to scroll.
+        document.addEventListener('pointerup', () => { dragPaint = null; });
+        document.addEventListener('pointercancel', () => { dragPaint = null; });
 
         // Unconditionally suppress the native context menu for any right-
         // click gesture that started on a swatch — mirrors

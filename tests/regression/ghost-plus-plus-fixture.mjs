@@ -2013,6 +2013,87 @@ function buildDriverScript() {
     L.push('    return "the left panel\'s own header (.gpp-head) now spans the true full panel width on both edges, flush to gpp-panel-splitter, instead of stopping ~27px short due to gpp-modal-left\'s own horizontal padding plus its redundant scrollbar-gutter reservation; each collapsible section\'s border-top divider reaches the left edge exactly and stops only the expected, deliberate scrollbar-gutter width short on the right (#gpp-left-body\'s own reservation, kept on purpose)";');
     L.push('  });');
     L.push('');
+    // ---- item palette.pointer-drag-toggles-swatches ----
+    // Regression guard for the Pointer Events drag-to-toggle in gpp-palette.js
+    // (issue #79). A touch drag that moves sideways must toggle every swatch
+    // the finger passes over (resolved with elementFromPoint, because touch
+    // pointermoves keep targeting the element the finger went down on); a
+    // mostly-vertical touch move is a scroll and must paint nothing; mouse
+    // left-drag enables and right-drag disables, and right-drag still
+    // suppresses the native context menu. Synthetic PointerEvents, placed in
+    // a fixed, top-most host so elementFromPoint hits the real swatches.
+    L.push('  await step("palette.pointer-drag-toggles-swatches", async function() {');
+    L.push('    var noop = function() {};');
+    L.push('    var live = gppState.templates.find(function(t) { return t.id === template.id; });');
+    L.push('    var host = document.createElement("div");');
+    L.push('    host.style.cssText = "position:fixed;left:0;top:0;width:300px;z-index:2147483647;background:#fff;";');
+    L.push('    document.body.appendChild(host);');
+    L.push('    function setMask(allOn) { for (var i = 0; i < live.palette.length; i++) core.maskSet(live.mask, i, allOn); }');
+    L.push('    function renderFresh(allOn) {');
+    L.push('      setMask(allOn);');
+    L.push('      gppRenderPalette(host, live, noop);');
+    L.push('      return Array.from(host.querySelectorAll(".gpp-swatch"));');
+    L.push('    }');
+    L.push('    function centerOf(el) { var r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }');
+    L.push('    function fire(target, type, pt, init) {');
+    L.push('      var opts = Object.assign({ bubbles: true, cancelable: true, isPrimary: true, pointerId: 91, clientX: pt.x, clientY: pt.y }, init);');
+    L.push('      target.dispatchEvent(new PointerEvent(type, opts));');
+    L.push('    }');
+    L.push('    var touch = { pointerType: "touch", button: 0, buttons: 1 };');
+    L.push('    var touchEnd = { pointerType: "touch", button: 0, buttons: 0 };');
+    L.push('    var mouseLeft = { pointerType: "mouse", button: 0, buttons: 1 };');
+    L.push('    var mouseLeftEnd = { pointerType: "mouse", button: 0, buttons: 0 };');
+    L.push('    var mouseRight = { pointerType: "mouse", button: 2, buttons: 2 };');
+    L.push('    var mouseRightEnd = { pointerType: "mouse", button: 2, buttons: 0 };');
+    L.push('');
+    L.push('    var sw = renderFresh(false);');
+    L.push('    if (sw.length < 2) throw new Error("test setup: need at least 2 palette swatches, got " + sw.length);');
+    L.push('    var pa = centerOf(sw[0]), pb = centerOf(sw[1]);');
+    L.push('    if (Math.abs(pa.y - pb.y) > 2) throw new Error("test setup: expected the first two swatches on one row for a sideways drag");');
+    L.push('    var idxA = Number(sw[0].dataset.colorIndex), idxB = Number(sw[1].dataset.colorIndex);');
+    L.push('');
+    L.push('    // Touch, sideways: the finger passes over both swatches and both must turn on.');
+    L.push('    fire(sw[0], "pointerdown", pa, touch);');
+    L.push('    fire(sw[0], "pointermove", { x: pa.x + 12, y: pa.y }, touch);');
+    L.push('    fire(sw[0], "pointermove", pb, touch);');
+    L.push('    fire(document, "pointerup", pb, touchEnd);');
+    L.push('    if (!core.maskHas(live.mask, idxA) || !core.maskHas(live.mask, idxB)) throw new Error("REGRESSION: a sideways touch drag did not enable every swatch it passed over, mask=" + JSON.stringify(Array.from(live.mask)));');
+    L.push('');
+    L.push('    // Touch, vertical: a scroll gesture must not paint anything.');
+    L.push('    sw = renderFresh(false);');
+    L.push('    pa = centerOf(sw[0]); pb = centerOf(sw[1]);');
+    L.push('    fire(sw[0], "pointerdown", pa, touch);');
+    L.push('    fire(sw[0], "pointermove", { x: pa.x, y: pa.y + 30 }, touch);');
+    L.push('    fire(sw[0], "pointermove", pb, touch);');
+    L.push('    fire(document, "pointerup", pb, touchEnd);');
+    L.push('    if (core.maskHas(live.mask, idxA) || core.maskHas(live.mask, idxB)) throw new Error("REGRESSION: a vertical touch move (a scroll) toggled swatches, mask=" + JSON.stringify(Array.from(live.mask)));');
+    L.push('');
+    L.push('    // Mouse left-drag: enables every swatch passed over, same as before.');
+    L.push('    sw = renderFresh(false);');
+    L.push('    pa = centerOf(sw[0]); pb = centerOf(sw[1]);');
+    L.push('    fire(sw[0], "pointerdown", pa, mouseLeft);');
+    L.push('    fire(sw[1], "pointermove", pb, mouseLeft);');
+    L.push('    fire(document, "pointerup", pb, mouseLeftEnd);');
+    L.push('    if (!core.maskHas(live.mask, idxA) || !core.maskHas(live.mask, idxB)) throw new Error("REGRESSION: mouse left-drag no longer enables every swatch passed over, mask=" + JSON.stringify(Array.from(live.mask)));');
+    L.push('');
+    L.push('    // Mouse right-drag: disables every swatch passed over, and still suppresses the context menu.');
+    L.push('    sw = renderFresh(true);');
+    L.push('    pa = centerOf(sw[0]); pb = centerOf(sw[1]);');
+    L.push('    fire(sw[0], "pointerdown", pa, mouseRight);');
+    L.push('    fire(sw[1], "pointermove", pb, mouseRight);');
+    L.push('    fire(document, "pointerup", pb, mouseRightEnd);');
+    L.push('    var menu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });');
+    L.push('    sw[1].dispatchEvent(menu);');
+    L.push('    if (core.maskHas(live.mask, idxA) || core.maskHas(live.mask, idxB)) throw new Error("REGRESSION: mouse right-drag no longer disables every swatch passed over, mask=" + JSON.stringify(Array.from(live.mask)));');
+    L.push('    if (!menu.defaultPrevented) throw new Error("REGRESSION: right-drag over a swatch no longer suppresses the native context menu");');
+    L.push('');
+    L.push('    live.mask = core.makeFullMask(live.palette.length, live.counts);');
+    L.push('    await gppState.persistTemplateState(live);');
+    L.push('    host.remove();');
+    L.push('    return "Ghost++ palette drag-to-toggle works with pointer events: a sideways touch drag toggles every swatch it passes over (resolved by coordinates), a vertical touch move paints nothing (scroll), and mouse left-drag enables, right-drag disables and suppresses the context menu";');
+    L.push('  });');
+    L.push('');
+
     // ---- item palette.bulk-rows-and-enable-filtered ----
     // Regression guard for two related UI changes to the palette panel's
     // bulk-action area:
