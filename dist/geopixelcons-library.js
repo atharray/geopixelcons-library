@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.19.0 - readable release bundle */
+/* GeoPixelcons Library v2.19.1 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.19.1'; // x-release-please-version
@@ -36,7 +36,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const EXTENSION_LIST = [
         { key: 'extAutoHoverMenus', name: 'Auto-open Menus on Hover', icon: '🖱️', desc: 'Automatically opens group button dropdown menus when you hover over them.', features: ['Hover over any group button to auto-open its dropdown', 'Configurable vertical hover zone (250px)', 'Per-button cooldown to prevent rapid toggles', 'MutationObserver-based — detects new buttons automatically'] },
         { key: 'extGoToLastLocation', name: 'Auto-Go to Last Location', icon: '📍', desc: 'Automatically returns you to your last location on page load if you spawned at the default area.', features: ['Detects if you spawned in the default area', 'Auto-clicks the "Last Location" button on load', 'One-shot — only fires once per page load', 'Automatic cleanup after 10 seconds to prevent leaks'] },
-        { key: 'extPillHoverLabels', name: 'Hover Labels', icon: '💊', desc: 'Adds the expanding pill-style hover animation with text labels to all submenu buttons under controls-left.', features: ['Expanding pill animation on hover', 'Shows button title/name as a label', 'Applies to all native dropdown submenu buttons', 'Respects dark mode colors', 'MutationObserver-based — detects dynamically added buttons'] },
+        { key: 'extPillHoverLabels', name: 'Hover Labels', icon: '💊', desc: 'Adds the expanding pill-style hover animation with text labels to all submenu buttons under controls-left (long-press on touch).', features: ['Expanding pill animation on hover', 'Shows button title/name as a label', 'Applies to all native dropdown submenu buttons', 'Respects dark mode colors', 'MutationObserver-based — detects dynamically added buttons'] },
         { key: 'extJanitorView', name: 'Janitor View', icon: '🛡️', desc: 'Reveals the hidden moderation button for janitors/moderators.', features: ['Removes the hidden class from the moderation group button', 'Makes the 🛡️ Moderation button visible in the controls', 'Adds a 🎨 Janitor Colors panel to set persistent per-user colors for Janitor View (import/export JSON)'] },
         { key: 'extJanitorColors', name: 'Janitor Colors', icon: '🎨', requires: 'extJanitorView', desc: 'Adds a 🎨 Janitor Colors panel under Toggle User View. Requires Janitor View.', features: ['Lists users currently in view', 'Saves a custom hex color per user ID for Janitor View', 'Import/export colors as JSON', 'Hover a user to flash their pixels'] },
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
@@ -32078,6 +32078,76 @@ patch();
             (function _ext_pillHoverLabels() {
 
     const PROCESSED_ATTR = 'data-gpc-pill';
+    const PEEK_DELAY_MS = 400;
+    const PEEK_MOVE_TOLERANCE_PX = 10;
+    const pillLabels = new WeakMap();  // btn -> its label span
+    const pillWired = new WeakSet();   // btns whose event listeners are attached
+
+    function expand(btn) {
+        const labelSpan = pillLabels.get(btn);
+        btn.style.width = (40 + labelSpan.scrollWidth + 12) + 'px';
+        labelSpan.style.opacity = '1';
+        btn.style.background = 'var(--color-gray-100, #f3f4f6)';
+    }
+
+    function collapse(btn) {
+        btn.style.width = '40px';
+        pillLabels.get(btn).style.opacity = '0';
+        btn.style.background = 'var(--color-white, #fff)';
+    }
+
+    // Hover is mouse-only. Touch and pen get a long-press "peek": holding
+    // ~400ms reveals the label, and releasing collapses it and swallows the
+    // click that would follow. A short tap activates the button as usual.
+    function wirePillEvents(btn) {
+        if (pillWired.has(btn)) return;
+        pillWired.add(btn);
+
+        btn.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') expand(btn); });
+        btn.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') collapse(btn); });
+
+        let peekTimer = null;
+        let peekPointer = null; // { id, x, y } of the touch/pen press in progress
+        let peeking = false;
+        let swallowClick = false;
+
+        function endPeek() {
+            clearTimeout(peekTimer);
+            peekTimer = null;
+            peekPointer = null;
+            if (!peeking) return;
+            peeking = false;
+            collapse(btn);
+            swallowClick = true;
+            setTimeout(() => { swallowClick = false; }, 300);
+        }
+
+        btn.addEventListener('pointerdown', e => {
+            if (e.pointerType === 'mouse') return;
+            clearTimeout(peekTimer);
+            swallowClick = false;
+            peekPointer = { id: e.pointerId, x: e.clientX, y: e.clientY };
+            peekTimer = setTimeout(() => {
+                peekTimer = null;
+                peeking = true;
+                expand(btn);
+            }, PEEK_DELAY_MS);
+        });
+        btn.addEventListener('pointermove', e => {
+            if (!peekPointer || e.pointerId !== peekPointer.id) return;
+            if (Math.hypot(e.clientX - peekPointer.x, e.clientY - peekPointer.y) > PEEK_MOVE_TOLERANCE_PX) endPeek();
+        });
+        btn.addEventListener('pointerup', endPeek);
+        btn.addEventListener('pointercancel', endPeek);
+        btn.addEventListener('contextmenu', e => { if (peeking) e.preventDefault(); });
+        // Capture phase so this runs before the button's own click handlers.
+        btn.addEventListener('click', e => {
+            if (!swallowClick) return;
+            swallowClick = false;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }, true);
+    }
 
     function transformButton(btn) {
         if (btn.hasAttribute(PROCESSED_ATTR)) return;
@@ -32129,6 +32199,9 @@ patch();
         btn.style.justifyContent = 'flex-start';
         btn.style.border = 'none';
         btn.style.cursor = 'pointer';
+        btn.style.userSelect = 'none';
+        btn.style.webkitUserSelect = 'none';
+        btn.style.webkitTouchCallout = 'none';
         btn.style.overflow = 'hidden';
         btn.style.transition = 'width .25s cubic-bezier(.4,0,.2,1), background .15s';
         btn.style.padding = '0';
@@ -32144,17 +32217,8 @@ patch();
         btn.appendChild(iconSpan);
         btn.appendChild(labelSpan);
 
-        btn.addEventListener('mouseenter', () => {
-            const textW = labelSpan.scrollWidth + 12;
-            btn.style.width = (40 + textW) + 'px';
-            labelSpan.style.opacity = '1';
-            btn.style.background = 'var(--color-gray-100, #f3f4f6)';
-        });
-        btn.addEventListener('mouseleave', () => {
-            btn.style.width = '40px';
-            labelSpan.style.opacity = '0';
-            btn.style.background = 'var(--color-white, #fff)';
-        });
+        pillLabels.set(btn, labelSpan);
+        wirePillEvents(btn);
     }
 
     function scanAll() {
