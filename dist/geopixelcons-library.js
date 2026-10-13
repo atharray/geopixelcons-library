@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.19.0 - readable release bundle */
+/* GeoPixelcons Library v2.19.1 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.19.1'; // x-release-please-version
@@ -9142,7 +9142,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // own (native painting) click handler — this is a hard safety
     // requirement, not cosmetic: Ghost++ must never cause a stray pixel
     // placement. `onStatus(text, isError)` is optional UI feedback.
-    function gppBeginPlacementCapture(template, onPlaced, onStatus) {
+    // options.pointerType is the Place button press's pointerType (click
+    // events carry one in modern browsers); '' or undefined falls back to
+    // the primary-pointer media query. Touch and pen use the mobile flow
+    // below; mouse keeps the hover-preview flow exactly as it was.
+    function gppBeginPlacementCapture(template, onPlaced, onStatus, options) {
         gppCancelPlacementCapture();
         // Defense in depth — both real call sites (the Place button and the
         // E-to-place keyboard shortcut) already check gppIsPositionLocked
@@ -9160,6 +9164,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         }
         const mapContainer = map.getContainer();
         const grid = gppReadGridConstants();
+        if (gppIsMobilePlacement(options && options.pointerType)) {
+            gppBeginMobilePlacementCapture(template, onPlaced, onStatus, map, turf, grid);
+            return;
+        }
         const previousCursor = mapContainer.style.cursor;
         mapContainer.style.cursor = 'crosshair';
         gppPlacementCaptureStartSubscribers.forEach(listener => {
@@ -9219,6 +9227,283 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         if (onStatus) onStatus('Move the pointer over the map to preview the template, then click to set its top-left cell. Escape cancels.', false);
     }
 
+    // ── Mobile placement (touch / pen) ─────────────────────────────────
+    // Phones have no hover, the Ghost++ modal covers the map, and a tap
+    // would otherwise commit immediately with no Escape key to back out. So
+    // on touch/pen the flow is: Place hides the modal (same gpp-hidden class
+    // gpp-init.js's close() uses), the preview shows on the map, a tap moves
+    // it, a one-finger drag that starts on its footprint moves it, and a
+    // floating bar offers Set position (commits via onPlaced) or Cancel
+    // (ends the capture; nothing was ever written to the template).
+    // Map panning and pinch zoom are left to the map everywhere else.
+
+    const GPP_PLACE_BAR_ID = 'gpp-place-bar';
+    // Extra slop (CSS px) around the projected footprint so a fingertip
+    // slightly off a small template still grabs it.
+    const GPP_PLACE_TOUCH_PAD = 12;
+    // Movement (CSS px) beyond which a press is a pan, not a tap.
+    const GPP_PLACE_TAP_SLOP = 10;
+
+    function gppIsMobilePlacement(pointerType) {
+        if (pointerType) return pointerType !== 'mouse';
+        return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    }
+
+    // Hides the modal only if it is visible right now, and reports whether it
+    // did, so teardown never re-shows a modal the placement did not hide (a
+    // Place click mirrored from another view can run with it already hidden).
+    function gppSetModalHiddenForPlacement() {
+        const modal = document.getElementById(GPP_IDS.modal);
+        if (!modal || modal.classList.contains('gpp-hidden')) return false;
+        modal.classList.add('gpp-hidden');
+        modal.setAttribute('aria-hidden', 'true');
+        return true;
+    }
+
+    function gppRestoreModalAfterPlacement() {
+        const modal = document.getElementById(GPP_IDS.modal);
+        if (!modal) return;
+        modal.classList.remove('gpp-hidden');
+        modal.setAttribute('aria-hidden', 'false');
+    }
+
+    function gppCreatePlacementBar() {
+        let bar = document.getElementById(GPP_PLACE_BAR_ID);
+        if (bar) return bar;
+        bar = document.createElement('div');
+        bar.id = GPP_PLACE_BAR_ID;
+        bar.setAttribute('role', 'region');
+        bar.setAttribute('aria-label', 'Template placement');
+        bar.innerHTML = `
+            <div class="gpp-place-bar-hint">Tap or drag the template to position it.</div>
+            <div class="gpp-place-bar-row">
+                <button type="button" id="gpp-place-bar-cancel" class="gpp-place-bar-btn">Cancel</button>
+                <button type="button" id="gpp-place-bar-set" class="gpp-place-bar-btn gpp-place-bar-primary">Set position</button>
+            </div>
+        `;
+        document.body.appendChild(bar);
+        return bar;
+    }
+
+    function gppBeginMobilePlacementCapture(template, onPlaced, onStatus, map, turf, grid) {
+        const mapContainer = map.getContainer();
+        const dragPan = map.dragPan && typeof map.dragPan.disable === 'function' ? map.dragPan : null;
+
+        // Starts at the template's current cell, or the screen centre when it
+        // has none yet. Resolved before anything is hidden so a failure here
+        // leaves the page untouched.
+        let previewPosition = null;
+        if (template.position) {
+            previewPosition = { gridX: template.position.gridX, gridY: template.position.gridY };
+        } else {
+            const box = mapContainer.getBoundingClientRect();
+            previewPosition = gppMapClientPointToGrid(map, turf, grid, box.left + box.width / 2, box.top + box.height / 2);
+        }
+        if (!previewPosition) {
+            if (onStatus) onStatus('Could not resolve the map position for placement.', true);
+            return;
+        }
+
+        const hidModal = gppSetModalHiddenForPlacement();
+        gppInjectPlacementStyle();
+        const bar = gppCreatePlacementBar();
+        const previousTouchAction = mapContainer.style.touchAction;
+        mapContainer.style.touchAction = 'none';
+        gppPlacementCaptureStartSubscribers.forEach(listener => {
+            try { listener({ mobile: true }); } catch (err) { console.error('[GeoPixelcons++] Ghost++ placement capture start listener failed.', err); }
+        });
+
+        const activePointers = new Set();
+        // { kind: 'drag' | 'tap', pointerId, startX, startY, startCell,
+        //   basePosition, moved } for the one press currently being handled.
+        let gesture = null;
+        let dragPanHeld = false;
+        let dragPanWasEnabled = false;
+
+        function setPreview(position) {
+            previewPosition = { gridX: position.gridX, gridY: position.gridY };
+            gppPlacementPreview = { templateId: template.id, position: previewPosition };
+            gppNotifyRendererSchedule();
+        }
+
+        function releaseDragPan() {
+            if (!dragPanHeld) return;
+            dragPanHeld = false;
+            if (dragPan && dragPanWasEnabled) dragPan.enable();
+        }
+
+        // Projected footprint (renderer's own geometry, so it always matches
+        // what is drawn) padded for touch.
+        function previewContainsClientPoint(clientX, clientY) {
+            const box = gppRendererProjectTemplate(map, turf, grid, template);
+            if (!box) return false;
+            const origin = mapContainer.getBoundingClientRect();
+            const x = clientX - origin.left;
+            const y = clientY - origin.top;
+            const left = Math.min(box.x, box.x + box.width) - GPP_PLACE_TOUCH_PAD;
+            const right = Math.max(box.x, box.x + box.width) + GPP_PLACE_TOUCH_PAD;
+            const top = Math.min(box.y, box.y + box.height) - GPP_PLACE_TOUCH_PAD;
+            const bottom = Math.max(box.y, box.y + box.height) + GPP_PLACE_TOUCH_PAD;
+            return x >= left && x <= right && y >= top && y <= bottom;
+        }
+
+        function onPointerDown(event) {
+            activePointers.add(event.pointerId);
+            if (activePointers.size > 1) {
+                // A second finger is a pinch, which belongs to the map: drop
+                // any drag or tap in progress and leave the preview where it is.
+                gesture = null;
+                releaseDragPan();
+                return;
+            }
+            const cell = gppMapClientPointToGrid(map, turf, grid, event.clientX, event.clientY);
+            if (cell && previewContainsClientPoint(event.clientX, event.clientY)) {
+                gesture = {
+                    kind: 'drag',
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    startCell: cell,
+                    basePosition: { gridX: previewPosition.gridX, gridY: previewPosition.gridY },
+                    moved: false,
+                };
+                if (dragPan && !dragPanHeld) {
+                    dragPanHeld = true;
+                    dragPanWasEnabled = dragPan.isEnabled();
+                    dragPan.disable();
+                }
+                // Keeps the map's own pointer handlers from starting a pan.
+                event.stopPropagation();
+            } else {
+                gesture = {
+                    kind: 'tap',
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    moved: false,
+                };
+            }
+        }
+
+        function onPointerMove(event) {
+            if (!gesture || event.pointerId !== gesture.pointerId) return;
+            if (!gesture.moved && Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > GPP_PLACE_TAP_SLOP) {
+                gesture.moved = true;
+            }
+            if (gesture.kind !== 'drag') return;
+            event.stopPropagation();
+            const cell = gppMapClientPointToGrid(map, turf, grid, event.clientX, event.clientY);
+            if (!cell) return;
+            // Moves by the cell delta since the press, so the template keeps
+            // the same grab offset under the finger instead of snapping its
+            // corner to it.
+            setPreview({
+                gridX: gesture.basePosition.gridX + (cell.gridX - gesture.startCell.gridX),
+                gridY: gesture.basePosition.gridY + (cell.gridY - gesture.startCell.gridY),
+            });
+        }
+
+        function onPointerUp(event) {
+            activePointers.delete(event.pointerId);
+            if (!gesture || event.pointerId !== gesture.pointerId) return;
+            const finished = gesture;
+            gesture = null;
+            releaseDragPan();
+            if (finished.kind === 'drag') {
+                event.stopPropagation();
+                return;
+            }
+            // A tap that did not turn into a pan moves the preview to that cell.
+            // Nothing is committed here, only Set position does that.
+            if (!finished.moved && activePointers.size === 0) {
+                const cell = gppMapClientPointToGrid(map, turf, grid, event.clientX, event.clientY);
+                if (cell) setPreview(cell);
+            }
+        }
+
+        function onPointerCancel(event) {
+            activePointers.delete(event.pointerId);
+            if (gesture && event.pointerId === gesture.pointerId) gesture = null;
+            releaseDragPan();
+        }
+
+        // Once a drag has started, stop touch events from reaching the map so
+        // a touch-driven pan cannot run alongside it. Touch-start comes after
+        // pointerdown, so gesture is already set by then.
+        function onTouchStart(event) {
+            if (gesture && gesture.kind === 'drag') event.stopPropagation();
+        }
+        function onTouchMove(event) {
+            if (gesture && gesture.kind === 'drag') {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        }
+
+        // Taps during placement never reach the page's own click handling
+        // (native painting) -- the only commit path is Set position.
+        function onClick(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+        }
+
+        function cleanup() {
+            mapContainer.removeEventListener('pointerdown', onPointerDown, true);
+            mapContainer.removeEventListener('pointermove', onPointerMove, true);
+            mapContainer.removeEventListener('pointerup', onPointerUp, true);
+            mapContainer.removeEventListener('pointercancel', onPointerCancel, true);
+            mapContainer.removeEventListener('touchstart', onTouchStart, true);
+            mapContainer.removeEventListener('touchmove', onTouchMove, true);
+            mapContainer.removeEventListener('click', onClick, true);
+            document.removeEventListener('keydown', handleKeyDown, true);
+            releaseDragPan();
+            mapContainer.style.touchAction = previousTouchAction;
+            bar.remove();
+            if (hidModal) gppRestoreModalAfterPlacement();
+            gppPlacementCaptureCleanup = null;
+            gppPlacementCaptureEndSubscribers.forEach(listener => {
+                try { listener(); } catch (err) { console.error('[GeoPixelcons++] Ghost++ placement capture end listener failed.', err); }
+            });
+            if (gppPlacementPreview && gppPlacementPreview.templateId === template.id) {
+                gppPlacementPreview = null;
+                gppNotifyRendererSchedule();
+            }
+        }
+
+        function handleSet() {
+            const position = { gridX: previewPosition.gridX, gridY: previewPosition.gridY };
+            cleanup();
+            onPlaced(position);
+        }
+
+        function handleCancel() {
+            cleanup();
+            if (onStatus) onStatus('Placement cancelled.', false);
+        }
+
+        function handleKeyDown(event) {
+            if (event.key !== 'Escape') return;
+            handleCancel();
+        }
+
+        const barSet = bar.querySelector('#gpp-place-bar-set');
+        const barCancel = bar.querySelector('#gpp-place-bar-cancel');
+        barSet.addEventListener('click', handleSet);
+        barCancel.addEventListener('click', handleCancel);
+
+        mapContainer.addEventListener('pointerdown', onPointerDown, true);
+        mapContainer.addEventListener('pointermove', onPointerMove, true);
+        mapContainer.addEventListener('pointerup', onPointerUp, true);
+        mapContainer.addEventListener('pointercancel', onPointerCancel, true);
+        mapContainer.addEventListener('touchstart', onTouchStart, { capture: true });
+        mapContainer.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+        mapContainer.addEventListener('click', onClick, true);
+        document.addEventListener('keydown', handleKeyDown, true);
+        gppPlacementCaptureCleanup = cleanup;
+        setPreview(previewPosition);
+    }
+
     // Scoped, once-injected styling for this panel's controls (mirrors
     // gpp-ui-shell.js's gppInjectShellStyle guard-by-id pattern). Classed
     // rather than bare-element selectors so it can never leak into other
@@ -9274,6 +9559,28 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             .gpp-pt-input:disabled { opacity: .5; }
             .gpp-pt-field { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: ${t2('#64748b', '#a6adc8')}; }
             .gpp-pt-lock { display: flex; align-items: center; gap: 4px; font-size: 12px; color: ${t2('#111827', '#f5f5f5')}; margin-left: auto; }
+            #${GPP_PLACE_BAR_ID} {
+                position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom));
+                transform: translateX(-50%); z-index: 100005; box-sizing: border-box;
+                width: min(92vw, 360px); padding: 10px; border-radius: 10px;
+                display: flex; flex-direction: column; gap: 8px;
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+                background: ${t2('#ffffff', '#1e1e2e')};
+                box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
+            }
+            #${GPP_PLACE_BAR_ID} .gpp-place-bar-hint { font-size: 12px; text-align: center; color: ${t2('#475569', '#a6adc8')}; }
+            #${GPP_PLACE_BAR_ID} .gpp-place-bar-row { display: flex; gap: 8px; }
+            #${GPP_PLACE_BAR_ID} .gpp-place-bar-btn {
+                flex: 1 1 0; min-height: 40px; box-sizing: border-box; padding: 8px 10px;
+                border-radius: 8px; cursor: pointer; font-size: 14px;
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+                background: ${t2('#f8fafc', '#313244')};
+                color: ${t2('#111827', '#f5f5f5')};
+            }
+            #${GPP_PLACE_BAR_ID} .gpp-place-bar-primary {
+                background: ${t2('#2563eb', '#89b4fa')}; border-color: ${t2('#2563eb', '#89b4fa')};
+                color: ${t2('#ffffff', '#1e1e2e')}; font-weight: 600;
+            }
         `;
     }
 
@@ -9419,7 +9726,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         xInput.addEventListener('change', commitCoordInputs);
         yInput.addEventListener('change', commitCoordInputs);
 
-        body.querySelector('#gpp-pt-place').addEventListener('click', () => {
+        body.querySelector('#gpp-pt-place').addEventListener('click', event => {
             if (gppIsPositionLocked(template)) return;
             gppBeginPlacementCapture(
                 template,
@@ -9428,7 +9735,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                         .then(() => setStatus(`Placed at ${position.gridX}, ${position.gridY}.`, false))
                         .catch(err => setStatus(err && err.message ? err.message : String(err), true));
                 },
-                (text, isError) => setStatus(text, isError)
+                (text, isError) => setStatus(text, isError),
+                { pointerType: event.pointerType }
             );
         });
 
@@ -39943,8 +40251,11 @@ if (_settings.profileColorsCollapse) {
     // function, same 'Info'/'Success' title convention, and same
     // pageWindow()-guarded call shape already used for it elsewhere in this
     // codebase (gpp-scan.js's gppScanAlertEnabledCount, gpp-native-shim.js).
-    function handlePlacementCaptureStart() {
+    function handlePlacementCaptureStart(info) {
         togglePagePrimaryMode();
+        // The mobile flow's floating Set position / Cancel bar already says
+        // what to do, so the desktop corner toast does not apply there.
+        if (info && info.mobile) return;
         const win = pageWindow();
         if (win && typeof win.showAlert === 'function') {
             win.showAlert('Info', 'Click on top right corner to place template on map.');
