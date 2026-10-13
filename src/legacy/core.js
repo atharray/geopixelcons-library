@@ -1577,7 +1577,7 @@
                 { type: 'fixed', text: 'Hover tooltips (brush preview "click to expand", Ghost++ palette and library previews) no longer stay on screen after a tap' },
                 { type: 'added', text: 'Paint Brush Swap: swipe left or right on the ▲ brushes button to cycle saved brushes on touch screens' },
                 { type: 'fixed', text: 'Theme Editor, Janitor Colors and Map Markers windows drag by touch and can no longer be dragged off screen; Janitor Colors opens fully on screen on phones' },
-                { type: 'fixed', text: 'Saved-brushes menu always opens inside the screen on phones' },
+                { type: 'fixed', text: 'Saved-brushes menu always opens inside the screen on phones, including from the compact 🖌️ button, and swiping the compact 🖌️ button also cycles brushes' },
                 { type: 'added', text: 'Hover Labels: long-press a menu button on touch screens to see its label' },
                 { type: 'changed', text: 'Guild Panel now uses the same look as Ghost++ and Janitor Colors and follows the GeoPixels++ light/dark theme live' },
                 { type: 'fixed', text: 'Long-pressing a map control button on touch screens no longer selects its label text or opens the copy/share bar' },

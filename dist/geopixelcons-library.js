@@ -1589,7 +1589,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 { type: 'fixed', text: 'Hover tooltips (brush preview "click to expand", Ghost++ palette and library previews) no longer stay on screen after a tap' },
                 { type: 'added', text: 'Paint Brush Swap: swipe left or right on the ▲ brushes button to cycle saved brushes on touch screens' },
                 { type: 'fixed', text: 'Theme Editor, Janitor Colors and Map Markers windows drag by touch and can no longer be dragged off screen; Janitor Colors opens fully on screen on phones' },
-                { type: 'fixed', text: 'Saved-brushes menu always opens inside the screen on phones' },
+                { type: 'fixed', text: 'Saved-brushes menu always opens inside the screen on phones, including from the compact 🖌️ button, and swiping the compact 🖌️ button also cycles brushes' },
                 { type: 'added', text: 'Hover Labels: long-press a menu button on touch screens to see its label' },
                 { type: 'changed', text: 'Guild Panel now uses the same look as Ghost++ and Janitor Colors and follows the GeoPixels++ light/dark theme live' },
                 { type: 'fixed', text: 'Long-pressing a map control button on touch screens no longer selects its label text or opens the copy/share bar' },
@@ -17330,6 +17330,12 @@ window.changeColor=function(color){
     // re-measure when its own live panels change.
     let gpcPaintMenuControlsScale = null;
 
+    // Assigned by Paint Brush Swap (paint-brush-swap.js, later in the same IIFE)
+    // once its saved-brushes toggle exists: { fitDropdown, attachSwipe }. The
+    // compact 🖌️ button below uses it to keep the menu on screen and to forward
+    // the touch swipe. Declared here because this file is evaluated first.
+    let gpcBrushSwapApi = null;
+
     // ============================================================
     //  FEATURE: Paint Menu Controls [hidePaintMenu]
     // ============================================================
@@ -17551,6 +17557,12 @@ window.changeColor=function(color){
                     if (dropdown.parentElement !== document.body) {
                         document.body.appendChild(dropdown);
                     }
+                    // Paint Brush Swap places the menu from this button and keeps it on screen
+                    // (and re-fits it on resize / rotation / scroll).
+                    if (gpcBrushSwapApi && typeof gpcBrushSwapApi.fitDropdown === 'function') {
+                        gpcBrushSwapApi.fitDropdown();
+                        return;
+                    }
                     const btnRect = compactBrushBtn.getBoundingClientRect();
                     const paintIsTop = localStorage.getItem('gpc-paint-is-top') === 'true';
                     dropdown.style.position = 'fixed';
@@ -17606,6 +17618,10 @@ window.changeColor=function(color){
                     brushToggle.style.border = 'none';
                     brushToggle.style.overflow = 'hidden';
                     compactBrushBtn.style.display = 'flex';
+                    // Same touch swipe-to-cycle as the full-size toggle
+                    if (gpcBrushSwapApi && typeof gpcBrushSwapApi.attachSwipe === 'function') {
+                        gpcBrushSwapApi.attachSwipe(compactBrushBtn);
+                    }
                     return true;
                 }
                 return false;
@@ -27506,7 +27522,13 @@ patch();
         const vh = vv ? vv.height : window.innerHeight;
         const paintIsTop = localStorage.getItem('gpc-paint-is-top') === 'true';
         const narrow = vw <= 768 || window.matchMedia('(pointer: coarse)').matches;
-        const btn = toggleBtn.getBoundingClientRect();
+        // Compact paint controls hide the real toggle behind their own 🖌️ button and
+        // move the menu to <body>; anchor to whichever button is actually visible.
+        const compactBtn = document.getElementById('gpc-compact-brush');
+        const compactAnchor = !!(compactBtn && compactBtn.getClientRects().length && compactBtn.style.display !== 'none');
+        const anchorEl = compactAnchor ? compactBtn : toggleBtn;
+        const useFixed = narrow || compactAnchor || dropdown.parentElement === document.body;
+        const btn = anchorEl.getBoundingClientRect();
 
         let storedW = 300;
         let storedH = 600;
@@ -27522,7 +27544,7 @@ patch();
         const maxH = Math.max(120, Math.min(storedH, room));
         dropdown.style.maxHeight = maxH + 'px';
 
-        if (narrow) {
+        if (useFixed) {
             dropdown.style.position = 'fixed';
             dropdown.style.right = 'auto';
             dropdown.style.bottom = 'auto';
@@ -27537,7 +27559,9 @@ patch();
             const scale = dropdown.offsetWidth ? (origin.width / dropdown.offsetWidth) || 1 : 1;
             const h = Math.min(maxH, dropdown.scrollHeight + 2) * scale;
             const targetTop = paintIsTop ? btn.bottom + M : btn.top - M - h;
-            const targetLeft = btn.right - origin.width;
+            // The compact button sits left of centre, so its menu opens rightward from it;
+            // the full-size toggle keeps the menu right-aligned to it. Both are clamped below.
+            const targetLeft = compactAnchor ? btn.left : btn.right - origin.width;
             dropdown.style.top = ((targetTop - origin.top) / scale) + 'px';
             dropdown.style.left = ((targetLeft - origin.left) / scale) + 'px';
         } else {
@@ -27967,14 +27991,8 @@ patch();
         toggleBtn.className = 'bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 cursor-pointer px-2.5 py-1.5 text-xs leading-none font-semibold text-gray-800 dark:text-gray-200 ml-2 inline-flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-gray-600 dark:hover:border-gray-500 active:bg-gray-300 dark:active:bg-gray-800';
         toggleBtn.title = 'Toggle saved brushes';
         toggleBtn.innerHTML = '<span style="font-size: 10px; font-weight: 600; display: flex; align-items: center; gap: 4px;">▲ brushes</span>';
-        // Horizontal swipes must reach the pointer handlers, so only vertical panning is left to the browser
-        toggleBtn.style.touchAction = 'pan-y';
-        let swipeState = null;
-        let swipeHandled = false;
         toggleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            // A click synthesized after a swipe must not also open the dropdown
-            if (swipeHandled) { swipeHandled = false; return; }
             toggleDropdown();
         });
 
@@ -28029,25 +28047,42 @@ patch();
             stepBrush(e.deltaY > 0 ? 1 : -1, e.clientX, e.clientY);
         }, { passive: false });
 
-        // Touch/pen: horizontal swipe on the button steps brushes (left = next, right = previous)
+        // Touch/pen: horizontal swipe on a button steps brushes (left = next, right = previous).
+        // Used for the toggle itself and for compact paint controls' 🖌️ button.
         const SWIPE_MIN_PX = 24;
-        toggleBtn.addEventListener('pointerdown', (e) => {
-            swipeHandled = false;
-            swipeState = (e.pointerType === 'touch' || e.pointerType === 'pen')
-                ? { id: e.pointerId, x: e.clientX, y: e.clientY }
-                : null;
-        });
-        toggleBtn.addEventListener('pointerup', (e) => {
-            if (!swipeState || e.pointerId !== swipeState.id) return;
-            const dx = e.clientX - swipeState.x;
-            const dy = e.clientY - swipeState.y;
-            swipeState = null;
-            if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) <= Math.abs(dy)) return;
-            if (scriptState.brushes.length === 0) return;
-            swipeHandled = true;
-            stepBrush(dx < 0 ? 1 : -1, e.clientX, e.clientY);
-        });
-        toggleBtn.addEventListener('pointercancel', () => { swipeState = null; });
+        function attachBrushSwipe(el) {
+            if (!el || el._gpcBrushSwipe) return;
+            el._gpcBrushSwipe = true;
+            el.style.touchAction = 'pan-y';
+            let swipe = null;
+            let swiped = false;
+            el.addEventListener('pointerdown', (e) => {
+                swiped = false;
+                swipe = (e.pointerType === 'touch' || e.pointerType === 'pen')
+                    ? { id: e.pointerId, x: e.clientX, y: e.clientY }
+                    : null;
+            });
+            el.addEventListener('pointerup', (e) => {
+                if (!swipe || e.pointerId !== swipe.id) return;
+                const dx = e.clientX - swipe.x;
+                const dy = e.clientY - swipe.y;
+                swipe = null;
+                if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) <= Math.abs(dy)) return;
+                if (scriptState.brushes.length === 0) return;
+                swiped = true;
+                stepBrush(dx < 0 ? 1 : -1, e.clientX, e.clientY);
+            });
+            el.addEventListener('pointercancel', () => { swipe = null; });
+            // A click synthesized after a swipe must not also open the menu
+            // (capture phase, so it runs before the button's own click handler).
+            el.addEventListener('click', (e) => {
+                if (!swiped) return;
+                swiped = false;
+                e.preventDefault();
+                e.stopImmediatePropagation();
+            }, true);
+        }
+        attachBrushSwipe(toggleBtn);
 
         // Create dropdown container
         const dropdown = document.createElement('div');
@@ -28172,6 +28207,8 @@ patch();
         wrapper.appendChild(dropdown);
 
         // Insert after commitBtn
+        // Shared handle declared in hide-paint-menu.js (compact paint controls)
+        gpcBrushSwapApi = { fitDropdown: fitDropdownToViewport, attachSwipe: attachBrushSwipe };
         commitBtn.parentNode.insertBefore(wrapper, commitBtn.nextSibling);
 
         // Close dropdown on click outside
