@@ -1136,6 +1136,78 @@
         });
     }
 
+    // Keep the open menu fully inside the visible viewport. The menu is anchored to the
+    // toggle button, but the paint bar can sit partly off-screen on phones, so on narrow /
+    // coarse-pointer screens it is positioned fixed from the button's rect, capped to the
+    // room above (or below) the button, and shifted horizontally into view.
+    function fitDropdownToViewport() {
+        const dropdown = document.getElementById('brush-swap-dropdown');
+        const toggleBtn = document.getElementById('brush-swap-toggle');
+        if (!dropdown || !toggleBtn || !scriptState.dropdownOpen) return;
+
+        const M = 8;
+        const vv = window.visualViewport;
+        const minX = vv ? vv.offsetLeft : 0;
+        const minY = vv ? vv.offsetTop : 0;
+        const vw = vv ? vv.width : window.innerWidth;
+        const vh = vv ? vv.height : window.innerHeight;
+        const paintIsTop = localStorage.getItem('gpc-paint-is-top') === 'true';
+        const narrow = vw <= 768 || window.matchMedia('(pointer: coarse)').matches;
+        const btn = toggleBtn.getBoundingClientRect();
+
+        let storedW = 300;
+        let storedH = 600;
+        try {
+            const stored = JSON.parse(localStorage.getItem(RESIZE_STORAGE_KEY));
+            if (stored) { storedW = stored.w; storedH = stored.h; }
+        } catch {}
+
+        // Reset the previous shift so every measurement uses the natural position
+        dropdown.style.transform = '';
+        dropdown.style.maxWidth = Math.min(storedW, vw - 2 * M) + 'px';
+        const room = paintIsTop ? (minY + vh - btn.bottom - 2 * M) : (btn.top - minY - 2 * M);
+        const maxH = Math.max(120, Math.min(storedH, room));
+        dropdown.style.maxHeight = maxH + 'px';
+
+        if (narrow) {
+            dropdown.style.position = 'fixed';
+            dropdown.style.right = 'auto';
+            dropdown.style.bottom = 'auto';
+            dropdown.style.marginTop = '0';
+            dropdown.style.marginBottom = '0';
+            dropdown.style.left = '0px'; // measure the natural width with room to spare
+            dropdown.style.top = '0px';
+            // The paint bar is transformed (translateX, optional scale), which makes it the
+            // containing block for position:fixed. Measure where (0,0) actually lands and the
+            // effective scale, then convert the viewport target into that local frame.
+            const origin = dropdown.getBoundingClientRect();
+            const scale = dropdown.offsetWidth ? (origin.width / dropdown.offsetWidth) || 1 : 1;
+            const h = Math.min(maxH, dropdown.scrollHeight + 2) * scale;
+            const targetTop = paintIsTop ? btn.bottom + M : btn.top - M - h;
+            const targetLeft = btn.right - origin.width;
+            dropdown.style.top = ((targetTop - origin.top) / scale) + 'px';
+            dropdown.style.left = ((targetLeft - origin.left) / scale) + 'px';
+        } else {
+            // Desktop: same anchoring as before (right-aligned to the button, above or below it)
+            dropdown.style.position = 'absolute';
+            dropdown.style.left = '';
+            dropdown.style.right = '';
+            dropdown.style.top = paintIsTop ? '100%' : 'auto';
+            dropdown.style.bottom = paintIsTop ? 'auto' : '100%';
+            dropdown.style.marginTop = paintIsTop ? '8px' : '0';
+            dropdown.style.marginBottom = paintIsTop ? '0' : '8px';
+        }
+
+        // Horizontal clamp: shift the menu in from whichever edge it crosses
+        const r = dropdown.getBoundingClientRect();
+        let dx = 0;
+        if (r.right > minX + vw - M) dx = minX + vw - M - r.right;
+        if (r.left + dx < minX + M) dx = minX + M - r.left;
+        // translateX is applied in the (possibly scaled) local frame of the paint bar
+        const shiftScale = dropdown.offsetWidth ? (r.width / dropdown.offsetWidth) || 1 : 1;
+        if (dx) dropdown.style.transform = `translateX(${Math.round(dx / shiftScale)}px)`;
+    }
+
     function toggleDropdown() {
         const dropdown = document.getElementById('brush-swap-dropdown');
         if (!dropdown) return;
@@ -1169,6 +1241,7 @@
             } catch {}
             dropdown.classList.add('open');
             renderDropdown();
+            fitDropdownToViewport();
         } else {
             dropdown.classList.remove('open');
             scriptState.isRenaming = null;
@@ -1682,6 +1755,7 @@
                     const r = dropdown.getBoundingClientRect();
                     storedSize = { w: Math.round(r.width), h: Math.round(r.height) };
                     localStorage.setItem(RESIZE_STORAGE_KEY, JSON.stringify(storedSize));
+                    fitDropdownToViewport();
                 };
 
                 document.addEventListener('pointermove', onMove, true);
@@ -1721,12 +1795,23 @@
             dropdown.style.width = '';
             dropdown.style.maxWidth = '';
             dropdown.style.maxHeight = '';
+            fitDropdownToViewport();
         });
 
         dropdownFooter.appendChild(exportBtn);
         dropdownFooter.appendChild(importBtn);
         dropdownFooter.appendChild(resetSizeBtn);
         dropdown.appendChild(dropdownFooter);
+
+        // Re-fit the open menu when the viewport changes (rotation, URL bar, zoom, page scroll).
+        // fitDropdownToViewport is a no-op while the menu is closed.
+        window.addEventListener('resize', fitDropdownToViewport);
+        window.addEventListener('orientationchange', fitDropdownToViewport);
+        window.addEventListener('scroll', fitDropdownToViewport, { passive: true });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', fitDropdownToViewport);
+            window.visualViewport.addEventListener('scroll', fitDropdownToViewport);
+        }
 
         // Assemble and insert
         wrapper.appendChild(toggleBtn);
