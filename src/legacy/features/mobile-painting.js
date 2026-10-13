@@ -1538,8 +1538,11 @@
     // function, same 'Info'/'Success' title convention, and same
     // pageWindow()-guarded call shape already used for it elsewhere in this
     // codebase (gpp-scan.js's gppScanAlertEnabledCount, gpp-native-shim.js).
-    function handlePlacementCaptureStart() {
+    function handlePlacementCaptureStart(info) {
         togglePagePrimaryMode();
+        // The mobile flow's floating Set position / Cancel bar already says
+        // what to do, so the desktop corner toast does not apply there.
+        if (info && info.mobile) return;
         const win = pageWindow();
         if (win && typeof win.showAlert === 'function') {
             win.showAlert('Info', 'Click on top right corner to place template on map.');
