@@ -1153,13 +1153,21 @@
         if (narrow) {
             dropdown.style.position = 'fixed';
             dropdown.style.right = 'auto';
-            dropdown.style.left = '0px'; // measure the natural width with room to spare
-            const h = Math.min(maxH, dropdown.scrollHeight + 2);
-            dropdown.style.top = (paintIsTop ? btn.bottom + M : btn.top - M - h) + 'px';
             dropdown.style.bottom = 'auto';
             dropdown.style.marginTop = '0';
             dropdown.style.marginBottom = '0';
-            dropdown.style.left = (btn.right - dropdown.offsetWidth) + 'px';
+            dropdown.style.left = '0px'; // measure the natural width with room to spare
+            dropdown.style.top = '0px';
+            // The paint bar is transformed (translateX, optional scale), which makes it the
+            // containing block for position:fixed. Measure where (0,0) actually lands and the
+            // effective scale, then convert the viewport target into that local frame.
+            const origin = dropdown.getBoundingClientRect();
+            const scale = dropdown.offsetWidth ? (origin.width / dropdown.offsetWidth) || 1 : 1;
+            const h = Math.min(maxH, dropdown.scrollHeight + 2) * scale;
+            const targetTop = paintIsTop ? btn.bottom + M : btn.top - M - h;
+            const targetLeft = btn.right - origin.width;
+            dropdown.style.top = ((targetTop - origin.top) / scale) + 'px';
+            dropdown.style.left = ((targetLeft - origin.left) / scale) + 'px';
         } else {
             // Desktop: same anchoring as before (right-aligned to the button, above or below it)
             dropdown.style.position = 'absolute';
@@ -1176,7 +1184,9 @@
         let dx = 0;
         if (r.right > minX + vw - M) dx = minX + vw - M - r.right;
         if (r.left + dx < minX + M) dx = minX + M - r.left;
-        if (dx) dropdown.style.transform = `translateX(${Math.round(dx)}px)`;
+        // translateX is applied in the (possibly scaled) local frame of the paint bar
+        const shiftScale = dropdown.offsetWidth ? (r.width / dropdown.offsetWidth) || 1 : 1;
+        if (dx) dropdown.style.transform = `translateX(${Math.round(dx / shiftScale)}px)`;
     }
 
     function toggleDropdown() {
