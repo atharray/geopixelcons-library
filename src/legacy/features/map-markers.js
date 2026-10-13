@@ -29,6 +29,7 @@
                 // Append after map container is available; done in waitForMapMM callback below
 
                 let mmModal    = null;
+                let mmDrag     = null; // shared floating-panel drag for the header
                 let placingId  = null; // id of marker currently being placed
                 let editingId  = null; // id of marker currently being edited
                 let _drag      = null; // active drag state
@@ -500,7 +501,9 @@
                 // ── Modal ─────────────────────────────────────────────────
                 function openModal() {
                     if (mmModal) {
-                        mmModal.style.display = mmModal.style.display === 'none' ? 'flex' : 'none';
+                        const showing = mmModal.style.display === 'none';
+                        mmModal.style.display = showing ? 'flex' : 'none';
+                        if (showing && mmDrag) mmDrag.clamp();
                         return;
                     }
                     mmModal = document.createElement('div');
@@ -541,20 +544,6 @@
                     xBtn.onclick = () => { mmModal.style.display = 'none'; exitPlace(); exitEdit(); };
                     hdr.appendChild(xBtn);
                     mmModal.appendChild(hdr);
-
-                    // Draggable header
-                    let dragOff = null;
-                    hdr.addEventListener('mousedown', e => {
-                        if (e.target === xBtn || e.target === compactBtn) return;
-                        dragOff = { x: e.clientX - mmModal.offsetLeft, y: e.clientY - mmModal.offsetTop };
-                        hdr.style.cursor = 'grabbing';
-                    });
-                    document.addEventListener('mousemove', e => {
-                        if (!dragOff) return;
-                        mmModal.style.left = (e.clientX - dragOff.x) + 'px';
-                        mmModal.style.top  = (e.clientY - dragOff.y) + 'px';
-                    });
-                    document.addEventListener('mouseup', () => { dragOff = null; hdr.style.cursor = 'grab'; });
 
                     // ── Shared helpers: register a new marker and enter place mode
                     async function addMarkerFromDataUrl(dataUrl, name, mediaType) {
@@ -647,6 +636,8 @@
                     mmModal.appendChild(list);
 
                     document.body.appendChild(mmModal);
+                    // Header drag (touch and mouse), kept on screen; map-canvas marker moves are untouched
+                    mmDrag = gpcMakeDraggablePanel(mmModal, hdr);
                     renderList(list);
                 }
 

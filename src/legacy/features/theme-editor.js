@@ -332,6 +332,7 @@
 
     // ─── Modal ───────────────────────────────────────────────────────
     let teModal = null;
+    let teDrag = null;
 
     function teBuildModal() {
         const modal = document.createElement('div'); modal.id = 'gte-modal'; modal.className = 'gte-hidden';
@@ -345,12 +346,8 @@
             tab.classList.add('gte-active'); modal.querySelector('#gte-panel-'+tab.dataset.panel).classList.add('gte-active');
             if (tab.dataset.panel === 'manager') renderManager();
         }));
-        // Dragging
-        let ox=0,oy=0,sx=0,sy=0;
-        const handle = modal.querySelector('#gte-titlebar');
-        handle.addEventListener('mousedown', e => { if (e.target.tagName==='BUTTON') return; e.preventDefault(); sx=e.clientX; sy=e.clientY; document.addEventListener('mousemove',drag); document.addEventListener('mouseup',dragEnd); });
-        function drag(e) { ox=sx-e.clientX; oy=sy-e.clientY; sx=e.clientX; sy=e.clientY; modal.style.top=Math.max(0,Math.min(window.innerHeight-50,modal.offsetTop-oy))+'px'; modal.style.left=Math.max(0,Math.min(window.innerWidth-100,modal.offsetLeft-ox))+'px'; modal.style.right='auto'; }
-        function dragEnd() { document.removeEventListener('mousemove',drag); document.removeEventListener('mouseup',dragEnd); }
+        // Dragging (touch and mouse), clamped to the visible viewport
+        teDrag = gpcMakeDraggablePanel(modal, modal.querySelector('#gte-titlebar'));
         return modal;
     }
 
@@ -543,7 +540,7 @@
         applyThemeByName: teApplyByName,
         toggleModal: () => {
             const isHidden = teModal.classList.contains('gte-hidden');
-            if (isHidden) { teModal.classList.remove('gte-hidden'); if (!document.getElementById('gte-theme-name')) renderEditor({}, ''); }
+            if (isHidden) { teModal.classList.remove('gte-hidden'); if (!document.getElementById('gte-theme-name')) renderEditor({}, ''); if (teDrag) teDrag.clamp(); }
             else teModal.classList.add('gte-hidden');
         }
     };
