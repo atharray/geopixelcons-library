@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.19.0 - readable release bundle */
+/* GeoPixelcons Library v2.19.1 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.19.1'; // x-release-please-version
@@ -21071,10 +21071,6 @@ patch();
             padding-right: 10px;
         }
         
-        .draggable-panel {
-            touch-action: none !important;
-        }
-
         /* Use Tailwind CSS variables for dark mode compatibility */
         .guild-message-section {
             border: 1px solid var(--color-gray-200, #e5e7eb);
@@ -25409,12 +25405,8 @@ patch();
             panel.style.pointerEvents = 'auto';
             panel.classList.add('draggable-panel');
 
-            panel.style.top = '100px';
-            panel.style.left = 'calc(50% - 25rem)';
-            panel.style.width = '50rem';
-            panel.style.maxWidth = '90vw';
-            panel.style.maxHeight = '85vh';
             panel.style.overflowY = '';
+            placeGuildPanel(panel);
 
             const existingHeader = panel.querySelector('.guild-modal-header');
             if (existingHeader) existingHeader.remove();
@@ -25461,8 +25453,8 @@ patch();
             const resizeHandle = document.createElement('div');
             resizeHandle.className = 'guild-modal-resize';
             resizeHandle.style.cssText = `
-                position: absolute; bottom: 0; right: 0; width: 20px; height: 20px;
-                cursor: nwse-resize;
+                position: absolute; bottom: 0; right: 0; width: 32px; height: 32px;
+                cursor: nwse-resize; touch-action: none;
                 background: linear-gradient(135deg, transparent 0%, #3b82f6 100%);
                 border-radius: 0 0 0.75rem 0; z-index: 51; pointer-events: auto;
             `;
@@ -25472,7 +25464,7 @@ patch();
             else panel.appendChild(headerBar);
 
             panel.appendChild(resizeHandle);
-            setupDragHandling(panel, titleSpan);
+            setupDragHandling(panel, headerBar);
             setupResizeHandling(panel, resizeHandle);
             setupMessageCollapsible();
             setupContentTracking();
@@ -25488,13 +25480,22 @@ patch();
 
             // Reset panel to center every time the modal is opened (fixes off-screen lock after dragging outside window)
             const _centerPanel = () => {
-                panel.style.top = '100px';
-                panel.style.left = 'calc(50% - 25rem)';
+                const vp = guildPanelViewport();
+                fitGuildPanel(panel, (vp.width - panel.offsetWidth) / 2, guildPanelTop(vp));
             };
             const _visibilityObserver = new MutationObserver(() => {
                 if (!modal.classList.contains('hidden')) _centerPanel();
             });
             _visibilityObserver.observe(modal, { attributes: true, attributeFilter: ['class'] });
+
+            // Keep the open panel on screen when the viewport, orientation or on-screen keyboard changes.
+            const _refitPanel = () => {
+                if (modal.classList.contains('hidden')) return;
+                fitGuildPanel(panel, parseFloat(panel.style.left), parseFloat(panel.style.top));
+            };
+            window.addEventListener('resize', _refitPanel);
+            window.addEventListener('orientationchange', _refitPanel);
+            if (window.visualViewport) window.visualViewport.addEventListener('resize', _refitPanel);
 
             console.log('[Guild Modal] v3.1 - Transformed to draggable floating panel with territories');
 
@@ -25503,81 +25504,113 @@ patch();
         }
     }
 
-    function setupDragHandling(panel, header) {
-        let isDragging = false;
-        let startX = 0, startY = 0, offsetX = 0, offsetY = 0;
+    // --- Floating panel placement and viewport clamping (touch-friendly) ---
+    const GUILD_PANEL_MARGIN = 8;
 
-        const onMouseDown = (e) => {
-            if (e.target.closest('.guild-modal-resize') || e.target.closest('button')) return;
-            isDragging = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            const rect = panel.getBoundingClientRect();
-            offsetX = rect.left;
-            offsetY = rect.top;
-            panel.style.userSelect = 'none';
-            document.addEventListener('mousemove', onMouseMove, true);
-            document.addEventListener('mouseup', onMouseUp, true);
-            e.preventDefault();
-            e.stopPropagation();
-        };
-
-        const onMouseMove = (e) => {
-            if (!isDragging) return;
-            const deltaX = e.clientX - startX;
-            const deltaY = e.clientY - startY;
-            panel.style.left = (offsetX + deltaX) + 'px';
-            panel.style.top = (offsetY + deltaY) + 'px';
-        };
-
-        const onMouseUp = () => {
-            isDragging = false;
-            panel.style.userSelect = 'auto';
-            document.removeEventListener('mousemove', onMouseMove, true);
-            document.removeEventListener('mouseup', onMouseUp, true);
-        };
-
-        header.addEventListener('mousedown', onMouseDown, true);
-        
-        // Also make the header bar itself draggable
-        const headerBar = panel.querySelector('.guild-modal-header');
-        if (headerBar && headerBar !== header) {
-            headerBar.addEventListener('mousedown', onMouseDown, true);
-        }
+    function guildPanelViewport() {
+        const visual = window.visualViewport;
+        const width = visual && Number.isFinite(visual.width) && visual.width > 0 ? visual.width : window.innerWidth;
+        const height = visual && Number.isFinite(visual.height) && visual.height > 0 ? visual.height : window.innerHeight;
+        return { width, height };
     }
 
-    function setupResizeHandling(panel, handle) {
-        let isResizing = false;
-        let startX = 0, startY = 0, startW = 0, startH = 0;
+    // Narrow screens start below the site toolbar; desktop keeps the original 100px.
+    function guildPanelTop(vp) {
+        return vp.width < 640 ? 56 : 100;
+    }
 
-        handle.addEventListener('mousedown', (e) => {
-            isResizing = true;
-            startX = e.clientX;
-            startY = e.clientY;
+    // Caps width/height to the viewport, then keeps the panel's top-left corner inside it.
+    function fitGuildPanel(panel, left, top) {
+        const vp = guildPanelViewport();
+        const maxW = Math.max(1, vp.width - 2 * GUILD_PANEL_MARGIN);
+        const maxH = Math.max(1, vp.height - 2 * GUILD_PANEL_MARGIN);
+        if (panel.offsetWidth > maxW) panel.style.width = maxW + 'px';
+        if (panel.offsetHeight > maxH) panel.style.maxHeight = maxH + 'px';
+        const maxLeft = Math.max(GUILD_PANEL_MARGIN, vp.width - panel.offsetWidth - GUILD_PANEL_MARGIN);
+        const maxTop = Math.max(GUILD_PANEL_MARGIN, vp.height - panel.offsetHeight - GUILD_PANEL_MARGIN);
+        const x = Number.isFinite(left) ? left : GUILD_PANEL_MARGIN;
+        const y = Number.isFinite(top) ? top : GUILD_PANEL_MARGIN;
+        panel.style.left = Math.min(maxLeft, Math.max(GUILD_PANEL_MARGIN, x)) + 'px';
+        panel.style.top = Math.min(maxTop, Math.max(GUILD_PANEL_MARGIN, y)) + 'px';
+    }
+
+    // Sizes the panel to the viewport (max 50rem wide), then centers it horizontally.
+    function placeGuildPanel(panel) {
+        const vp = guildPanelViewport();
+        const top = guildPanelTop(vp);
+        const width = Math.min(800, vp.width - 2 * GUILD_PANEL_MARGIN);
+        panel.style.width = width + 'px';
+        panel.style.maxHeight = Math.max(200, Math.min(vp.height * 0.85, vp.height - top - GUILD_PANEL_MARGIN)) + 'px';
+        fitGuildPanel(panel, (vp.width - width) / 2, top);
+    }
+
+    // Touch reports button -1 for contact; mouse must use the primary button.
+    function isPrimaryGuildPointer(e) {
+        if (e.isPrimary === false && e.pointerType) return false;
+        const pointerType = e.pointerType || 'mouse';
+        return pointerType === 'mouse' ? e.button === 0 : (e.button === 0 || e.button === -1);
+    }
+
+    function setupDragHandling(panel, header) {
+        let drag = null;
+
+        header.addEventListener('pointerdown', (e) => {
+            if (!isPrimaryGuildPointer(e) || e.target.closest('button')) return;
             const rect = panel.getBoundingClientRect();
-            startW = rect.width;
-            startH = rect.height;
+            drag = { id: e.pointerId, dx: e.clientX - rect.left, dy: e.clientY - rect.top };
             panel.style.userSelect = 'none';
-            document.addEventListener('mousemove', onMouseMove, true);
-            document.addEventListener('mouseup', onMouseUp, true);
+            try { header.setPointerCapture(e.pointerId); } catch (_) { /* no active pointer to capture */ }
             e.preventDefault();
             e.stopPropagation();
         });
 
-        const onMouseMove = (e) => {
-            if (!isResizing) return;
-            const newW = Math.max(300, startW + (e.clientX - startX));
-            const newH = Math.max(200, startH + (e.clientY - startY));
+        header.addEventListener('pointermove', (e) => {
+            if (!drag || drag.id !== e.pointerId) return;
+            fitGuildPanel(panel, e.clientX - drag.dx, e.clientY - drag.dy);
+        });
+
+        const endDrag = (e) => {
+            if (!drag || drag.id !== e.pointerId) return;
+            drag = null;
+            panel.style.userSelect = 'auto';
+        };
+        header.addEventListener('pointerup', endDrag);
+        header.addEventListener('pointercancel', endDrag);
+    }
+
+    function setupResizeHandling(panel, handle) {
+        let resize = null;
+
+        handle.addEventListener('pointerdown', (e) => {
+            if (!isPrimaryGuildPointer(e)) return;
+            const rect = panel.getBoundingClientRect();
+            resize = { id: e.pointerId, x: e.clientX, y: e.clientY, w: rect.width, h: rect.height };
+            panel.style.userSelect = 'none';
+            try { handle.setPointerCapture(e.pointerId); } catch (_) { /* no active pointer to capture */ }
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        handle.addEventListener('pointermove', (e) => {
+            if (!resize || resize.id !== e.pointerId) return;
+            const vp = guildPanelViewport();
+            const rect = panel.getBoundingClientRect();
+            // Never grow past the viewport edge the panel is anchored to.
+            const maxW = Math.max(1, vp.width - rect.left - GUILD_PANEL_MARGIN);
+            const maxH = Math.max(1, vp.height - rect.top - GUILD_PANEL_MARGIN);
+            const newW = Math.min(maxW, Math.max(300, resize.w + (e.clientX - resize.x)));
+            const newH = Math.min(maxH, Math.max(200, resize.h + (e.clientY - resize.y)));
             panel.style.width = newW + 'px';
             panel.style.maxHeight = newH + 'px';
-        };
+        });
 
-        const onMouseUp = () => {
-            isResizing = false;
+        const endResize = (e) => {
+            if (!resize || resize.id !== e.pointerId) return;
+            resize = null;
             panel.style.userSelect = 'auto';
-            document.removeEventListener('mousemove', onMouseMove, true);
-            document.removeEventListener('mouseup', onMouseUp, true);
         };
+        handle.addEventListener('pointerup', endResize);
+        handle.addEventListener('pointercancel', endResize);
     }
 
     function updateSnapshotIntervalUI() {
