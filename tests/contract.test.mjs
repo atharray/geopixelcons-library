@@ -412,3 +412,16 @@ test('gives every Blocked User List element a gpp- prefixed id', () => {
     assert.match(source, /const MODAL_ID\s*=\s*'gpp-blocked-users-modal'/);
     assert.match(source, /const HOVER_BTN_ID\s*=\s*'gpp-blocked-users-hover-btn'/);
 });
+
+test('region selection tools use pointer events with touch-safe cancel', () => {
+    const highscoreSource = readFileSync(new URL('../src/legacy/features/regions-highscore.js', import.meta.url), 'utf8');
+    for (const source of [regionScreenshotSource, highscoreSource]) {
+        assert.match(source, /addEventListener\('pointerdown', handlePointerDown\)/);
+        assert.match(source, /addEventListener\('pointercancel', handlePointerCancel\)/);
+        assert.match(source, /e\.pointerId !== activePointerId/);
+        assert.match(source, /m\.getContainer\(\)\.style\.touchAction = 'none'/);
+        assert.doesNotMatch(source, /addEventListener\('mouse(down|move|up)'/);
+    }
+    assert.match(regionScreenshotSource, /id = 'gpp-region-screenshot-cancel'/);
+    assert.match(highscoreSource, /id = 'gpp-regions-highscore-cancel'/);
+});
