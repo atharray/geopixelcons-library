@@ -267,6 +267,81 @@
     function t(light, dark) { return isDarkMode() ? dark : light; }
 
     // ============================================================
+    //  SHARED FLOATING-PANEL DRAG
+    //  Pointer Events so touch and pen drag like the mouse, clamped to
+    //  the visible viewport so a panel cannot be dragged or left
+    //  off-screen. Presses on controls are ignored. touch-action:none
+    //  goes on the handle only, so the panel body still scrolls by touch.
+    //  Returns { clamp } so callers can re-clamp after the panel opens.
+    // ============================================================
+    function gpcMakeDraggablePanel(panel, handle, { margin = 8 } = {}) {
+        const visibleViewport = () => {
+            const vv = window.visualViewport;
+            const width = vv && Number.isFinite(vv.width) && vv.width > 0 ? vv.width : window.innerWidth;
+            const height = vv && Number.isFinite(vv.height) && vv.height > 0 ? vv.height : window.innerHeight;
+            return { width: width || 1200, height: height || 900 };
+        };
+        // Hidden panels have no box yet; they are clamped once they show.
+        const place = (requestedLeft, requestedTop) => {
+            if (!panel.isConnected) return;
+            const rect = panel.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            const vp = visibleViewport();
+            const maxLeft = Math.max(margin, vp.width - rect.width - margin);
+            const maxTop = Math.max(margin, vp.height - rect.height - margin);
+            const left = Number.isFinite(requestedLeft) ? requestedLeft : rect.left;
+            const top = Number.isFinite(requestedTop) ? requestedTop : rect.top;
+            panel.style.right = 'auto';
+            panel.style.left = Math.min(maxLeft, Math.max(margin, left)) + 'px';
+            panel.style.top = Math.min(maxTop, Math.max(margin, top)) + 'px';
+        };
+
+        // Mouse primary button is 0; touch and pen may report -1 (no button changed).
+        const isPrimaryPress = event => {
+            if (event.isPrimary === false && event.pointerType) return false;
+            return event.pointerType && event.pointerType !== 'mouse'
+                ? (event.button === 0 || event.button === -1)
+                : event.button === 0;
+        };
+
+        let drag = null;
+        handle.style.touchAction = 'none';
+        handle.addEventListener('pointerdown', event => {
+            if (!isPrimaryPress(event) || event.target.closest('button, input, select, textarea, a')) return;
+            event.preventDefault();
+            const rect = panel.getBoundingClientRect();
+            drag = { id: event.pointerId, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+            // Best-effort: synthetic events have no active pointer to capture.
+            try { handle.setPointerCapture(event.pointerId); } catch (_) { /* no active pointer */ }
+        });
+        handle.addEventListener('pointermove', event => {
+            if (!drag || drag.id !== event.pointerId) return;
+            event.preventDefault();
+            place(event.clientX - drag.dx, event.clientY - drag.dy);
+        });
+        const finishDrag = event => { if (drag && drag.id === event.pointerId) drag = null; };
+        handle.addEventListener('pointerup', finishDrag);
+        handle.addEventListener('pointercancel', finishDrag);
+
+        // Re-clamp when the viewport changes; detach once the panel is removed.
+        const onViewportChange = () => {
+            if (!panel.isConnected) { detach(); return; }
+            place();
+        };
+        const detach = () => {
+            window.removeEventListener('resize', onViewportChange);
+            window.removeEventListener('orientationchange', onViewportChange);
+            if (window.visualViewport) window.visualViewport.removeEventListener('resize', onViewportChange);
+        };
+        window.addEventListener('resize', onViewportChange, { passive: true });
+        window.addEventListener('orientationchange', onViewportChange, { passive: true });
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', onViewportChange, { passive: true });
+
+        place();
+        return { clamp: () => place() };
+    }
+
+    // ============================================================
     //  UI: SETTINGS MODAL (Tabbed)
     // ============================================================
     function createSettingsModal() {

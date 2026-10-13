@@ -279,6 +279,81 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     function t(light, dark) { return isDarkMode() ? dark : light; }
 
     // ============================================================
+    //  SHARED FLOATING-PANEL DRAG
+    //  Pointer Events so touch and pen drag like the mouse, clamped to
+    //  the visible viewport so a panel cannot be dragged or left
+    //  off-screen. Presses on controls are ignored. touch-action:none
+    //  goes on the handle only, so the panel body still scrolls by touch.
+    //  Returns { clamp } so callers can re-clamp after the panel opens.
+    // ============================================================
+    function gpcMakeDraggablePanel(panel, handle, { margin = 8 } = {}) {
+        const visibleViewport = () => {
+            const vv = window.visualViewport;
+            const width = vv && Number.isFinite(vv.width) && vv.width > 0 ? vv.width : window.innerWidth;
+            const height = vv && Number.isFinite(vv.height) && vv.height > 0 ? vv.height : window.innerHeight;
+            return { width: width || 1200, height: height || 900 };
+        };
+        // Hidden panels have no box yet; they are clamped once they show.
+        const place = (requestedLeft, requestedTop) => {
+            if (!panel.isConnected) return;
+            const rect = panel.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            const vp = visibleViewport();
+            const maxLeft = Math.max(margin, vp.width - rect.width - margin);
+            const maxTop = Math.max(margin, vp.height - rect.height - margin);
+            const left = Number.isFinite(requestedLeft) ? requestedLeft : rect.left;
+            const top = Number.isFinite(requestedTop) ? requestedTop : rect.top;
+            panel.style.right = 'auto';
+            panel.style.left = Math.min(maxLeft, Math.max(margin, left)) + 'px';
+            panel.style.top = Math.min(maxTop, Math.max(margin, top)) + 'px';
+        };
+
+        // Mouse primary button is 0; touch and pen may report -1 (no button changed).
+        const isPrimaryPress = event => {
+            if (event.isPrimary === false && event.pointerType) return false;
+            return event.pointerType && event.pointerType !== 'mouse'
+                ? (event.button === 0 || event.button === -1)
+                : event.button === 0;
+        };
+
+        let drag = null;
+        handle.style.touchAction = 'none';
+        handle.addEventListener('pointerdown', event => {
+            if (!isPrimaryPress(event) || event.target.closest('button, input, select, textarea, a')) return;
+            event.preventDefault();
+            const rect = panel.getBoundingClientRect();
+            drag = { id: event.pointerId, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+            // Best-effort: synthetic events have no active pointer to capture.
+            try { handle.setPointerCapture(event.pointerId); } catch (_) { /* no active pointer */ }
+        });
+        handle.addEventListener('pointermove', event => {
+            if (!drag || drag.id !== event.pointerId) return;
+            event.preventDefault();
+            place(event.clientX - drag.dx, event.clientY - drag.dy);
+        });
+        const finishDrag = event => { if (drag && drag.id === event.pointerId) drag = null; };
+        handle.addEventListener('pointerup', finishDrag);
+        handle.addEventListener('pointercancel', finishDrag);
+
+        // Re-clamp when the viewport changes; detach once the panel is removed.
+        const onViewportChange = () => {
+            if (!panel.isConnected) { detach(); return; }
+            place();
+        };
+        const detach = () => {
+            window.removeEventListener('resize', onViewportChange);
+            window.removeEventListener('orientationchange', onViewportChange);
+            if (window.visualViewport) window.visualViewport.removeEventListener('resize', onViewportChange);
+        };
+        window.addEventListener('resize', onViewportChange, { passive: true });
+        window.addEventListener('orientationchange', onViewportChange, { passive: true });
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', onViewportChange, { passive: true });
+
+        place();
+        return { clamp: () => place() };
+    }
+
+    // ============================================================
     //  UI: SETTINGS MODAL (Tabbed)
     // ============================================================
     function createSettingsModal() {
@@ -33172,25 +33247,6 @@ patch();
         area.focus();
     }
 
-    function jcMakeDraggable(panel, handle) {
-        handle.addEventListener('mousedown', (e) => {
-            if (e.target.closest('button')) return;
-            const rect = panel.getBoundingClientRect();
-            const dx = e.clientX - rect.left, dy = e.clientY - rect.top;
-            const move = (ev) => {
-                panel.style.left = Math.max(0, Math.min(window.innerWidth - 60, ev.clientX - dx)) + 'px';
-                panel.style.top = Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - dy)) + 'px';
-            };
-            const up = () => {
-                document.removeEventListener('mousemove', move);
-                document.removeEventListener('mouseup', up);
-            };
-            document.addEventListener('mousemove', move);
-            document.addEventListener('mouseup', up);
-            e.preventDefault();
-        });
-    }
-
     function jcClosePanel() {
         const panel = document.getElementById(JC_PANEL_ID);
         if (panel) panel.remove();
@@ -33573,7 +33629,8 @@ patch();
             if (st && st.rendered < st.shown.length && list.scrollTop + list.clientHeight > list.scrollHeight - 160) st.more(JC_BATCH);
         }, { passive: true });
         document.body.appendChild(panel);
-        jcMakeDraggable(panel, head);
+        // Touch and mouse drag, kept on screen; the open-time clamp keeps it fully visible on phones.
+        gpcMakeDraggablePanel(panel, head);
 
         let timer = null;
         jcMoveHandler = () => {
@@ -37209,6 +37266,7 @@ window.__gpcCanvasToggle = {
 
     // ─── Modal ───────────────────────────────────────────────────────
     let teModal = null;
+    let teDrag = null;
 
     function teBuildModal() {
         const modal = document.createElement('div'); modal.id = 'gte-modal'; modal.className = 'gte-hidden';
@@ -37222,12 +37280,8 @@ window.__gpcCanvasToggle = {
             tab.classList.add('gte-active'); modal.querySelector('#gte-panel-'+tab.dataset.panel).classList.add('gte-active');
             if (tab.dataset.panel === 'manager') renderManager();
         }));
-        // Dragging
-        let ox=0,oy=0,sx=0,sy=0;
-        const handle = modal.querySelector('#gte-titlebar');
-        handle.addEventListener('mousedown', e => { if (e.target.tagName==='BUTTON') return; e.preventDefault(); sx=e.clientX; sy=e.clientY; document.addEventListener('mousemove',drag); document.addEventListener('mouseup',dragEnd); });
-        function drag(e) { ox=sx-e.clientX; oy=sy-e.clientY; sx=e.clientX; sy=e.clientY; modal.style.top=Math.max(0,Math.min(window.innerHeight-50,modal.offsetTop-oy))+'px'; modal.style.left=Math.max(0,Math.min(window.innerWidth-100,modal.offsetLeft-ox))+'px'; modal.style.right='auto'; }
-        function dragEnd() { document.removeEventListener('mousemove',drag); document.removeEventListener('mouseup',dragEnd); }
+        // Dragging (touch and mouse), clamped to the visible viewport
+        teDrag = gpcMakeDraggablePanel(modal, modal.querySelector('#gte-titlebar'));
         return modal;
     }
 
@@ -37420,7 +37474,7 @@ window.__gpcCanvasToggle = {
         applyThemeByName: teApplyByName,
         toggleModal: () => {
             const isHidden = teModal.classList.contains('gte-hidden');
-            if (isHidden) { teModal.classList.remove('gte-hidden'); if (!document.getElementById('gte-theme-name')) renderEditor({}, ''); }
+            if (isHidden) { teModal.classList.remove('gte-hidden'); if (!document.getElementById('gte-theme-name')) renderEditor({}, ''); if (teDrag) teDrag.clamp(); }
             else teModal.classList.add('gte-hidden');
         }
     };
@@ -37481,6 +37535,7 @@ window.__gpcCanvasToggle = {
                 // Append after map container is available; done in waitForMapMM callback below
 
                 let mmModal    = null;
+                let mmDrag     = null; // shared floating-panel drag for the header
                 let placingId  = null; // id of marker currently being placed
                 let editingId  = null; // id of marker currently being edited
                 let _drag      = null; // active drag state
@@ -37952,7 +38007,9 @@ window.__gpcCanvasToggle = {
                 // ── Modal ─────────────────────────────────────────────────
                 function openModal() {
                     if (mmModal) {
-                        mmModal.style.display = mmModal.style.display === 'none' ? 'flex' : 'none';
+                        const showing = mmModal.style.display === 'none';
+                        mmModal.style.display = showing ? 'flex' : 'none';
+                        if (showing && mmDrag) mmDrag.clamp();
                         return;
                     }
                     mmModal = document.createElement('div');
@@ -37993,20 +38050,6 @@ window.__gpcCanvasToggle = {
                     xBtn.onclick = () => { mmModal.style.display = 'none'; exitPlace(); exitEdit(); };
                     hdr.appendChild(xBtn);
                     mmModal.appendChild(hdr);
-
-                    // Draggable header
-                    let dragOff = null;
-                    hdr.addEventListener('mousedown', e => {
-                        if (e.target === xBtn || e.target === compactBtn) return;
-                        dragOff = { x: e.clientX - mmModal.offsetLeft, y: e.clientY - mmModal.offsetTop };
-                        hdr.style.cursor = 'grabbing';
-                    });
-                    document.addEventListener('mousemove', e => {
-                        if (!dragOff) return;
-                        mmModal.style.left = (e.clientX - dragOff.x) + 'px';
-                        mmModal.style.top  = (e.clientY - dragOff.y) + 'px';
-                    });
-                    document.addEventListener('mouseup', () => { dragOff = null; hdr.style.cursor = 'grab'; });
 
                     // ── Shared helpers: register a new marker and enter place mode
                     async function addMarkerFromDataUrl(dataUrl, name, mediaType) {
@@ -38099,6 +38142,8 @@ window.__gpcCanvasToggle = {
                     mmModal.appendChild(list);
 
                     document.body.appendChild(mmModal);
+                    // Header drag (touch and mouse), kept on screen; map-canvas marker moves are untouched
+                    mmDrag = gpcMakeDraggablePanel(mmModal, hdr);
                     renderList(list);
                 }
 
