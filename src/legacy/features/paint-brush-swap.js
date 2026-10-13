@@ -1506,8 +1506,14 @@
         toggleBtn.className = 'bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 cursor-pointer px-2.5 py-1.5 text-xs leading-none font-semibold text-gray-800 dark:text-gray-200 ml-2 inline-flex items-center justify-center rounded hover:bg-gray-200 dark:hover:bg-gray-600 hover:border-gray-600 dark:hover:border-gray-500 active:bg-gray-300 dark:active:bg-gray-800';
         toggleBtn.title = 'Toggle saved brushes';
         toggleBtn.innerHTML = '<span style="font-size: 10px; font-weight: 600; display: flex; align-items: center; gap: 4px;">▲ brushes</span>';
+        // Horizontal swipes must reach the pointer handlers, so only vertical panning is left to the browser
+        toggleBtn.style.touchAction = 'pan-y';
+        let swipeState = null;
+        let swipeHandled = false;
         toggleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
+            // A click synthesized after a swipe must not also open the dropdown
+            if (swipeHandled) { swipeHandled = false; return; }
             toggleDropdown();
         });
 
@@ -1536,12 +1542,8 @@
             toastTimer = setTimeout(() => toast.classList.remove('visible'), 900);
         }
 
-        toggleBtn.addEventListener('wheel', (e) => {
-            if (scriptState.brushes.length === 0) return;
-            e.preventDefault();
-            e.stopPropagation();
-
-            const dir = e.deltaY > 0 ? 1 : -1;
+        // Steps to the next (dir 1) or previous (dir -1) saved brush; shared by wheel and touch swipe
+        function stepBrush(dir, x, y) {
             const len = scriptState.brushes.length;
 
             // Initialize index to current brush if not set
@@ -1553,10 +1555,38 @@
 
             const brush = scriptState.brushes[scriptState.scrollIndex];
             applyBrushToEditor(brush);
-            showSwapToast(brush, e.clientX, e.clientY);
+            showSwapToast(brush, x, y);
 
             if (DEBUG) console.log(`Brush Swap: Scrolled to "${brush.name}" (index ${scriptState.scrollIndex})`);
+        }
+
+        toggleBtn.addEventListener('wheel', (e) => {
+            if (scriptState.brushes.length === 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            stepBrush(e.deltaY > 0 ? 1 : -1, e.clientX, e.clientY);
         }, { passive: false });
+
+        // Touch/pen: horizontal swipe on the button steps brushes (left = next, right = previous)
+        const SWIPE_MIN_PX = 24;
+        toggleBtn.addEventListener('pointerdown', (e) => {
+            swipeHandled = false;
+            swipeState = (e.pointerType === 'touch' || e.pointerType === 'pen')
+                ? { id: e.pointerId, x: e.clientX, y: e.clientY }
+                : null;
+        });
+        toggleBtn.addEventListener('pointerup', (e) => {
+            if (!swipeState || e.pointerId !== swipeState.id) return;
+            const dx = e.clientX - swipeState.x;
+            const dy = e.clientY - swipeState.y;
+            swipeState = null;
+            if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) <= Math.abs(dy)) return;
+            if (scriptState.brushes.length === 0) return;
+            swipeHandled = true;
+            stepBrush(dx < 0 ? 1 : -1, e.clientX, e.clientY);
+        });
+        toggleBtn.addEventListener('pointercancel', () => { swipeState = null; });
 
         // Create dropdown container
         const dropdown = document.createElement('div');
