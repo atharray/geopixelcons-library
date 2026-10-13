@@ -4,6 +4,12 @@
     // re-measure when its own live panels change.
     let gpcPaintMenuControlsScale = null;
 
+    // Assigned by Paint Brush Swap (paint-brush-swap.js, later in the same IIFE)
+    // once its saved-brushes toggle exists: { fitDropdown, attachSwipe }. The
+    // compact 🖌️ button below uses it to keep the menu on screen and to forward
+    // the touch swipe. Declared here because this file is evaluated first.
+    let gpcBrushSwapApi = null;
+
     // ============================================================
     //  FEATURE: Paint Menu Controls [hidePaintMenu]
     // ============================================================
@@ -225,6 +231,12 @@
                     if (dropdown.parentElement !== document.body) {
                         document.body.appendChild(dropdown);
                     }
+                    // Paint Brush Swap places the menu from this button and keeps it on screen
+                    // (and re-fits it on resize / rotation / scroll).
+                    if (gpcBrushSwapApi && typeof gpcBrushSwapApi.fitDropdown === 'function') {
+                        gpcBrushSwapApi.fitDropdown();
+                        return;
+                    }
                     const btnRect = compactBrushBtn.getBoundingClientRect();
                     const paintIsTop = localStorage.getItem('gpc-paint-is-top') === 'true';
                     dropdown.style.position = 'fixed';
@@ -280,6 +292,10 @@
                     brushToggle.style.border = 'none';
                     brushToggle.style.overflow = 'hidden';
                     compactBrushBtn.style.display = 'flex';
+                    // Same touch swipe-to-cycle as the full-size toggle
+                    if (gpcBrushSwapApi && typeof gpcBrushSwapApi.attachSwipe === 'function') {
+                        gpcBrushSwapApi.attachSwipe(compactBrushBtn);
+                    }
                     return true;
                 }
                 return false;

@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.19.0 - readable release bundle */
+/* GeoPixelcons Library v2.19.1 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.19.1'; // x-release-please-version
@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.19.1';
+    const VERSION = '2.20.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -36,7 +36,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const EXTENSION_LIST = [
         { key: 'extAutoHoverMenus', name: 'Auto-open Menus on Hover', icon: '🖱️', desc: 'Automatically opens group button dropdown menus when you hover over them.', features: ['Hover over any group button to auto-open its dropdown', 'Configurable vertical hover zone (250px)', 'Per-button cooldown to prevent rapid toggles', 'MutationObserver-based — detects new buttons automatically'] },
         { key: 'extGoToLastLocation', name: 'Auto-Go to Last Location', icon: '📍', desc: 'Automatically returns you to your last location on page load if you spawned at the default area.', features: ['Detects if you spawned in the default area', 'Auto-clicks the "Last Location" button on load', 'One-shot — only fires once per page load', 'Automatic cleanup after 10 seconds to prevent leaks'] },
-        { key: 'extPillHoverLabels', name: 'Hover Labels', icon: '💊', desc: 'Adds the expanding pill-style hover animation with text labels to all submenu buttons under controls-left.', features: ['Expanding pill animation on hover', 'Shows button title/name as a label', 'Applies to all native dropdown submenu buttons', 'Respects dark mode colors', 'MutationObserver-based — detects dynamically added buttons'] },
+        { key: 'extPillHoverLabels', name: 'Hover Labels', icon: '💊', desc: 'Adds the expanding pill-style hover animation with text labels to all submenu buttons under controls-left (long-press on touch).', features: ['Expanding pill animation on hover', 'Shows button title/name as a label', 'Applies to all native dropdown submenu buttons', 'Respects dark mode colors', 'MutationObserver-based — detects dynamically added buttons'] },
         { key: 'extJanitorView', name: 'Janitor View', icon: '🛡️', desc: 'Reveals the hidden moderation button for janitors/moderators.', features: ['Removes the hidden class from the moderation group button', 'Makes the 🛡️ Moderation button visible in the controls', 'Adds a 🎨 Janitor Colors panel to set persistent per-user colors for Janitor View (import/export JSON)'] },
         { key: 'extJanitorColors', name: 'Janitor Colors', icon: '🎨', requires: 'extJanitorView', desc: 'Adds a 🎨 Janitor Colors panel under Toggle User View. Requires Janitor View.', features: ['Lists users currently in view', 'Saves a custom hex color per user ID for Janitor View', 'Import/export colors as JSON', 'Hover a user to flash their pixels'] },
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
@@ -277,6 +277,101 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 
     // Theme-aware colors
     function t(light, dark) { return isDarkMode() ? dark : light; }
+
+    // The map control columns are buttons, not text. On touch screens a long
+    // press (including Hover Labels' long-press peek) would otherwise select
+    // a button label and open the browser's copy/share bar. Text fields
+    // inside the columns stay selectable.
+    (function gpcDisableControlsTextSelection() {
+        const id = 'gpp-controls-no-select-style';
+        if (document.getElementById(id)) return;
+        const style = document.createElement('style');
+        style.id = id;
+        style.textContent = `
+            #controls-left, #controls-left *:not(input):not(textarea):not([contenteditable="true"]),
+            #controls-right, #controls-right *:not(input):not(textarea):not([contenteditable="true"]) {
+                -webkit-user-select: none !important;
+                user-select: none !important;
+                -webkit-touch-callout: none !important;
+            }
+        `;
+        (document.head || document.documentElement).appendChild(style);
+    })();
+
+    // ============================================================
+    //  SHARED FLOATING-PANEL DRAG
+    //  Pointer Events so touch and pen drag like the mouse, clamped to
+    //  the visible viewport so a panel cannot be dragged or left
+    //  off-screen. Presses on controls are ignored. touch-action:none
+    //  goes on the handle only, so the panel body still scrolls by touch.
+    //  Returns { clamp } so callers can re-clamp after the panel opens.
+    // ============================================================
+    function gpcMakeDraggablePanel(panel, handle, { margin = 8 } = {}) {
+        const visibleViewport = () => {
+            const vv = window.visualViewport;
+            const width = vv && Number.isFinite(vv.width) && vv.width > 0 ? vv.width : window.innerWidth;
+            const height = vv && Number.isFinite(vv.height) && vv.height > 0 ? vv.height : window.innerHeight;
+            return { width: width || 1200, height: height || 900 };
+        };
+        // Hidden panels have no box yet; they are clamped once they show.
+        const place = (requestedLeft, requestedTop) => {
+            if (!panel.isConnected) return;
+            const rect = panel.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            const vp = visibleViewport();
+            const maxLeft = Math.max(margin, vp.width - rect.width - margin);
+            const maxTop = Math.max(margin, vp.height - rect.height - margin);
+            const left = Number.isFinite(requestedLeft) ? requestedLeft : rect.left;
+            const top = Number.isFinite(requestedTop) ? requestedTop : rect.top;
+            panel.style.right = 'auto';
+            panel.style.left = Math.min(maxLeft, Math.max(margin, left)) + 'px';
+            panel.style.top = Math.min(maxTop, Math.max(margin, top)) + 'px';
+        };
+
+        // Mouse primary button is 0; touch and pen may report -1 (no button changed).
+        const isPrimaryPress = event => {
+            if (event.isPrimary === false && event.pointerType) return false;
+            return event.pointerType && event.pointerType !== 'mouse'
+                ? (event.button === 0 || event.button === -1)
+                : event.button === 0;
+        };
+
+        let drag = null;
+        handle.style.touchAction = 'none';
+        handle.addEventListener('pointerdown', event => {
+            if (!isPrimaryPress(event) || event.target.closest('button, input, select, textarea, a')) return;
+            event.preventDefault();
+            const rect = panel.getBoundingClientRect();
+            drag = { id: event.pointerId, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+            // Best-effort: synthetic events have no active pointer to capture.
+            try { handle.setPointerCapture(event.pointerId); } catch (_) { /* no active pointer */ }
+        });
+        handle.addEventListener('pointermove', event => {
+            if (!drag || drag.id !== event.pointerId) return;
+            event.preventDefault();
+            place(event.clientX - drag.dx, event.clientY - drag.dy);
+        });
+        const finishDrag = event => { if (drag && drag.id === event.pointerId) drag = null; };
+        handle.addEventListener('pointerup', finishDrag);
+        handle.addEventListener('pointercancel', finishDrag);
+
+        // Re-clamp when the viewport changes; detach once the panel is removed.
+        const onViewportChange = () => {
+            if (!panel.isConnected) { detach(); return; }
+            place();
+        };
+        const detach = () => {
+            window.removeEventListener('resize', onViewportChange);
+            window.removeEventListener('orientationchange', onViewportChange);
+            if (window.visualViewport) window.visualViewport.removeEventListener('resize', onViewportChange);
+        };
+        window.addEventListener('resize', onViewportChange, { passive: true });
+        window.addEventListener('orientationchange', onViewportChange, { passive: true });
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', onViewportChange, { passive: true });
+
+        place();
+        return { clamp: () => place() };
+    }
 
     // ============================================================
     //  UI: SETTINGS MODAL (Tabbed)
@@ -1482,6 +1577,24 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.20.0',
+            date: '2026-10-13',
+            items: [
+                { type: 'fixed', text: 'Guild Panel: opens fully on screen on phones, drags and resizes by touch, stays inside the screen when rotated, and its body scrolls by touch' },
+                { type: 'fixed', text: 'Brush editor: tapping a cell toggles it on touch screens; a finger drag paints or erases depending on the first cell; saved brushes reorder and the brush menu resizes by touch' },
+                { type: 'fixed', text: 'Region Screenshot and Regions Highscore: area selection works with a finger drag, and a Cancel button appears while selecting' },
+                { type: 'fixed', text: 'Ghost++ palette: a sideways finger drag toggles every swatch it passes over; vertical swipes still scroll' },
+                { type: 'added', text: 'Ghost++: on touch screens, Place hides the Ghost++ window so you can tap or drag the template into position, then press Set position or Cancel' },
+                { type: 'fixed', text: 'Hover tooltips (brush preview "click to expand", Ghost++ palette and library previews) no longer stay on screen after a tap' },
+                { type: 'added', text: 'Paint Brush Swap: swipe left or right on the ▲ brushes button to cycle saved brushes on touch screens' },
+                { type: 'fixed', text: 'Theme Editor, Janitor Colors and Map Markers windows drag by touch and can no longer be dragged off screen; Janitor Colors opens fully on screen on phones' },
+                { type: 'fixed', text: 'Saved-brushes menu always opens inside the screen on phones, including from the compact 🖌️ button, and swiping the compact 🖌️ button also cycles brushes' },
+                { type: 'added', text: 'Hover Labels: long-press a menu button on touch screens to see its label' },
+                { type: 'changed', text: 'Guild Panel now uses the same look as Ghost++ and Janitor Colors and follows the GeoPixels++ light/dark theme live' },
+                { type: 'fixed', text: 'Long-pressing a map control button on touch screens no longer selects its label text or opens the copy/share bar' },
+            ]
+        },
         {
             version: '2.19.1',
             date: '2026-10-08',
@@ -9142,7 +9255,11 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     // own (native painting) click handler — this is a hard safety
     // requirement, not cosmetic: Ghost++ must never cause a stray pixel
     // placement. `onStatus(text, isError)` is optional UI feedback.
-    function gppBeginPlacementCapture(template, onPlaced, onStatus) {
+    // options.pointerType is the Place button press's pointerType (click
+    // events carry one in modern browsers); '' or undefined falls back to
+    // the primary-pointer media query. Touch and pen use the mobile flow
+    // below; mouse keeps the hover-preview flow exactly as it was.
+    function gppBeginPlacementCapture(template, onPlaced, onStatus, options) {
         gppCancelPlacementCapture();
         // Defense in depth — both real call sites (the Place button and the
         // E-to-place keyboard shortcut) already check gppIsPositionLocked
@@ -9160,6 +9277,10 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         }
         const mapContainer = map.getContainer();
         const grid = gppReadGridConstants();
+        if (gppIsMobilePlacement(options && options.pointerType)) {
+            gppBeginMobilePlacementCapture(template, onPlaced, onStatus, map, turf, grid);
+            return;
+        }
         const previousCursor = mapContainer.style.cursor;
         mapContainer.style.cursor = 'crosshair';
         gppPlacementCaptureStartSubscribers.forEach(listener => {
@@ -9219,6 +9340,283 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         if (onStatus) onStatus('Move the pointer over the map to preview the template, then click to set its top-left cell. Escape cancels.', false);
     }
 
+    // ── Mobile placement (touch / pen) ─────────────────────────────────
+    // Phones have no hover, the Ghost++ modal covers the map, and a tap
+    // would otherwise commit immediately with no Escape key to back out. So
+    // on touch/pen the flow is: Place hides the modal (same gpp-hidden class
+    // gpp-init.js's close() uses), the preview shows on the map, a tap moves
+    // it, a one-finger drag that starts on its footprint moves it, and a
+    // floating bar offers Set position (commits via onPlaced) or Cancel
+    // (ends the capture; nothing was ever written to the template).
+    // Map panning and pinch zoom are left to the map everywhere else.
+
+    const GPP_PLACE_BAR_ID = 'gpp-place-bar';
+    // Extra slop (CSS px) around the projected footprint so a fingertip
+    // slightly off a small template still grabs it.
+    const GPP_PLACE_TOUCH_PAD = 12;
+    // Movement (CSS px) beyond which a press is a pan, not a tap.
+    const GPP_PLACE_TAP_SLOP = 10;
+
+    function gppIsMobilePlacement(pointerType) {
+        if (pointerType) return pointerType !== 'mouse';
+        return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    }
+
+    // Hides the modal only if it is visible right now, and reports whether it
+    // did, so teardown never re-shows a modal the placement did not hide (a
+    // Place click mirrored from another view can run with it already hidden).
+    function gppSetModalHiddenForPlacement() {
+        const modal = document.getElementById(GPP_IDS.modal);
+        if (!modal || modal.classList.contains('gpp-hidden')) return false;
+        modal.classList.add('gpp-hidden');
+        modal.setAttribute('aria-hidden', 'true');
+        return true;
+    }
+
+    function gppRestoreModalAfterPlacement() {
+        const modal = document.getElementById(GPP_IDS.modal);
+        if (!modal) return;
+        modal.classList.remove('gpp-hidden');
+        modal.setAttribute('aria-hidden', 'false');
+    }
+
+    function gppCreatePlacementBar() {
+        let bar = document.getElementById(GPP_PLACE_BAR_ID);
+        if (bar) return bar;
+        bar = document.createElement('div');
+        bar.id = GPP_PLACE_BAR_ID;
+        bar.setAttribute('role', 'region');
+        bar.setAttribute('aria-label', 'Template placement');
+        bar.innerHTML = `
+            <div class="gpp-place-bar-hint">Tap or drag the template to position it.</div>
+            <div class="gpp-place-bar-row">
+                <button type="button" id="gpp-place-bar-cancel" class="gpp-place-bar-btn">Cancel</button>
+                <button type="button" id="gpp-place-bar-set" class="gpp-place-bar-btn gpp-place-bar-primary">Set position</button>
+            </div>
+        `;
+        document.body.appendChild(bar);
+        return bar;
+    }
+
+    function gppBeginMobilePlacementCapture(template, onPlaced, onStatus, map, turf, grid) {
+        const mapContainer = map.getContainer();
+        const dragPan = map.dragPan && typeof map.dragPan.disable === 'function' ? map.dragPan : null;
+
+        // Starts at the template's current cell, or the screen centre when it
+        // has none yet. Resolved before anything is hidden so a failure here
+        // leaves the page untouched.
+        let previewPosition = null;
+        if (template.position) {
+            previewPosition = { gridX: template.position.gridX, gridY: template.position.gridY };
+        } else {
+            const box = mapContainer.getBoundingClientRect();
+            previewPosition = gppMapClientPointToGrid(map, turf, grid, box.left + box.width / 2, box.top + box.height / 2);
+        }
+        if (!previewPosition) {
+            if (onStatus) onStatus('Could not resolve the map position for placement.', true);
+            return;
+        }
+
+        const hidModal = gppSetModalHiddenForPlacement();
+        gppInjectPlacementStyle();
+        const bar = gppCreatePlacementBar();
+        const previousTouchAction = mapContainer.style.touchAction;
+        mapContainer.style.touchAction = 'none';
+        gppPlacementCaptureStartSubscribers.forEach(listener => {
+            try { listener({ mobile: true }); } catch (err) { console.error('[GeoPixelcons++] Ghost++ placement capture start listener failed.', err); }
+        });
+
+        const activePointers = new Set();
+        // { kind: 'drag' | 'tap', pointerId, startX, startY, startCell,
+        //   basePosition, moved } for the one press currently being handled.
+        let gesture = null;
+        let dragPanHeld = false;
+        let dragPanWasEnabled = false;
+
+        function setPreview(position) {
+            previewPosition = { gridX: position.gridX, gridY: position.gridY };
+            gppPlacementPreview = { templateId: template.id, position: previewPosition };
+            gppNotifyRendererSchedule();
+        }
+
+        function releaseDragPan() {
+            if (!dragPanHeld) return;
+            dragPanHeld = false;
+            if (dragPan && dragPanWasEnabled) dragPan.enable();
+        }
+
+        // Projected footprint (renderer's own geometry, so it always matches
+        // what is drawn) padded for touch.
+        function previewContainsClientPoint(clientX, clientY) {
+            const box = gppRendererProjectTemplate(map, turf, grid, template);
+            if (!box) return false;
+            const origin = mapContainer.getBoundingClientRect();
+            const x = clientX - origin.left;
+            const y = clientY - origin.top;
+            const left = Math.min(box.x, box.x + box.width) - GPP_PLACE_TOUCH_PAD;
+            const right = Math.max(box.x, box.x + box.width) + GPP_PLACE_TOUCH_PAD;
+            const top = Math.min(box.y, box.y + box.height) - GPP_PLACE_TOUCH_PAD;
+            const bottom = Math.max(box.y, box.y + box.height) + GPP_PLACE_TOUCH_PAD;
+            return x >= left && x <= right && y >= top && y <= bottom;
+        }
+
+        function onPointerDown(event) {
+            activePointers.add(event.pointerId);
+            if (activePointers.size > 1) {
+                // A second finger is a pinch, which belongs to the map: drop
+                // any drag or tap in progress and leave the preview where it is.
+                gesture = null;
+                releaseDragPan();
+                return;
+            }
+            const cell = gppMapClientPointToGrid(map, turf, grid, event.clientX, event.clientY);
+            if (cell && previewContainsClientPoint(event.clientX, event.clientY)) {
+                gesture = {
+                    kind: 'drag',
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    startCell: cell,
+                    basePosition: { gridX: previewPosition.gridX, gridY: previewPosition.gridY },
+                    moved: false,
+                };
+                if (dragPan && !dragPanHeld) {
+                    dragPanHeld = true;
+                    dragPanWasEnabled = dragPan.isEnabled();
+                    dragPan.disable();
+                }
+                // Keeps the map's own pointer handlers from starting a pan.
+                event.stopPropagation();
+            } else {
+                gesture = {
+                    kind: 'tap',
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    moved: false,
+                };
+            }
+        }
+
+        function onPointerMove(event) {
+            if (!gesture || event.pointerId !== gesture.pointerId) return;
+            if (!gesture.moved && Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > GPP_PLACE_TAP_SLOP) {
+                gesture.moved = true;
+            }
+            if (gesture.kind !== 'drag') return;
+            event.stopPropagation();
+            const cell = gppMapClientPointToGrid(map, turf, grid, event.clientX, event.clientY);
+            if (!cell) return;
+            // Moves by the cell delta since the press, so the template keeps
+            // the same grab offset under the finger instead of snapping its
+            // corner to it.
+            setPreview({
+                gridX: gesture.basePosition.gridX + (cell.gridX - gesture.startCell.gridX),
+                gridY: gesture.basePosition.gridY + (cell.gridY - gesture.startCell.gridY),
+            });
+        }
+
+        function onPointerUp(event) {
+            activePointers.delete(event.pointerId);
+            if (!gesture || event.pointerId !== gesture.pointerId) return;
+            const finished = gesture;
+            gesture = null;
+            releaseDragPan();
+            if (finished.kind === 'drag') {
+                event.stopPropagation();
+                return;
+            }
+            // A tap that did not turn into a pan moves the preview to that cell.
+            // Nothing is committed here, only Set position does that.
+            if (!finished.moved && activePointers.size === 0) {
+                const cell = gppMapClientPointToGrid(map, turf, grid, event.clientX, event.clientY);
+                if (cell) setPreview(cell);
+            }
+        }
+
+        function onPointerCancel(event) {
+            activePointers.delete(event.pointerId);
+            if (gesture && event.pointerId === gesture.pointerId) gesture = null;
+            releaseDragPan();
+        }
+
+        // Once a drag has started, stop touch events from reaching the map so
+        // a touch-driven pan cannot run alongside it. Touch-start comes after
+        // pointerdown, so gesture is already set by then.
+        function onTouchStart(event) {
+            if (gesture && gesture.kind === 'drag') event.stopPropagation();
+        }
+        function onTouchMove(event) {
+            if (gesture && gesture.kind === 'drag') {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        }
+
+        // Taps during placement never reach the page's own click handling
+        // (native painting) -- the only commit path is Set position.
+        function onClick(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+        }
+
+        function cleanup() {
+            mapContainer.removeEventListener('pointerdown', onPointerDown, true);
+            mapContainer.removeEventListener('pointermove', onPointerMove, true);
+            mapContainer.removeEventListener('pointerup', onPointerUp, true);
+            mapContainer.removeEventListener('pointercancel', onPointerCancel, true);
+            mapContainer.removeEventListener('touchstart', onTouchStart, true);
+            mapContainer.removeEventListener('touchmove', onTouchMove, true);
+            mapContainer.removeEventListener('click', onClick, true);
+            document.removeEventListener('keydown', handleKeyDown, true);
+            releaseDragPan();
+            mapContainer.style.touchAction = previousTouchAction;
+            bar.remove();
+            if (hidModal) gppRestoreModalAfterPlacement();
+            gppPlacementCaptureCleanup = null;
+            gppPlacementCaptureEndSubscribers.forEach(listener => {
+                try { listener(); } catch (err) { console.error('[GeoPixelcons++] Ghost++ placement capture end listener failed.', err); }
+            });
+            if (gppPlacementPreview && gppPlacementPreview.templateId === template.id) {
+                gppPlacementPreview = null;
+                gppNotifyRendererSchedule();
+            }
+        }
+
+        function handleSet() {
+            const position = { gridX: previewPosition.gridX, gridY: previewPosition.gridY };
+            cleanup();
+            onPlaced(position);
+        }
+
+        function handleCancel() {
+            cleanup();
+            if (onStatus) onStatus('Placement cancelled.', false);
+        }
+
+        function handleKeyDown(event) {
+            if (event.key !== 'Escape') return;
+            handleCancel();
+        }
+
+        const barSet = bar.querySelector('#gpp-place-bar-set');
+        const barCancel = bar.querySelector('#gpp-place-bar-cancel');
+        barSet.addEventListener('click', handleSet);
+        barCancel.addEventListener('click', handleCancel);
+
+        mapContainer.addEventListener('pointerdown', onPointerDown, true);
+        mapContainer.addEventListener('pointermove', onPointerMove, true);
+        mapContainer.addEventListener('pointerup', onPointerUp, true);
+        mapContainer.addEventListener('pointercancel', onPointerCancel, true);
+        mapContainer.addEventListener('touchstart', onTouchStart, { capture: true });
+        mapContainer.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+        mapContainer.addEventListener('click', onClick, true);
+        document.addEventListener('keydown', handleKeyDown, true);
+        gppPlacementCaptureCleanup = cleanup;
+        setPreview(previewPosition);
+    }
+
     // Scoped, once-injected styling for this panel's controls (mirrors
     // gpp-ui-shell.js's gppInjectShellStyle guard-by-id pattern). Classed
     // rather than bare-element selectors so it can never leak into other
@@ -9274,6 +9672,28 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             .gpp-pt-input:disabled { opacity: .5; }
             .gpp-pt-field { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: ${t2('#64748b', '#a6adc8')}; }
             .gpp-pt-lock { display: flex; align-items: center; gap: 4px; font-size: 12px; color: ${t2('#111827', '#f5f5f5')}; margin-left: auto; }
+            #${GPP_PLACE_BAR_ID} {
+                position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom));
+                transform: translateX(-50%); z-index: 100005; box-sizing: border-box;
+                width: min(92vw, 360px); padding: 10px; border-radius: 10px;
+                display: flex; flex-direction: column; gap: 8px;
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+                background: ${t2('#ffffff', '#1e1e2e')};
+                box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
+            }
+            #${GPP_PLACE_BAR_ID} .gpp-place-bar-hint { font-size: 12px; text-align: center; color: ${t2('#475569', '#a6adc8')}; }
+            #${GPP_PLACE_BAR_ID} .gpp-place-bar-row { display: flex; gap: 8px; }
+            #${GPP_PLACE_BAR_ID} .gpp-place-bar-btn {
+                flex: 1 1 0; min-height: 40px; box-sizing: border-box; padding: 8px 10px;
+                border-radius: 8px; cursor: pointer; font-size: 14px;
+                border: 1px solid ${t2('#d1d5db', '#45475a')};
+                background: ${t2('#f8fafc', '#313244')};
+                color: ${t2('#111827', '#f5f5f5')};
+            }
+            #${GPP_PLACE_BAR_ID} .gpp-place-bar-primary {
+                background: ${t2('#2563eb', '#89b4fa')}; border-color: ${t2('#2563eb', '#89b4fa')};
+                color: ${t2('#ffffff', '#1e1e2e')}; font-weight: 600;
+            }
         `;
     }
 
@@ -9419,7 +9839,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         xInput.addEventListener('change', commitCoordInputs);
         yInput.addEventListener('change', commitCoordInputs);
 
-        body.querySelector('#gpp-pt-place').addEventListener('click', () => {
+        body.querySelector('#gpp-pt-place').addEventListener('click', event => {
             if (gppIsPositionLocked(template)) return;
             gppBeginPlacementCapture(
                 template,
@@ -9428,7 +9848,8 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                         .then(() => setStatus(`Placed at ${position.gridX}, ${position.gridY}.`, false))
                         .catch(err => setStatus(err && err.message ? err.message : String(err), true));
                 },
-                (text, isError) => setStatus(text, isError)
+                (text, isError) => setStatus(text, isError),
+                { pointerType: event.pointerType }
             );
         });
 
@@ -12029,6 +12450,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 border: 1px solid ${t2('rgba(0,0,0,.28)', 'rgba(255,255,255,.28)')};
                 cursor: pointer; display: flex; align-items: center; justify-content: center;
                 padding: 0; transition: transform .08s ease;
+                touch-action: pan-y;
             }
             .gpp-swatch:hover { transform: scale(1.15); z-index: 2; }
             /* Grayscale/opacity dimming is gated behind the grid's own
@@ -12231,6 +12653,35 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         button.append(chip, hexLabel, progressText, barOuter);
     }
 
+    // Hover tooltips are for mouse/pen hover only. On touch, a tap fires a
+    // synthetic mouseenter on the tapped element but never a matching
+    // mouseleave, so a hover tooltip would stay on screen. Track the last
+    // pointer type (pointerover fires before the synthetic mouseenter) and
+    // skip creating hover tooltips for touch. Shared by every hover tip in the
+    // single program scope (palette, library preview, brush-swap quick tip).
+    let gppLastPointerType = 'mouse';
+    function gppTrackPointerType(event) {
+        gppLastPointerType = event.pointerType || 'mouse';
+    }
+    function gppHoverTooltipAllowed() {
+        return gppLastPointerType !== 'touch';
+    }
+    // Safety net: remove any visible hover tip on a touch tap or a scroll,
+    // in case its mouseleave never arrives.
+    function gppDismissHoverTips() {
+        gppPaletteHideTooltip();
+        if (typeof gppLibraryHideHoverPreview === 'function') gppLibraryHideHoverPreview();
+        document.querySelectorAll('.brush-swap-quick-tip').forEach(tip => tip.remove());
+    }
+    document.addEventListener('pointerover', gppTrackPointerType, true);
+    document.addEventListener('pointerdown', (event) => {
+        gppTrackPointerType(event);
+        if (event.pointerType === 'touch') gppDismissHoverTips();
+    }, true);
+    document.addEventListener('scroll', () => {
+        if (gppLastPointerType === 'touch') gppDismissHoverTips();
+    }, { capture: true, passive: true });
+
     // ── Custom floating swatch tooltip (mouse-following) ────────────────
     // Replaces the native `title` attribute and the old shared "Hex:"
     // readout row — hovering a swatch shows hex + completed/remaining right
@@ -12248,6 +12699,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         return el;
     }
     function gppPaletteShowTooltip(event, hex, stats, hasProgress) {
+        if (!gppHoverTooltipAllowed()) return;
         const el = gppPaletteEnsureTooltipEl();
         const hexLine = document.createElement('div');
         hexLine.className = 'gpp-palette-tooltip-hex';
@@ -12763,13 +13215,18 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 
         // ── Drag-to-toggle: hold LEFT + drag to enable every swatch passed
         // over, hold RIGHT + drag to disable — mirrors the drag-paint
-        // interaction common in palette/selection UIs. Only engages once the
-        // pointer actually leaves the swatch it was pressed on (see the
-        // mousemove listener below), so a plain click/right-click keeps
+        // interaction common in palette/selection UIs. Driven by Pointer
+        // Events so touch works too. Only engages once the pointer actually
+        // leaves the swatch it was pressed on (mouse) or moves a few pixels
+        // mostly sideways (touch/pen, see below), so a plain click/tap keeps
         // behaving exactly like before (click handler in buildSwatch / native
         // context menu) — no double-toggle, no menu suppressed on a
         // stationary right-click.
-        let dragPaint = null; // { button, originEl, visited: Set<index> } while a press might turn into a drag
+        // Touch: swatches use touch-action: pan-y, so a vertical finger move
+        // still scrolls the palette (the browser then sends pointercancel).
+        // Only a mostly-horizontal move past the threshold starts a paint.
+        const GPP_PALETTE_DRAG_START_PX = 8;
+        let dragPaint = null; // { button, pointerType, originEl, startX, startY, dragging, visited: Set<index> } while a press might turn into a drag
         let suppressNextClick = false;
         // Tracks where the GESTURE started, not where the eventual contextmenu
         // event's target ends up — a real drag routinely finishes just past
@@ -12817,8 +13274,20 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
             setSwatchMaskState(swatchEl, core.packedToHex(template.palette[index]), targetEnabled);
         }
 
-        grid.addEventListener('mousedown', event => {
-            if (event.button !== 0 && event.button !== 2) return;
+        // Touch pointers keep reporting the element the finger went down on,
+        // so the swatch under a touch is resolved from its coordinates. Mouse
+        // keeps event.target, exactly as before.
+        function dragSwatchAt(event) {
+            const el = event.pointerType === 'touch' ? document.elementFromPoint(event.clientX, event.clientY) : event.target;
+            return (el && el.closest && el.closest('.gpp-swatch')) || null;
+        }
+
+        grid.addEventListener('pointerdown', event => {
+            if (!event.isPrimary || (event.button !== 0 && event.button !== 2)) return;
+            // A new press always starts a fresh gesture. Clearing here also
+            // stops a drag that ended off a swatch (no click on one) from
+            // swallowing the next real swatch click.
+            suppressNextClick = false;
             const swatchEl = event.target.closest && event.target.closest('.gpp-swatch');
             if (!swatchEl || !controller.template) return;
             if (event.button === 2) {
@@ -12826,27 +13295,40 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
                 clearTimeout(rightMouseDownSafetyTimer);
                 rightMouseDownSafetyTimer = setTimeout(() => { rightMouseDownInGrid = false; }, 2000);
             }
-            dragPaint = { button: event.button, originEl: swatchEl, visited: new Set() };
+            dragPaint = { button: event.button, pointerType: event.pointerType, originEl: swatchEl, startX: event.clientX, startY: event.clientY, dragging: false, visited: new Set() };
         });
 
-        grid.addEventListener('mousemove', event => {
-            if (!dragPaint) return;
-            const swatchEl = event.target.closest && event.target.closest('.gpp-swatch');
-            if (!swatchEl) return;
-            if (dragPaint.visited.size === 0 && swatchEl !== dragPaint.originEl) {
+        grid.addEventListener('pointermove', event => {
+            if (!dragPaint || !event.isPrimary) return;
+            const swatchEl = dragSwatchAt(event);
+            if (!dragPaint.dragging) {
+                if (dragPaint.pointerType === 'mouse') {
+                    if (!swatchEl || swatchEl === dragPaint.originEl) return;
+                } else {
+                    // Touch/pen: wait for a small move. A mostly-vertical
+                    // move is a scroll, so give the gesture up and let the
+                    // browser pan the palette.
+                    const dx = Math.abs(event.clientX - dragPaint.startX);
+                    const dy = Math.abs(event.clientY - dragPaint.startY);
+                    if (Math.max(dx, dy) < GPP_PALETTE_DRAG_START_PX) return;
+                    if (dy > dx) { dragPaint = null; return; }
+                }
                 // Pointer has actually left the origin swatch — this is a
                 // real drag, not a plain click. Paint the origin too (it was
                 // "passed over" as part of the gesture) and stop the click
                 // that fires on release from acting on top of it.
+                dragPaint.dragging = true;
                 if (dragPaint.button === 0) suppressNextClick = true;
                 applyDragPaintTo(dragPaint.originEl);
             }
-            applyDragPaintTo(swatchEl);
+            if (swatchEl) applyDragPaintTo(swatchEl);
         });
 
         // Listen on document, not just grid, so a release outside the grid
-        // bounds (dragged past its edge) still ends the gesture.
-        document.addEventListener('mouseup', () => { dragPaint = null; });
+        // bounds (dragged past its edge) still ends the gesture. pointercancel
+        // covers the browser taking a touch over to scroll.
+        document.addEventListener('pointerup', () => { dragPaint = null; });
+        document.addEventListener('pointercancel', () => { dragPaint = null; });
 
         // Unconditionally suppress the native context menu for any right-
         // click gesture that started on a swatch — mirrors
@@ -13878,6 +14360,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     }
 
     function gppLibraryShowHoverPreview(event, template) {
+        if (!gppHoverTooltipAllowed()) return; // touch: no hover preview (see gppPaletteShowTooltip)
         const el = gppLibraryEnsureHoverEl();
         // Full/true resolution (not the bounded thumb cache) — a fresh,
         // independent canvas every call, never the cached `.small` node a
@@ -16847,6 +17330,12 @@ window.changeColor=function(color){
     // re-measure when its own live panels change.
     let gpcPaintMenuControlsScale = null;
 
+    // Assigned by Paint Brush Swap (paint-brush-swap.js, later in the same IIFE)
+    // once its saved-brushes toggle exists: { fitDropdown, attachSwipe }. The
+    // compact 🖌️ button below uses it to keep the menu on screen and to forward
+    // the touch swipe. Declared here because this file is evaluated first.
+    let gpcBrushSwapApi = null;
+
     // ============================================================
     //  FEATURE: Paint Menu Controls [hidePaintMenu]
     // ============================================================
@@ -17068,6 +17557,12 @@ window.changeColor=function(color){
                     if (dropdown.parentElement !== document.body) {
                         document.body.appendChild(dropdown);
                     }
+                    // Paint Brush Swap places the menu from this button and keeps it on screen
+                    // (and re-fits it on resize / rotation / scroll).
+                    if (gpcBrushSwapApi && typeof gpcBrushSwapApi.fitDropdown === 'function') {
+                        gpcBrushSwapApi.fitDropdown();
+                        return;
+                    }
                     const btnRect = compactBrushBtn.getBoundingClientRect();
                     const paintIsTop = localStorage.getItem('gpc-paint-is-top') === 'true';
                     dropdown.style.position = 'fixed';
@@ -17123,6 +17618,10 @@ window.changeColor=function(color){
                     brushToggle.style.border = 'none';
                     brushToggle.style.overflow = 'hidden';
                     compactBrushBtn.style.display = 'flex';
+                    // Same touch swipe-to-cycle as the full-size toggle
+                    if (gpcBrushSwapApi && typeof gpcBrushSwapApi.attachSwipe === 'function') {
+                        gpcBrushSwapApi.attachSwipe(compactBrushBtn);
+                    }
                     return true;
                 }
                 return false;
@@ -21053,9 +21552,79 @@ patch();
     }
 
     // --- CSS Styles ---
-    // --- CSS Styles (Tailwind-compatible for geopixels++ dark theme) ---
-    const style = document.createElement('style');
-    style.textContent = `
+    // One stylesheet for the whole Guild Panel, built from the GeoPixels++ theme
+    // (isDarkMode(), the same signal Ghost++ and Janitor Colors use). Every color is
+    // a --gpp-g-* token on :root, so a live theme switch only re-runs
+    // gpcGuildInjectStyle(); inline styles that reference the tokens follow for free.
+    const GPC_GUILD_STYLE_ID = 'gpp-guild-overhaul-style';
+    function gpcGuildInjectStyle() {
+        const t = (l, d) => (isDarkMode() ? d : l);
+        const palette = `
+        :root {
+            --gpp-g-panel: ${t('#ffffff', '#1e1e2e')};
+            --gpp-g-control: ${t('#ffffff', '#11111b')};
+            --gpp-g-header: ${t('#f8fafc', '#181825')};
+            --gpp-g-row: ${t('#ffffff', '#181825')};
+            --gpp-g-row-hover: ${t('#f3f4f6', '#232336')};
+            --gpp-g-text: ${t('#111827', '#f5f5f5')};
+            --gpp-g-muted: ${t('#64748b', '#a6adc8')};
+            --gpp-g-border: ${t('#d1d5db', '#45475a')};
+            --gpp-g-divider: ${t('#e5e7eb', '#313244')};
+            --gpp-g-hover: ${t('#f3f4f6', '#313244')};
+            --gpp-g-accent: ${t('#3b82f6', '#89b4fa')};
+            --gpp-g-accent-hover: ${t('#2563eb', '#74a0f0')};
+            --gpp-g-on-accent: ${t('#ffffff', '#1e1e2e')};
+            --gpp-g-danger: ${t('#dc2626', '#f38ba8')};
+            --gpp-g-danger-hover: ${t('#b91c1c', '#eba0ac')};
+            --gpp-g-danger-line: ${t('#fca5a5', '#7f4a5e')};
+            --gpp-g-success: ${t('#16a34a', '#a6e3a1')};
+            --gpp-g-success-hover: ${t('#15803d', '#94d3a0')};
+            --gpp-g-warn: ${t('#d97706', '#f9e2af')};
+            --gpp-g-purple: ${t('#7c3aed', '#cba6f7')};
+            --gpp-g-purple-hover: ${t('#6d28d9', '#b4a0e0')};
+            --gpp-g-info: ${t('#0284c7', '#89dceb')};
+            --gpp-g-tooltip: ${t('#1f2937', '#11111b')};
+            --gpp-g-tooltip-text: ${t('#f3f4f6', '#f5f5f5')};
+            --gpp-g-shadow: ${t('rgba(15,23,42,.28)', 'rgba(0,0,0,.62)')};
+            --gpp-g-discord: #5865F2;
+            --gpp-coord-base: ${t('97%', '22%')};
+            --gpp-coord-step: ${t('-1%', '1%')};
+        }
+        /* Panel surface and header, per the GeoPixels++ style guide (Ghost++ / Janitor Colors).
+           The ID selector outranks the site's Tailwind dark: variants. */
+        #myGuildPanel.draggable-panel {
+            background: var(--gpp-g-panel) !important;
+            color: var(--gpp-g-text) !important;
+            border-color: var(--gpp-g-border) !important;
+            box-shadow: 0 12px 32px var(--gpp-g-shadow);
+        }
+        .guild-modal-header {
+            background: var(--gpp-g-header);
+            color: var(--gpp-g-text);
+            box-shadow: inset 0 -1px 0 var(--gpp-g-border);
+            font-weight: 700;
+            font-size: 13px;
+        }
+        .guild-modal-header span { font-weight: 700; font-size: 13px; }
+        .guild-modal-header button {
+            background: transparent; border: none; color: inherit; font-size: 14px;
+        }
+        .guild-modal-header button:hover { background: var(--gpp-g-hover); }
+        .guild-modal-resize {
+            background: linear-gradient(135deg, transparent 0 50%, var(--gpp-g-border) 50%);
+        }
+        /* Tabs and inputs injected next to the site's own controls */
+        #myGuildPanel button.text-blue-600 { color: var(--gpp-g-accent) !important; }
+        #myGuildPanel button.text-gray-500 { color: var(--gpp-g-muted) !important; }
+        #myGuildPanel button.border-blue-500 { border-color: var(--gpp-g-accent) !important; }
+        .gpp-guild-input {
+            border: 1px solid var(--gpp-g-border); background: var(--gpp-g-control); color: var(--gpp-g-text);
+        }
+        .gpp-guild-muted { color: var(--gpp-g-muted); }
+        `;
+        let style = document.getElementById(GPC_GUILD_STYLE_ID);
+        if (!style) { style = document.createElement('style'); style.id = GPC_GUILD_STYLE_ID; document.head.appendChild(style); }
+        style.textContent = palette + `
         .guild-modal-header {
             touch-action: none !important;
             -webkit-user-select: none !important;
@@ -21071,16 +21640,12 @@ patch();
             padding-right: 10px;
         }
         
-        .draggable-panel {
-            touch-action: none !important;
-        }
-
         /* Use Tailwind CSS variables for dark mode compatibility */
         .guild-message-section {
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
             border-radius: 0.5rem;
             overflow: hidden;
-            background-color: var(--color-white, #fff);
+            background-color: var(--gpp-g-panel);
         }
 
         .guild-message-header {
@@ -21088,14 +21653,14 @@ patch();
             align-items: center;
             justify-content: space-between;
             padding: 0.75rem;
-            background-color: var(--color-gray-50, #f9fafb);
+            background-color: var(--gpp-g-header);
             cursor: pointer;
             user-select: none;
-            color: var(--color-gray-900, #111827);
+            color: var(--gpp-g-text);
         }
 
         .guild-message-header:hover {
-            background-color: var(--color-gray-100, #f3f4f6);
+            background-color: var(--gpp-g-hover);
         }
 
         .guild-message-toggle {
@@ -21105,7 +21670,7 @@ patch();
             text-align: center;
             line-height: 20px;
             font-weight: bold;
-            color: var(--color-gray-500, #6b7280);
+            color: var(--gpp-g-muted);
             transition: transform 0.2s ease;
         }
 
@@ -21118,8 +21683,8 @@ patch();
             overflow: hidden;
             transition: max-height 0.3s ease, padding 0.3s ease;
             padding: 0.75rem;
-            background-color: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background-color: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
         }
 
         .guild-message-content.collapsed {
@@ -21140,16 +21705,16 @@ patch();
         #infoTab.message-collapsed > .grid { display: block; }
         #infoTab.message-collapsed #guildMembersContainer { margin-top: 1rem; }
 
-        .guild-find-btn.visited { background-color: var(--color-purple-500, #a855f7) !important; }
-        .guild-find-btn.visited:hover { background-color: var(--color-purple-600, #9333ea) !important; }
+        .guild-find-btn.visited { background-color: var(--gpp-g-purple) !important; }
+        .guild-find-btn.visited:hover { background-color: var(--gpp-g-purple-hover) !important; }
 
         .xp-changes-section {
             margin-top: 1.5rem;
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
             border-radius: 0.5rem;
             overflow: hidden;
             width: 100%;
-            background-color: var(--color-white, #fff);
+            background-color: var(--gpp-g-panel);
         }
 
         .xp-changes-header {
@@ -21157,18 +21722,18 @@ patch();
             align-items: center;
             justify-content: space-between;
             padding: 0.75rem;
-            background-color: var(--color-gray-100, #f1f5f9);
+            background-color: var(--gpp-g-hover);
             cursor: pointer;
             user-select: none;
             font-weight: 600;
-            color: var(--color-gray-700, #334155);
+            color: var(--gpp-g-text);
         }
-        .xp-changes-header:hover { background-color: var(--color-gray-200, #e2e8f0); }
+        .xp-changes-header:hover { background-color: var(--gpp-g-divider); }
 
         .xp-changes-content { 
             padding: 1rem; 
-            background-color: var(--color-white, #fff); 
-            color: var(--color-gray-900, #111827);
+            background-color: var(--gpp-g-panel); 
+            color: var(--gpp-g-text);
             display: block; 
         }
         .xp-changes-content.hidden { display: none; }
@@ -21177,28 +21742,31 @@ patch();
             width: 100%; 
             border-collapse: collapse; 
             margin-top: 10px;
-            color: var(--color-gray-900, #111827);
+            color: var(--gpp-g-text);
         }
         .daily-brief-table th, .daily-brief-table td { 
-            border: 1px solid var(--color-gray-300, #d1d5db); 
+            border: 1px solid var(--gpp-g-border); 
             padding: 8px; 
             text-align: left; 
         }
         .daily-brief-table th { 
-            background-color: var(--color-gray-100, #f2f2f2);
-            color: var(--color-gray-900, #111827);
+            background-color: var(--gpp-g-hover);
+            color: var(--gpp-g-text);
         }
         .daily-brief-table td {
-            background-color: var(--color-white, #fff);
+            background-color: var(--gpp-g-panel);
         }
 
-        .xp-gain { color: var(--color-green-500, #22c55e); }
-        .xp-loss { color: var(--color-red-500, #ef4444); }
-        .xp-neutral { color: var(--color-gray-500, #94a3b8); }
+        .xp-gain { color: var(--gpp-g-success); }
+        .xp-loss { color: var(--gpp-g-danger); }
+        .xp-neutral { color: var(--gpp-g-muted); }
 
         .user-cell-content { display: flex; flex-direction: column; gap: 2px; }
-        .user-name { font-weight: 500; color: var(--color-gray-900, #111827); }
-        .user-coords { font-size: 13px; }
+        .user-name { font-weight: 500; color: var(--gpp-g-text); }
+        .user-coords {
+            font-size: 13px;
+            background-color: hsl(var(--gpp-coord-h, 120) 50% calc(var(--gpp-coord-base) + var(--gpp-coord-step) * var(--gpp-coord-i, 0)));
+        }
 
         .member-icon-btn {
             display: inline-flex; align-items: center; justify-content: center;
@@ -21206,41 +21774,41 @@ patch();
             transition: background-color 0.2s; margin-left: 4px; border: none;
             background: transparent; padding: 0;
         }
-        .member-icon-btn:hover { background-color: var(--color-gray-100, rgba(0,0,0,0.05)); }
-        .discord-icon { color: #5865F2; }
-        .map-icon { color: var(--color-sky-500, #0ea5e9); }
-        .map-icon.out-of-territory { color: var(--color-red-500, #ef4444); }
-        .map-icon.visited { color: var(--color-purple-500, #a855f7); }
+        .member-icon-btn:hover { background-color: var(--gpp-g-hover); }
+        .discord-icon { color: var(--gpp-g-discord); }
+        .map-icon { color: var(--gpp-g-info); }
+        .map-icon.out-of-territory { color: var(--gpp-g-danger); }
+        .map-icon.visited { color: var(--gpp-g-purple); }
         
         .control-button {
             padding: 6px 12px; 
-            border: 1px solid var(--color-gray-300, #d1d5db); 
-            background: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            border: 1px solid var(--gpp-g-border); 
+            background: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
             border-radius: 4px; 
             cursor: pointer; 
             font-size: 12px; 
             transition: background-color 0.2s;
         }
-        .control-button:hover { background-color: var(--color-gray-100, #f0f0f0); }
+        .control-button:hover { background-color: var(--gpp-g-hover); }
         .control-button.active { 
-            background-color: var(--color-blue-500, #3b82f6); 
-            color: var(--color-white, #fff); 
-            border-color: var(--color-blue-500, #3b82f6); 
+            background-color: var(--gpp-g-accent); 
+            color: var(--gpp-g-on-accent); 
+            border-color: var(--gpp-g-accent); 
         }
         
         .trash-btn {
             background: none; border: none; 
-            color: var(--color-red-500, #ef4444); 
+            color: var(--gpp-g-danger); 
             cursor: pointer;
             padding: 2px 4px; font-size: 12px;
         }
-        .trash-btn:hover { color: var(--color-red-600, #dc2626); }
+        .trash-btn:hover { color: var(--gpp-g-danger-hover); }
         
         .tooltip-popup {
             position: fixed; 
-            background: var(--color-gray-800, #333); 
-            color: var(--color-gray-100, #fff); 
+            background: var(--gpp-g-text); 
+            color: var(--gpp-g-hover); 
             padding: 4px 8px;
             border-radius: 4px; font-size: 12px; z-index: 10000; pointer-events: none;
             opacity: 0; transition: opacity 0.2s;
@@ -21248,16 +21816,16 @@ patch();
         .tooltip-popup.visible { opacity: 1; }
 
         #snapshotIntervalSelect {
-            background-color: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background-color: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
         }
         #snapshotIntervalSelect:hover {
-            border-color: var(--color-blue-500, #3b82f6) !important;
+            border-color: var(--gpp-g-accent) !important;
             box-shadow: 0 0 4px rgba(59, 130, 246, 0.2) !important;
         }
 
         #snapshotIntervalSelect:focus {
-            border-color: var(--color-blue-500, #3b82f6) !important;
+            border-color: var(--gpp-g-accent) !important;
             box-shadow: 0 0 6px rgba(59, 130, 246, 0.3) !important;
             outline: none !important;
         }
@@ -21291,8 +21859,8 @@ patch();
             left: 50%;
             transform: translateX(-50%);
             margin-bottom: 6px;
-            background: var(--color-gray-800, #1f2937);
-            color: var(--color-gray-100, #f3f4f6);
+            background: var(--gpp-g-text);
+            color: var(--gpp-g-hover);
             padding: 4px 8px;
             border-radius: 4px;
             font-size: 11px;
@@ -21311,7 +21879,7 @@ patch();
             left: 50%;
             transform: translateX(-50%);
             border: 5px solid transparent;
-            border-top-color: var(--color-gray-800, #1f2937);
+            border-top-color: var(--gpp-g-text);
         }
 
         .player-marker:hover .player-marker-tooltip {
@@ -21335,7 +21903,7 @@ patch();
             gap: 5px;
             font-size: 12px;
             font-weight: 500;
-            color: var(--color-gray-600, #4b5563);
+            color: var(--gpp-g-text);
             cursor: pointer;
             user-select: none;
         }
@@ -21344,7 +21912,7 @@ patch();
             width: 14px;
             height: 14px;
             cursor: pointer;
-            accent-color: var(--color-blue-500, #3b82f6);
+            accent-color: var(--gpp-g-accent);
         }
 
         /* --- Territory Overlay Styles --- */
@@ -21357,8 +21925,8 @@ patch();
 
         /* Territory Controls Container */
         #territoryControlsContainer {
-            background-color: var(--color-gray-100, #f0f9ff);
-            border: 1px solid var(--color-gray-300, #bae6fd);
+            background-color: var(--gpp-g-hover);
+            border: 1px solid var(--gpp-g-border);
         }
 
         .territory-setting-row {
@@ -21371,15 +21939,15 @@ patch();
         .territory-setting-row label {
             font-size: 13px;
             font-weight: 500;
-            color: var(--color-gray-700, #374151);
+            color: var(--gpp-g-text);
         }
 
         .territory-settings-collapsible {
             width: 100%;
-            border: 1px solid var(--color-gray-300, #d1d5db);
+            border: 1px solid var(--gpp-g-border);
             border-radius: 8px;
             overflow: hidden;
-            background: var(--color-white, #fff);
+            background: var(--gpp-g-panel);
         }
 
         .territory-settings-toggle {
@@ -21387,18 +21955,18 @@ patch();
             align-items: center;
             justify-content: space-between;
             padding: 8px 12px;
-            background: var(--color-gray-100, #f3f4f6);
+            background: var(--gpp-g-hover);
             cursor: pointer;
             user-select: none;
             font-size: 13px;
             font-weight: 600;
-            color: var(--color-blue-500, #3b82f6);
+            color: var(--gpp-g-accent);
             border: none;
             width: 100%;
         }
 
         .territory-settings-toggle:hover {
-            background: var(--color-gray-200, #e5e7eb);
+            background: var(--gpp-g-divider);
         }
 
         .territory-settings-toggle .toggle-arrow {
@@ -21415,8 +21983,8 @@ patch();
             display: flex;
             flex-direction: column;
             gap: 10px;
-            border-top: 1px solid var(--color-gray-200, #e5e7eb);
-            background: var(--color-white, #fff);
+            border-top: 1px solid var(--gpp-g-divider);
+            background: var(--gpp-g-panel);
         }
 
         .territory-settings-content.collapsed {
@@ -21424,12 +21992,12 @@ patch();
         }
 
         .territory-section-divider {
-            border-top: 1px solid var(--color-gray-200, #e5e7eb);
+            border-top: 1px solid var(--gpp-g-divider);
             margin: 2px 0;
             padding-top: 4px;
             font-size: 11px;
             font-weight: 600;
-            color: var(--color-gray-500, #6b7280);
+            color: var(--gpp-g-muted);
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
@@ -21448,37 +22016,37 @@ patch();
         }
 
         .territory-toggle-btn.active {
-            background: var(--color-blue-500, #3b82f6);
-            color: var(--color-white, #fff);
+            background: var(--gpp-g-accent);
+            color: var(--gpp-g-on-accent);
             box-shadow: 0 2px 8px rgba(59,130,246,0.3);
         }
 
         .territory-toggle-btn.inactive {
-            background: var(--color-gray-200, #e5e7eb);
-            color: var(--color-gray-700, #374151);
+            background: var(--gpp-g-divider);
+            color: var(--gpp-g-text);
         }
 
         .territory-toggle-btn.inactive:hover {
-            background: var(--color-gray-300, #d1d5db);
+            background: var(--gpp-g-border);
         }
 
         /* Territory settings inputs */
         .territory-settings-content input[type="color"] {
-            border: 2px solid var(--color-gray-300, #d1d5db);
+            border: 2px solid var(--gpp-g-border);
         }
         .territory-settings-content select {
-            background-color: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
-            border: 1px solid var(--color-gray-300, #d1d5db);
+            background-color: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
+            border: 1px solid var(--gpp-g-border);
         }
         .territory-settings-content input[type="range"] {
-            accent-color: var(--color-blue-500, #3b82f6);
+            accent-color: var(--gpp-g-accent);
         }
 
         /* Info text in territory controls */
         .territory-info-text {
             font-size: 12px;
-            color: var(--color-gray-500, #64748b);
+            color: var(--gpp-g-muted);
         }
 
         /* --- Modal Styling for Dark Mode Compatibility --- */
@@ -21497,20 +22065,20 @@ patch();
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: var(--color-white, #fff);
-            border: 2px solid var(--color-blue-500, #3b82f6);
+            background: var(--gpp-g-panel);
+            border: 2px solid var(--gpp-g-accent);
             border-radius: 8px;
             padding: 20px;
             z-index: 10000;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-            color: var(--color-gray-900, #111827);
+            color: var(--gpp-g-text);
         }
 
         .gmi-modal h3 {
             margin: 0 0 15px 0;
             font-size: 18px;
             font-weight: bold;
-            color: var(--color-gray-900, #111827);
+            color: var(--gpp-g-text);
         }
 
         .gmi-modal-btn {
@@ -21518,10 +22086,10 @@ patch();
             width: 100%;
             padding: 10px;
             margin: 8px 0;
-            border: 1px solid var(--color-gray-300, #d1d5db);
+            border: 1px solid var(--gpp-g-border);
             border-radius: 4px;
-            background: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
             cursor: pointer;
             font-size: 14px;
             transition: background-color 0.2s;
@@ -21529,11 +22097,11 @@ patch();
         }
 
         .gmi-modal-btn:hover {
-            background-color: var(--color-gray-100, #f3f4f6);
+            background-color: var(--gpp-g-hover);
         }
 
         .gmi-modal-btn.danger {
-            color: var(--color-red-500, #ef4444);
+            color: var(--gpp-g-danger);
         }
 
         .gmi-modal-btn.danger:hover {
@@ -21541,7 +22109,7 @@ patch();
         }
 
         .gmi-modal-btn.warning {
-            color: var(--color-yellow-500, #f59e0b);
+            color: var(--gpp-g-warn);
         }
 
         .gmi-modal-btn.warning:hover {
@@ -21549,7 +22117,7 @@ patch();
         }
 
         .gmi-modal-btn.primary {
-            color: var(--color-blue-500, #3b82f6);
+            color: var(--gpp-g-accent);
         }
 
         .gmi-modal-btn.primary:hover {
@@ -21558,18 +22126,18 @@ patch();
 
         .gmi-modal-section {
             padding: 10px;
-            background: var(--color-gray-50, #f9fafb);
+            background: var(--gpp-g-header);
             border-radius: 4px;
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
             margin-bottom: 15px;
         }
 
         .gmi-modal-select {
             padding: 6px 10px;
-            border: 1px solid var(--color-gray-300, #d1d5db);
+            border: 1px solid var(--gpp-g-border);
             border-radius: 4px;
-            background: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
             font-size: 12px;
             cursor: pointer;
         }
@@ -21577,7 +22145,7 @@ patch();
         .gmi-modal-label {
             font-weight: 600;
             font-size: 12px;
-            color: var(--color-gray-700, #374151);
+            color: var(--gpp-g-text);
             user-select: none;
         }
 
@@ -21585,16 +22153,16 @@ patch();
             display: flex;
             align-items: center;
             padding: 8px;
-            border: 2px solid var(--color-gray-300, #d1d5db);
+            border: 2px solid var(--gpp-g-border);
             border-radius: 4px;
-            background: var(--color-white, #fff);
+            background: var(--gpp-g-panel);
             cursor: pointer;
             font-size: 12px;
             transition: all 0.2s;
         }
 
         .gmi-checkbox-option:hover {
-            border-color: var(--color-gray-400, #9ca3af);
+            border-color: var(--gpp-g-border);
         }
 
         .gmi-checkbox-option input[type="checkbox"] {
@@ -21602,17 +22170,17 @@ patch();
             height: 16px;
             margin-right: 8px;
             cursor: pointer;
-            accent-color: var(--color-blue-500, #3b82f6);
+            accent-color: var(--gpp-g-accent);
         }
 
         .gmi-snapshot-list {
             flex: 1;
             overflow-y: auto;
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
             border-radius: 4px;
             padding: 10px;
             margin-bottom: 15px;
-            background: var(--color-gray-50, #f9fafb);
+            background: var(--gpp-g-header);
         }
 
         .gmi-snapshot-item {
@@ -21620,26 +22188,26 @@ patch();
             align-items: center;
             padding: 8px;
             margin: 4px 0;
-            background: var(--color-white, #fff);
+            background: var(--gpp-g-panel);
             border-radius: 4px;
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
             transition: background-color 0.2s, border-color 0.2s;
         }
 
         .gmi-snapshot-item.selected {
             background: rgba(239, 68, 68, 0.1);
-            border-color: var(--color-red-300, #fca5a5);
+            border-color: var(--gpp-g-danger-line);
         }
 
         .gmi-snapshot-item label {
             flex: 1;
             cursor: pointer;
             font-size: 12px;
-            color: var(--color-gray-700, #374151);
+            color: var(--gpp-g-text);
         }
 
         .gmi-snapshot-item.selected label {
-            color: var(--color-red-700, #b91c1c);
+            color: var(--gpp-g-danger);
             text-decoration: line-through;
         }
 
@@ -21661,39 +22229,39 @@ patch();
         }
 
         .gmi-action-btn.danger {
-            background: var(--color-red-500, #dc2626);
-            color: var(--color-white, #fff);
+            background: var(--gpp-g-danger);
+            color: var(--gpp-g-on-accent);
         }
 
         .gmi-action-btn.danger:hover {
-            background: var(--color-red-600, #b91c1c);
+            background: var(--gpp-g-danger-hover);
         }
 
         .gmi-action-btn.primary {
-            background: var(--color-blue-500, #3b82f6);
-            color: var(--color-white, #fff);
+            background: var(--gpp-g-accent);
+            color: var(--gpp-g-on-accent);
         }
 
         .gmi-action-btn.primary:hover {
-            background: var(--color-blue-600, #2563eb);
+            background: var(--gpp-g-accent-hover);
         }
 
         .gmi-action-btn.success {
-            background: var(--color-green-500, #10b981);
-            color: var(--color-white, #fff);
+            background: var(--gpp-g-success);
+            color: var(--gpp-g-on-accent);
         }
 
         .gmi-action-btn.success:hover {
-            background: var(--color-green-600, #059669);
+            background: var(--gpp-g-success-hover);
         }
 
         .gmi-action-btn.neutral {
-            background: var(--color-gray-100, #f3f4f6);
-            color: var(--color-gray-600, #6b7280);
+            background: var(--gpp-g-hover);
+            color: var(--gpp-g-text);
         }
 
         .gmi-action-btn.neutral:hover {
-            background: var(--color-gray-200, #e5e7eb);
+            background: var(--gpp-g-divider);
         }
 
         /* Progress popup */
@@ -21702,8 +22270,8 @@ patch();
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -21713,13 +22281,13 @@ patch();
         }
 
         .gmi-progress-popup p {
-            color: var(--color-gray-700, #374151);
+            color: var(--gpp-g-text);
         }
 
         .gmi-progress-bar-container {
             width: 100%;
             height: 20px;
-            background: var(--color-gray-200, #e5e7eb);
+            background: var(--gpp-g-divider);
             border-radius: 4px;
             margin-top: 10px;
             overflow: hidden;
@@ -21727,7 +22295,7 @@ patch();
 
         .gmi-progress-bar {
             height: 100%;
-            background: var(--color-blue-500, #3b82f6);
+            background: var(--gpp-g-accent);
             transition: width 0.3s;
         }
 
@@ -21737,7 +22305,7 @@ patch();
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background-color: var(--color-white, #fff);
+            background-color: var(--gpp-g-panel);
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.2);
@@ -21751,7 +22319,7 @@ patch();
 
         .gmi-csv-modal h3 {
             margin: 0 0 10px 0;
-            color: var(--color-gray-800, #1e293b);
+            color: var(--gpp-g-text);
             font-size: 1.25rem;
             font-weight: 600;
         }
@@ -21761,14 +22329,37 @@ patch();
             height: 300px;
             font-family: monospace;
             font-size: 12px;
-            border: 1px solid var(--color-gray-300, #ccc);
+            border: 1px solid var(--gpp-g-border);
             border-radius: 4px;
             resize: vertical;
-            background: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
         }
     `;
-    document.head.appendChild(style);
+    }
+    gpcGuildInjectStyle();
+
+    // Live GeoPixels++ theme switch: re-run the stylesheet while the panel is open.
+    let gpcGuildThemeTimer = 0;
+    let gpcGuildLastDark = null;
+    function gpcGuildIsOpen() {
+        const modal = document.getElementById('myGuildModal');
+        if (modal && !modal.classList.contains('hidden')) return true;
+        return !!document.querySelector('.gmi-modal-overlay, .gmi-csv-modal, .gmi-progress-popup');
+    }
+    function gpcGuildStartThemeWatch() {
+        gpcGuildLastDark = isDarkMode();
+        if (gpcGuildThemeTimer) return;
+        gpcGuildThemeTimer = setInterval(() => {
+            if (!gpcGuildIsOpen()) {
+                clearInterval(gpcGuildThemeTimer);
+                gpcGuildThemeTimer = 0;
+                return;
+            }
+            const dark = isDarkMode();
+            if (dark !== gpcGuildLastDark) { gpcGuildLastDark = dark; gpcGuildInjectStyle(); }
+        }, 1000);
+    }
 
     // --- Helper Functions ---
 
@@ -22095,12 +22686,12 @@ patch();
         const jsonString = JSON.stringify(allUsersData, null, 2);
         navigator.clipboard.writeText(jsonString).then(() => {
             progressDiv.innerHTML = `
-                <p style="font-weight: bold; color: #10b981; margin-bottom: 5px;">✓ Success!</p>
-                <p style="font-size: 14px; color: #666;">Fetched: ${successCount} users<br>Failed: ${failCount} users<br><br><strong>JSON copied to clipboard!</strong></p>
+                <p style="font-weight: bold; color: var(--gpp-g-success); margin-bottom: 5px;">✓ Success!</p>
+                <p style="font-size: 14px; color: var(--gpp-g-muted);">Fetched: ${successCount} users<br>Failed: ${failCount} users<br><br><strong>JSON copied to clipboard!</strong></p>
             `;
             setTimeout(() => progressDiv.remove(), 3000);
         }).catch((err) => {
-            progressDiv.innerHTML = `<p style="font-weight: bold; color: #dc2626;">Error copying to clipboard!</p><p style="font-size: 12px; color: #666;">${err.message}</p>`;
+            progressDiv.innerHTML = `<p style="font-weight: bold; color: var(--gpp-g-danger);">Error copying to clipboard!</p><p style="font-size: 12px; color: var(--gpp-g-muted);">${err.message}</p>`;
             setTimeout(() => progressDiv.remove(), 3000);
         });
 
@@ -22136,27 +22727,21 @@ patch();
     }
 
     function getCoordinateColor(coords) {
-        if (!coords || coords.length < 2) return { bg: '#f3f4f6', text: '#1f2937' };
+        if (!coords || coords.length < 2) return { hue: 0, intensity: 0 };
         const x = coords[0];
         const y = coords[1];
         const distance = Math.sqrt(x * x + y * y);
         const distanceBand = Math.floor(distance / 25000);
         
-        let baseColor;
-        if (x >= 0 && y >= 0) {
-            const intensity = Math.min(distanceBand * 3, 15);
-            baseColor = `hsl(120, 50%, ${97 - intensity}%)`;
-        } else if (x < 0 && y >= 0) {
-            const intensity = Math.min(distanceBand * 3, 15);
-            baseColor = `hsl(0, 50%, ${97 - intensity}%)`;
-        } else if (x < 0 && y < 0) {
-            const intensity = Math.min(distanceBand * 3, 15);
-            baseColor = `hsl(240, 50%, ${97 - intensity}%)`;
-        } else {
-            const intensity = Math.min(distanceBand * 3, 15);
-            baseColor = `hsl(30, 50%, ${97 - intensity}%)`;
-        }
-        return { bg: baseColor, text: '#1f2937' };
+        // Hue by quadrant; the chip's lightness is set by the theme tokens in
+        // .user-coords (light: 97% fading with distance, dark: 22% rising with it).
+        const intensity = Math.min(distanceBand * 3, 15);
+        let hue;
+        if (x >= 0 && y >= 0) hue = 120;
+        else if (x < 0 && y >= 0) hue = 0;
+        else if (x < 0 && y < 0) hue = 240;
+        else hue = 30;
+        return { hue, intensity };
     }
 
     // --- XP Changes Section ---
@@ -22214,8 +22799,7 @@ patch();
             xpTabPane.classList.remove('hidden');
             xpTabBtn.classList.remove('text-gray-500', 'border-transparent');
             xpTabBtn.classList.add('text-blue-600', 'border-blue-500');
-            xpTabBtn.style.borderBottom = '2px solid #3b82f6';
-            xpTabBtn.style.color = '#3b82f6';
+            xpTabBtn.style.borderBottom = '2px solid var(--gpp-g-accent)';
             renderXPChanges(xpTabPane);
         };
 
@@ -22554,7 +23138,7 @@ patch();
         const delete7DaysBtn = document.createElement('button');
         delete7DaysBtn.innerHTML = 'Select Snapshots Older Than 7 Days for Deletion';
         delete7DaysBtn.className = 'gmi-modal-btn';
-        delete7DaysBtn.style.color = 'var(--color-purple-500, #8b5cf6)';
+        delete7DaysBtn.style.color = 'var(--gpp-g-purple)';
         delete7DaysBtn.onclick = () => {
             const result = deleteHistoryOlderThan7Days();
             if (result !== null) {
@@ -22567,7 +23151,7 @@ patch();
         cancelBtn.innerHTML = 'Cancel';
         cancelBtn.className = 'gmi-modal-btn';
         cancelBtn.style.marginTop = '15px';
-        cancelBtn.style.borderTop = '1px solid var(--color-gray-300, #ddd)';
+        cancelBtn.style.borderTop = '1px solid var(--gpp-g-border)';
         cancelBtn.style.paddingTop = '15px';
         cancelBtn.onclick = () => {
             overlay.remove();
@@ -22678,7 +23262,7 @@ patch();
 
         // Header
         const header = document.createElement('div');
-        header.style.cssText = 'margin-bottom: 15px; border-bottom: 2px solid var(--color-gray-200, #e5e7eb); padding-bottom: 10px;';
+        header.style.cssText = 'margin-bottom: 15px; border-bottom: 2px solid var(--gpp-g-divider); padding-bottom: 10px;';
 
         const title = document.createElement('h3');
         title.textContent = 'Manage Snapshots';
@@ -22686,7 +23270,7 @@ patch();
 
         const info = document.createElement('p');
         info.textContent = `Total snapshots: ${history.length}`;
-        info.style.cssText = 'margin: 0; font-size: 12px; color: var(--color-gray-500, #6b7280);';
+        info.style.cssText = 'margin: 0; font-size: 12px; color: var(--gpp-g-muted);';
         header.appendChild(info);
 
         modal.appendChild(header);
@@ -22699,9 +23283,9 @@ patch();
             gap: 10px;
             margin-bottom: 15px;
             padding: 10px;
-            background: #f9fafb;
+            background: var(--gpp-g-header);
             border-radius: 4px;
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
         `;
 
         const maxLabel = document.createElement('label');
@@ -22751,12 +23335,12 @@ patch();
         intervalSelect.className = 'gmi-modal-select';
         intervalSelect.style.cssText = `
             padding: 8px 12px;
-            border: 2px solid #d1d5db;
+            border: 2px solid var(--gpp-g-border);
             border-radius: 6px;
-            background: white;
+            background: var(--gpp-g-control);
             font-size: 13px;
             cursor: pointer;
-            color: #374151;
+            color: var(--gpp-g-text);
             transition: all 0.2s ease;
             font-weight: 500;
             max-width: 280px;
@@ -22764,21 +23348,21 @@ patch();
         
         // Add hover and focus styles through a style tag
         intervalSelect.onmouseover = () => {
-            intervalSelect.style.borderColor = '#3b82f6';
+            intervalSelect.style.borderColor = 'var(--gpp-g-accent)';
             intervalSelect.style.boxShadow = '0 0 4px rgba(59, 130, 246, 0.2)';
         };
         intervalSelect.onmouseout = () => {
             if (document.activeElement !== intervalSelect) {
-                intervalSelect.style.borderColor = '#d1d5db';
+                intervalSelect.style.borderColor = 'var(--gpp-g-border)';
                 intervalSelect.style.boxShadow = 'none';
             }
         };
         intervalSelect.onfocus = () => {
-            intervalSelect.style.borderColor = '#3b82f6';
+            intervalSelect.style.borderColor = 'var(--gpp-g-accent)';
             intervalSelect.style.boxShadow = '0 0 6px rgba(59, 130, 246, 0.3)';
         };
         intervalSelect.onblur = () => {
-            intervalSelect.style.borderColor = '#d1d5db';
+            intervalSelect.style.borderColor = 'var(--gpp-g-border)';
             intervalSelect.style.boxShadow = 'none';
         };
 
@@ -22858,7 +23442,7 @@ patch();
             height: 16px;
             margin-right: 8px;
             cursor: pointer;
-            accent-color: var(--color-blue-500, #3b82f6);
+            accent-color: var(--gpp-g-accent);
         `;
 
         // Helper function to update preset selection
@@ -22938,7 +23522,7 @@ patch();
         // All snapshots checkbox
         const allOption = document.createElement('label');
         allOption.className = 'gmi-checkbox-option';
-        allOption.style.color = 'var(--color-red-500, #ef4444)';
+        allOption.style.color = 'var(--gpp-g-danger)';
         const allCheckbox = document.createElement('input');
         allCheckbox.type = 'checkbox';
         allCheckbox.style.cssText = checkboxInputStyle;
@@ -22950,18 +23534,18 @@ patch();
         allOption.onclick = (e) => {
             if (e.target === allCheckbox) updatePresetSelection('all');
         };
-        allOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--color-red-500, #ef4444)';
-        allOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'all' ? 'var(--color-red-500, #ef4444)' : 'var(--color-gray-300, #ddd)';
+        allOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--gpp-g-danger)';
+        allOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'all' ? 'var(--gpp-g-danger)' : 'var(--gpp-g-border)';
         shortcutsDiv.appendChild(allOption);
 
         // Keep daily checkbox
         const dailyOption = document.createElement('label');
         dailyOption.className = 'gmi-checkbox-option';
-        dailyOption.style.color = 'var(--color-yellow-500, #f59e0b)';
+        dailyOption.style.color = 'var(--gpp-g-warn)';
         const dailyCheckbox = document.createElement('input');
         dailyCheckbox.type = 'checkbox';
         dailyCheckbox.style.cssText = checkboxInputStyle;
-        dailyCheckbox.style.accentColor = 'var(--color-yellow-500, #f59e0b)';
+        dailyCheckbox.style.accentColor = 'var(--gpp-g-warn)';
         const dailyLabel = document.createElement('span');
         dailyLabel.textContent = 'Keep One Per Day';
         dailyLabel.style.cssText = 'user-select: none;';
@@ -22970,14 +23554,14 @@ patch();
         dailyOption.onclick = (e) => {
             if (e.target === dailyCheckbox) updatePresetSelection('daily');
         };
-        dailyOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--color-yellow-500, #f59e0b)';
-        dailyOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'daily' ? 'var(--color-yellow-500, #f59e0b)' : 'var(--color-gray-300, #ddd)';
+        dailyOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--gpp-g-warn)';
+        dailyOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'daily' ? 'var(--gpp-g-warn)' : 'var(--gpp-g-border)';
         shortcutsDiv.appendChild(dailyOption);
 
         // Keep weekly checkbox
         const weeklyOption = document.createElement('label');
         weeklyOption.className = 'gmi-checkbox-option';
-        weeklyOption.style.color = 'var(--color-blue-500, #3b82f6)';
+        weeklyOption.style.color = 'var(--gpp-g-accent)';
         const weeklyCheckbox = document.createElement('input');
         weeklyCheckbox.type = 'checkbox';
         weeklyCheckbox.style.cssText = checkboxInputStyle;
@@ -22989,18 +23573,18 @@ patch();
         weeklyOption.onclick = (e) => {
             if (e.target === weeklyCheckbox) updatePresetSelection('weekly');
         };
-        weeklyOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--color-blue-500, #3b82f6)';
-        weeklyOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'weekly' ? 'var(--color-blue-500, #3b82f6)' : 'var(--color-gray-300, #ddd)';
+        weeklyOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--gpp-g-accent)';
+        weeklyOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'weekly' ? 'var(--gpp-g-accent)' : 'var(--gpp-g-border)';
         shortcutsDiv.appendChild(weeklyOption);
 
         // 7+ days old checkbox
         const deleteOldOption = document.createElement('label');
         deleteOldOption.className = 'gmi-checkbox-option';
-        deleteOldOption.style.color = 'var(--color-purple-500, #8b5cf6)';
+        deleteOldOption.style.color = 'var(--gpp-g-purple)';
         const deleteOldCheckbox = document.createElement('input');
         deleteOldCheckbox.type = 'checkbox';
         deleteOldCheckbox.style.cssText = checkboxInputStyle;
-        deleteOldCheckbox.style.accentColor = 'var(--color-purple-500, #8b5cf6)';
+        deleteOldCheckbox.style.accentColor = 'var(--gpp-g-purple)';
         const deleteOldLabel = document.createElement('span');
         deleteOldLabel.textContent = 'Delete 7+ Days Old';
         deleteOldLabel.style.cssText = 'user-select: none;';
@@ -23009,8 +23593,8 @@ patch();
         deleteOldOption.onclick = (e) => {
             if (e.target === deleteOldCheckbox) updatePresetSelection('7days');
         };
-        deleteOldOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--color-purple-500, #8b5cf6)';
-        deleteOldOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === '7days' ? 'var(--color-purple-500, #8b5cf6)' : 'var(--color-gray-300, #ddd)';
+        deleteOldOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--gpp-g-purple)';
+        deleteOldOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === '7days' ? 'var(--gpp-g-purple)' : 'var(--gpp-g-border)';
         shortcutsDiv.appendChild(deleteOldOption);
 
         modal.appendChild(shortcutsDiv);
@@ -23028,7 +23612,7 @@ patch();
             listContainer.innerHTML = '';
             
             if (history.length === 0) {
-                listContainer.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">No snapshots available.</p>';
+                listContainer.innerHTML = '<p style="color: var(--gpp-g-muted); text-align: center; padding: 20px;">No snapshots available.</p>';
                 return;
             }
 
@@ -23049,13 +23633,13 @@ patch();
                 
                 item.className = isSelected ? 'gmi-snapshot-item selected' : 'gmi-snapshot-item';
                 if (!isSelected && useAltColor) {
-                    item.style.background = 'var(--color-gray-100, #f3f4f6)';
+                    item.style.background = 'var(--gpp-g-hover)';
                 }
 
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.checked = selectedIndices.has(idx);
-                checkbox.style.cssText = 'margin-right: 10px; cursor: pointer; accent-color: var(--color-blue-500, #3b82f6);';
+                checkbox.style.cssText = 'margin-right: 10px; cursor: pointer; accent-color: var(--gpp-g-accent);';
                 checkbox.onchange = (e) => {
                     if (e.target.checked) {
                         selectedIndices.add(idx);
@@ -23067,7 +23651,7 @@ patch();
                 item.appendChild(checkbox);
 
                 const label = document.createElement('label');
-                label.style.cssText = `flex: 1; cursor: pointer; font-size: 12px; color: ${isSelected ? 'var(--color-red-700, #991b1b)' : 'var(--color-gray-700, #374151)'}; ${isSelected ? 'text-decoration: line-through;' : ''}`;
+                label.style.cssText = `flex: 1; cursor: pointer; font-size: 12px; color: ${isSelected ? 'var(--gpp-g-danger)' : 'var(--gpp-g-text)'}; ${isSelected ? 'text-decoration: line-through;' : ''}`;
                 label.onclick = () => {
                     checkbox.checked = !checkbox.checked;
                     if (checkbox.checked) {
@@ -23083,7 +23667,7 @@ patch();
                 label.innerHTML = `
                     <span style="font-weight: bold;">${idx + 1})</span>
                     ${timestamp.toLocaleString()} 
-                    <span style="color: ${isSelected ? 'var(--color-red-600, #b91c1c)' : 'var(--color-gray-500, #6b7280)'};">(${memberCount} members)</span>
+                    <span style="color: ${isSelected ? 'var(--gpp-g-danger-hover)' : 'var(--gpp-g-muted)'};">(${memberCount} members)</span>
                 `;
                 item.appendChild(label);
 
@@ -23099,7 +23683,7 @@ patch();
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
-            border-top: 1px solid var(--color-gray-200, #e5e7eb);
+            border-top: 1px solid var(--gpp-g-divider);
             padding-top: 15px;
         `;
 
@@ -23212,7 +23796,7 @@ patch();
         const exportAllDataBtn = document.createElement('button');
         exportAllDataBtn.innerHTML = '🎨 Export All User Data';
         exportAllDataBtn.className = 'control-button';
-        exportAllDataBtn.style.color = '#a855f7';
+        exportAllDataBtn.style.color = 'var(--gpp-g-purple)';
         exportAllDataBtn.title = 'Fetch and export all guild members\' data (including colors) as JSON';
         exportAllDataBtn.onclick = async () => {
             exportAllDataBtn.disabled = true;
@@ -23226,7 +23810,7 @@ patch();
         const cleanBtn = document.createElement('button');
         cleanBtn.innerHTML = '🧹 Manage History';
         cleanBtn.className = 'control-button';
-        cleanBtn.style.color = '#ef4444';
+        cleanBtn.style.color = 'var(--gpp-g-danger)';
         cleanBtn.onclick = () => {
             renderCleanHistoryModal((newHistory) => {
                 history = newHistory;
@@ -23338,13 +23922,13 @@ patch();
         const fromSelect = document.createElement('select');
         fromSelect.style.flex = '1';
         fromSelect.style.padding = '4px';
-        fromSelect.style.border = '2px solid #3b82f6';
+        fromSelect.style.border = '2px solid var(--gpp-g-accent)';
         fromSelect.style.borderRadius = '4px';
         
         const toSelect = document.createElement('select');
         toSelect.style.flex = '1';
         toSelect.style.padding = '4px';
-        toSelect.style.border = '2px solid #3b82f6';
+        toSelect.style.border = '2px solid var(--gpp-g-accent)';
         toSelect.style.borderRadius = '4px';
 
         // Populate
@@ -23408,7 +23992,7 @@ patch();
         resultsDiv.style.flex = '1';
         resultsDiv.style.overflowY = 'auto';
         resultsDiv.style.minHeight = '0'; // Crucial for flexbox scrolling
-        resultsDiv.style.border = '1px solid #e5e7eb';
+        resultsDiv.style.border = '1px solid var(--gpp-g-divider)';
         resultsDiv.style.borderRadius = '0.5rem';
 
         const updateTable = () => {
@@ -23577,31 +24161,32 @@ patch();
                         
                         // Get colors based on quadrant and distance
                         const colors = getCoordinateColor(change.coords);
-                        coordsSpan.style.backgroundColor = colors.bg;
+                        coordsSpan.style.setProperty('--gpp-coord-h', String(colors.hue));
+                        coordsSpan.style.setProperty('--gpp-coord-i', String(colors.intensity));
                         coordsSpan.style.padding = '2px 6px';
                         coordsSpan.style.borderRadius = '3px';
                         
                         // Create styled parts
                         const openParen = document.createElement('span');
-                        openParen.style.color = colors.text;
+                        openParen.style.color = 'var(--gpp-g-text)';
                         openParen.textContent = '(';
                         
                         const xVal = document.createElement('span');
-                        xVal.style.color = colors.text;
+                        xVal.style.color = 'var(--gpp-g-text)';
                         xVal.style.fontWeight = '500';
                         xVal.textContent = change.coords[0];
                         
                         const comma = document.createElement('span');
-                        comma.style.color = colors.text;
+                        comma.style.color = 'var(--gpp-g-text)';
                         comma.textContent = ', ';
                         
                         const yVal = document.createElement('span');
-                        yVal.style.color = colors.text;
+                        yVal.style.color = 'var(--gpp-g-text)';
                         yVal.style.fontWeight = '500';
                         yVal.textContent = change.coords[1];
                         
                         const closeParen = document.createElement('span');
-                        closeParen.style.color = colors.text;
+                        closeParen.style.color = 'var(--gpp-g-text)';
                         closeParen.textContent = ')';
                         
                         coordsSpan.appendChild(openParen);
@@ -24293,7 +24878,7 @@ patch();
                 <div class="flex items-center gap-1.5">
                     <input type="range" id="territoryFillAlphaRange" min="0.01" max="1" step="0.01" value="${territorySettings.fillAlpha}"
                            class="w-20 cursor-pointer">
-                    <span id="territoryFillAlphaValue" class="text-xs min-w-[30px]" style="color: var(--color-gray-500, #6b7280);">${fillOpacityPct}%</span>
+                    <span id="territoryFillAlphaValue" class="text-xs min-w-[30px]" style="color: var(--gpp-g-muted);">${fillOpacityPct}%</span>
                 </div>
             </div>
 
@@ -24325,18 +24910,18 @@ patch();
                     <input type="color" id="territoryAbandonedFillInput" value="${territorySettings.abandonedFillColor}"
                            class="w-10 h-7 rounded-md cursor-pointer p-0.5">
                 </div>
-                <p style="font-size:11px;color:var(--color-gray-500,#6b7280);margin:0;">
+                <p style="font-size:11px;color:var(--gpp-g-muted);margin:0;">
                     Active = guild members drawing inside. Abandoned = no members inside.
                 </p>
             </div>
 
             <div class="territory-section-divider">Preview</div>
             <div id="territoryPreviewContainer" class="flex items-center justify-center gap-2.5 py-1">
-                <div id="territoryPreviewBox" style="width: 70px; height: 44px; border: ${territorySettings.borderThickness}px solid ${territorySettings.colorByActivity ? territorySettings.activeBorderColor : territorySettings.borderColor}; border-radius: 2px; position: relative; display: flex; align-items: flex-start; justify-content: flex-start; padding: 2px; background: var(--color-white, #fff);">
+                <div id="territoryPreviewBox" style="width: 70px; height: 44px; border: ${territorySettings.borderThickness}px solid ${territorySettings.colorByActivity ? territorySettings.activeBorderColor : territorySettings.borderColor}; border-radius: 2px; position: relative; display: flex; align-items: flex-start; justify-content: flex-start; padding: 2px; background: var(--gpp-g-panel);">
                     <div id="territoryPreviewFill" style="position: absolute; inset: 0; background: ${territorySettings.colorByActivity ? territorySettings.activeFillColor : territorySettings.fillColor}; opacity: ${territorySettings.showFill ? territorySettings.fillAlpha : 0}; border-radius: 1px;"></div>
                     <span style="font-size: ${territorySettings.labelFontSize}px; font-weight: bold; color: ${territorySettings.colorByActivity ? territorySettings.activeBorderColor : territorySettings.borderColor}; position: relative; z-index: 1;">${territorySettings.colorByActivity ? 'Active' : '#1'}</span>
                 </div>
-                <div id="territoryPreviewBoxAbandoned" style="width: 70px; height: 44px; border: ${territorySettings.borderThickness}px solid ${territorySettings.abandonedBorderColor}; border-radius: 2px; position: relative; display: ${territorySettings.colorByActivity ? 'flex' : 'none'}; align-items: flex-start; justify-content: flex-start; padding: 2px; background: var(--color-white, #fff);">
+                <div id="territoryPreviewBoxAbandoned" style="width: 70px; height: 44px; border: ${territorySettings.borderThickness}px solid ${territorySettings.abandonedBorderColor}; border-radius: 2px; position: relative; display: ${territorySettings.colorByActivity ? 'flex' : 'none'}; align-items: flex-start; justify-content: flex-start; padding: 2px; background: var(--gpp-g-panel);">
                     <div id="territoryPreviewFillAbandoned" style="position: absolute; inset: 0; background: ${territorySettings.abandonedFillColor}; opacity: ${territorySettings.showFill ? territorySettings.fillAlpha : 0}; border-radius: 1px;"></div>
                     <span style="font-size: ${territorySettings.labelFontSize}px; font-weight: bold; color: ${territorySettings.abandonedBorderColor}; position: relative; z-index: 1;">Done</span>
                 </div>
@@ -24360,11 +24945,11 @@ patch();
         inactiveAfterInput.min = '1';
         inactiveAfterInput.step = '1';
         inactiveAfterInput.value = String(playerSettings.inactiveAfterDays);
-        inactiveAfterInput.className = 'w-20 px-2 py-1 rounded-md text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100';
+        inactiveAfterInput.className = 'gpp-guild-input w-20 px-2 py-1 rounded-md text-xs';
 
         const daysLabel = document.createElement('span');
         daysLabel.textContent = 'days';
-        daysLabel.className = 'text-xs text-gray-500 dark:text-gray-400';
+        daysLabel.className = 'gpp-guild-muted text-xs';
         activityControls.append(inactiveAfterInput, daysLabel);
         activitySettings.append(activityLabel, activityControls);
 
@@ -24524,8 +25109,8 @@ patch();
                 position: absolute;
                 top: 6px;
                 left: 6px;
-                background: var(--color-blue-500, #3b82f6);
-                color: var(--color-white, #fff);
+                background: var(--gpp-g-accent);
+                color: var(--gpp-g-on-accent);
                 font-size: 11px;
                 font-weight: 700;
                 padding: 2px 7px;
@@ -25006,14 +25591,14 @@ patch();
                         <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="${playerSettings.defaultColor}"/>
                         <circle cx="12" cy="11" r="4.5" fill="white"/>
                     </svg>
-                    <span style="font-size:10px;color:var(--color-gray-500,#6b7280);">Outside</span>
+                    <span style="font-size:10px;color:var(--gpp-g-muted);">Outside</span>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
                     <svg id="playerPreviewTerritory" xmlns="http://www.w3.org/2000/svg" width="${playerSettings.markerSize}" height="${Math.round(playerSettings.markerSize*40/28)}" viewBox="0 0 24 36">
                         <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="${playerSettings.territoryColor}"/>
                         <circle cx="12" cy="11" r="4.5" fill="white"/>
                     </svg>
-                    <span style="font-size:10px;color:var(--color-gray-500,#6b7280);">In Territory</span>
+                    <span style="font-size:10px;color:var(--gpp-g-muted);">In Territory</span>
                 </div>
             </div>
         `;
@@ -25272,14 +25857,14 @@ patch();
         container.id = 'guild-loading-bar-container';
         container.style.cssText = `
             position: absolute; top: 40px; left: 0; right: 0; height: 3px;
-            background: rgba(0,0,0,0.1); z-index: 52; overflow: hidden;
+            background: var(--gpp-g-divider); z-index: 52; overflow: hidden;
             transition: opacity 0.5s ease; cursor: pointer;
         `;
 
         const bar = document.createElement('div');
         bar.id = 'guild-loading-bar';
         bar.style.cssText = `
-            height: 100%; width: 0%; background: linear-gradient(90deg, #60a5fa, #3b82f6);
+            height: 100%; width: 0%; background: var(--gpp-g-accent);
             transition: width 0.4s ease; border-radius: 0 2px 2px 0;
             pointer-events: none;
         `;
@@ -25290,7 +25875,8 @@ patch();
         tooltip.id = 'guild-loading-tooltip';
         tooltip.style.cssText = `
             position: fixed; display: none; padding: 6px 10px;
-            background: ${isDarkMode() ? '#1e1e2e' : '#1f2937'}; color: #f3f4f6;
+            background: var(--gpp-g-tooltip); color: var(--gpp-g-tooltip-text);
+            border: 1px solid var(--gpp-g-border);
             font-size: 11px; line-height: 1.5; border-radius: 6px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3); pointer-events: none;
             z-index: 100000; white-space: nowrap;
@@ -25409,12 +25995,8 @@ patch();
             panel.style.pointerEvents = 'auto';
             panel.classList.add('draggable-panel');
 
-            panel.style.top = '100px';
-            panel.style.left = 'calc(50% - 25rem)';
-            panel.style.width = '50rem';
-            panel.style.maxWidth = '90vw';
-            panel.style.maxHeight = '85vh';
             panel.style.overflowY = '';
+            placeGuildPanel(panel);
 
             const existingHeader = panel.querySelector('.guild-modal-header');
             if (existingHeader) existingHeader.remove();
@@ -25423,10 +26005,9 @@ patch();
             headerBar.className = 'guild-modal-header';
             headerBar.style.cssText = `
                 position: absolute; top: 0; left: 0; right: 0; height: 40px;
-                background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
                 cursor: move; border-radius: 0.75rem 0.75rem 0 0;
                 display: flex; align-items: center; justify-content: space-between;
-                padding: 0 16px; color: white; font-weight: 600;
+                padding: 0 16px;
                 user-select: none; z-index: 50; pointer-events: auto;
             `;
             
@@ -25437,13 +26018,10 @@ patch();
             const closeBtn = document.createElement('button');
             closeBtn.textContent = '✕';
             closeBtn.style.cssText = `
-                background: none; border: none; color: white; font-size: 24px;
                 cursor: pointer; padding: 0; margin: 0;
                 display: flex; align-items: center; justify-content: center;
                 width: 30px; height: 30px; border-radius: 4px; transition: background-color 0.2s;
             `;
-            closeBtn.onmouseover = () => closeBtn.style.backgroundColor = 'rgba(255,255,255,0.2)';
-            closeBtn.onmouseout = () => closeBtn.style.backgroundColor = 'transparent';
             closeBtn.onclick = (e) => {
                 e.stopPropagation();
                 if (typeof window.toggleMyGuildModal === 'function') {
@@ -25461,9 +26039,8 @@ patch();
             const resizeHandle = document.createElement('div');
             resizeHandle.className = 'guild-modal-resize';
             resizeHandle.style.cssText = `
-                position: absolute; bottom: 0; right: 0; width: 20px; height: 20px;
-                cursor: nwse-resize;
-                background: linear-gradient(135deg, transparent 0%, #3b82f6 100%);
+                position: absolute; bottom: 0; right: 0; width: 32px; height: 32px;
+                cursor: nwse-resize; touch-action: none;
                 border-radius: 0 0 0.75rem 0; z-index: 51; pointer-events: auto;
             `;
 
@@ -25472,7 +26049,7 @@ patch();
             else panel.appendChild(headerBar);
 
             panel.appendChild(resizeHandle);
-            setupDragHandling(panel, titleSpan);
+            setupDragHandling(panel, headerBar);
             setupResizeHandling(panel, resizeHandle);
             setupMessageCollapsible();
             setupContentTracking();
@@ -25488,13 +26065,27 @@ patch();
 
             // Reset panel to center every time the modal is opened (fixes off-screen lock after dragging outside window)
             const _centerPanel = () => {
-                panel.style.top = '100px';
-                panel.style.left = 'calc(50% - 25rem)';
+                const vp = guildPanelViewport();
+                fitGuildPanel(panel, (vp.width - panel.offsetWidth) / 2, guildPanelTop(vp));
             };
+            // Opening the panel re-reads the GeoPixels++ theme and restarts the live theme watch.
             const _visibilityObserver = new MutationObserver(() => {
-                if (!modal.classList.contains('hidden')) _centerPanel();
+                if (modal.classList.contains('hidden')) return;
+                gpcGuildInjectStyle();
+                gpcGuildStartThemeWatch();
+                _centerPanel();
             });
             _visibilityObserver.observe(modal, { attributes: true, attributeFilter: ['class'] });
+            gpcGuildStartThemeWatch();
+
+            // Keep the open panel on screen when the viewport, orientation or on-screen keyboard changes.
+            const _refitPanel = () => {
+                if (modal.classList.contains('hidden')) return;
+                fitGuildPanel(panel, parseFloat(panel.style.left), parseFloat(panel.style.top));
+            };
+            window.addEventListener('resize', _refitPanel);
+            window.addEventListener('orientationchange', _refitPanel);
+            if (window.visualViewport) window.visualViewport.addEventListener('resize', _refitPanel);
 
             console.log('[Guild Modal] v3.1 - Transformed to draggable floating panel with territories');
 
@@ -25503,81 +26094,113 @@ patch();
         }
     }
 
-    function setupDragHandling(panel, header) {
-        let isDragging = false;
-        let startX = 0, startY = 0, offsetX = 0, offsetY = 0;
+    // --- Floating panel placement and viewport clamping (touch-friendly) ---
+    const GUILD_PANEL_MARGIN = 8;
 
-        const onMouseDown = (e) => {
-            if (e.target.closest('.guild-modal-resize') || e.target.closest('button')) return;
-            isDragging = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            const rect = panel.getBoundingClientRect();
-            offsetX = rect.left;
-            offsetY = rect.top;
-            panel.style.userSelect = 'none';
-            document.addEventListener('mousemove', onMouseMove, true);
-            document.addEventListener('mouseup', onMouseUp, true);
-            e.preventDefault();
-            e.stopPropagation();
-        };
-
-        const onMouseMove = (e) => {
-            if (!isDragging) return;
-            const deltaX = e.clientX - startX;
-            const deltaY = e.clientY - startY;
-            panel.style.left = (offsetX + deltaX) + 'px';
-            panel.style.top = (offsetY + deltaY) + 'px';
-        };
-
-        const onMouseUp = () => {
-            isDragging = false;
-            panel.style.userSelect = 'auto';
-            document.removeEventListener('mousemove', onMouseMove, true);
-            document.removeEventListener('mouseup', onMouseUp, true);
-        };
-
-        header.addEventListener('mousedown', onMouseDown, true);
-        
-        // Also make the header bar itself draggable
-        const headerBar = panel.querySelector('.guild-modal-header');
-        if (headerBar && headerBar !== header) {
-            headerBar.addEventListener('mousedown', onMouseDown, true);
-        }
+    function guildPanelViewport() {
+        const visual = window.visualViewport;
+        const width = visual && Number.isFinite(visual.width) && visual.width > 0 ? visual.width : window.innerWidth;
+        const height = visual && Number.isFinite(visual.height) && visual.height > 0 ? visual.height : window.innerHeight;
+        return { width, height };
     }
 
-    function setupResizeHandling(panel, handle) {
-        let isResizing = false;
-        let startX = 0, startY = 0, startW = 0, startH = 0;
+    // Narrow screens start below the site toolbar; desktop keeps the original 100px.
+    function guildPanelTop(vp) {
+        return vp.width < 640 ? 56 : 100;
+    }
 
-        handle.addEventListener('mousedown', (e) => {
-            isResizing = true;
-            startX = e.clientX;
-            startY = e.clientY;
+    // Caps width/height to the viewport, then keeps the panel's top-left corner inside it.
+    function fitGuildPanel(panel, left, top) {
+        const vp = guildPanelViewport();
+        const maxW = Math.max(1, vp.width - 2 * GUILD_PANEL_MARGIN);
+        const maxH = Math.max(1, vp.height - 2 * GUILD_PANEL_MARGIN);
+        if (panel.offsetWidth > maxW) panel.style.width = maxW + 'px';
+        if (panel.offsetHeight > maxH) panel.style.maxHeight = maxH + 'px';
+        const maxLeft = Math.max(GUILD_PANEL_MARGIN, vp.width - panel.offsetWidth - GUILD_PANEL_MARGIN);
+        const maxTop = Math.max(GUILD_PANEL_MARGIN, vp.height - panel.offsetHeight - GUILD_PANEL_MARGIN);
+        const x = Number.isFinite(left) ? left : GUILD_PANEL_MARGIN;
+        const y = Number.isFinite(top) ? top : GUILD_PANEL_MARGIN;
+        panel.style.left = Math.min(maxLeft, Math.max(GUILD_PANEL_MARGIN, x)) + 'px';
+        panel.style.top = Math.min(maxTop, Math.max(GUILD_PANEL_MARGIN, y)) + 'px';
+    }
+
+    // Sizes the panel to the viewport (max 50rem wide), then centers it horizontally.
+    function placeGuildPanel(panel) {
+        const vp = guildPanelViewport();
+        const top = guildPanelTop(vp);
+        const width = Math.min(800, vp.width - 2 * GUILD_PANEL_MARGIN);
+        panel.style.width = width + 'px';
+        panel.style.maxHeight = Math.max(200, Math.min(vp.height * 0.85, vp.height - top - GUILD_PANEL_MARGIN)) + 'px';
+        fitGuildPanel(panel, (vp.width - width) / 2, top);
+    }
+
+    // Touch reports button -1 for contact; mouse must use the primary button.
+    function isPrimaryGuildPointer(e) {
+        if (e.isPrimary === false && e.pointerType) return false;
+        const pointerType = e.pointerType || 'mouse';
+        return pointerType === 'mouse' ? e.button === 0 : (e.button === 0 || e.button === -1);
+    }
+
+    function setupDragHandling(panel, header) {
+        let drag = null;
+
+        header.addEventListener('pointerdown', (e) => {
+            if (!isPrimaryGuildPointer(e) || e.target.closest('button')) return;
             const rect = panel.getBoundingClientRect();
-            startW = rect.width;
-            startH = rect.height;
+            drag = { id: e.pointerId, dx: e.clientX - rect.left, dy: e.clientY - rect.top };
             panel.style.userSelect = 'none';
-            document.addEventListener('mousemove', onMouseMove, true);
-            document.addEventListener('mouseup', onMouseUp, true);
+            try { header.setPointerCapture(e.pointerId); } catch (_) { /* no active pointer to capture */ }
             e.preventDefault();
             e.stopPropagation();
         });
 
-        const onMouseMove = (e) => {
-            if (!isResizing) return;
-            const newW = Math.max(300, startW + (e.clientX - startX));
-            const newH = Math.max(200, startH + (e.clientY - startY));
+        header.addEventListener('pointermove', (e) => {
+            if (!drag || drag.id !== e.pointerId) return;
+            fitGuildPanel(panel, e.clientX - drag.dx, e.clientY - drag.dy);
+        });
+
+        const endDrag = (e) => {
+            if (!drag || drag.id !== e.pointerId) return;
+            drag = null;
+            panel.style.userSelect = 'auto';
+        };
+        header.addEventListener('pointerup', endDrag);
+        header.addEventListener('pointercancel', endDrag);
+    }
+
+    function setupResizeHandling(panel, handle) {
+        let resize = null;
+
+        handle.addEventListener('pointerdown', (e) => {
+            if (!isPrimaryGuildPointer(e)) return;
+            const rect = panel.getBoundingClientRect();
+            resize = { id: e.pointerId, x: e.clientX, y: e.clientY, w: rect.width, h: rect.height };
+            panel.style.userSelect = 'none';
+            try { handle.setPointerCapture(e.pointerId); } catch (_) { /* no active pointer to capture */ }
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        handle.addEventListener('pointermove', (e) => {
+            if (!resize || resize.id !== e.pointerId) return;
+            const vp = guildPanelViewport();
+            const rect = panel.getBoundingClientRect();
+            // Never grow past the viewport edge the panel is anchored to.
+            const maxW = Math.max(1, vp.width - rect.left - GUILD_PANEL_MARGIN);
+            const maxH = Math.max(1, vp.height - rect.top - GUILD_PANEL_MARGIN);
+            const newW = Math.min(maxW, Math.max(300, resize.w + (e.clientX - resize.x)));
+            const newH = Math.min(maxH, Math.max(200, resize.h + (e.clientY - resize.y)));
             panel.style.width = newW + 'px';
             panel.style.maxHeight = newH + 'px';
-        };
+        });
 
-        const onMouseUp = () => {
-            isResizing = false;
+        const endResize = (e) => {
+            if (!resize || resize.id !== e.pointerId) return;
+            resize = null;
             panel.style.userSelect = 'auto';
-            document.removeEventListener('mousemove', onMouseMove, true);
-            document.removeEventListener('mouseup', onMouseUp, true);
         };
+        handle.addEventListener('pointerup', endResize);
+        handle.addEventListener('pointercancel', endResize);
     }
 
     function updateSnapshotIntervalUI() {
@@ -26119,24 +26742,33 @@ patch();
 
         let isDragging = false;
         let dragMode = null;    // 'paint' | 'erase'
+        let dragPointerId = null;
 
-        grid.addEventListener('mousedown', (e) => {
+        // Pointer Events cover mouse, pen and touch. Mouse keeps its buttons
+        // (left = paint, right = erase). Touch has no right button, so the
+        // first cell decides the stroke: an inactive cell paints, an active
+        // cell erases. A plain tap therefore toggles the cell.
+        grid.style.touchAction = 'none'; // Finger drags paint instead of scrolling
+
+        grid.addEventListener('pointerdown', (e) => {
             const cell = e.target.closest('[data-x][data-y]');
             if (!cell) return;
-            e.preventDefault(); // Prevent text selection
-            if (e.button === 0) {
-                dragMode = 'paint';
-                isDragging = true;
-                setCellActive(cell, true); // Immediately activate on mousedown
-            } else if (e.button === 2) {
-                dragMode = 'erase';
-                isDragging = true;
-                setCellActive(cell, false); // Right-click immediately erases
+            e.preventDefault(); // Prevent text selection and compat mouse events
+            if (e.pointerType === 'mouse') {
+                if (e.button === 0) dragMode = 'paint';
+                else if (e.button === 2) dragMode = 'erase';
+                else return;
+            } else {
+                dragMode = cell.dataset.active === 'true' ? 'erase' : 'paint';
+                try { grid.setPointerCapture(e.pointerId); } catch (_) { /* synthetic events have no active pointer */ }
             }
+            isDragging = true;
+            dragPointerId = e.pointerId;
+            setCellActive(cell, dragMode === 'paint'); // Immediately apply on pointerdown
         });
 
-        grid.addEventListener('mousemove', (e) => {
-            if (!isDragging || !dragMode) return;
+        grid.addEventListener('pointermove', (e) => {
+            if (!isDragging || e.pointerId !== dragPointerId) return;
             const el = document.elementFromPoint(e.clientX, e.clientY);
             const cell = el ? el.closest('[data-x][data-y]') : null;
             if (!cell) return;
@@ -26147,10 +26779,14 @@ patch();
             e.preventDefault(); // Suppress right-click context menu on the grid
         });
 
-        document.addEventListener('mouseup', () => {
+        function endGridDrag(e) {
+            if (!isDragging || e.pointerId !== dragPointerId) return;
             isDragging = false;
             dragMode = null;
-        });
+            dragPointerId = null;
+        }
+        document.addEventListener('pointerup', endGridDrag);
+        document.addEventListener('pointercancel', endGridDrag);
     }
 
     // ============================================
@@ -26221,9 +26857,11 @@ patch();
     // ============================================
 
     function setupDragReorder(handle, itemEl, fromIdx, container) {
-        handle.addEventListener('mousedown', (e) => {
+        handle.style.touchAction = 'none'; // Finger drags reorder instead of scrolling
+        handle.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            const pointerId = e.pointerId;
 
             const items = Array.from(container.querySelectorAll('[data-brush-idx]'));
             const rects = items.map(el => el.getBoundingClientRect());
@@ -26235,6 +26873,7 @@ patch();
             let indicator = container.querySelector('.brush-swap-drop-indicator');
 
             function onMove(ev) {
+                if (ev.pointerId !== pointerId) return;
                 const y = ev.clientY;
 
                 // Find which slot we're hovering
@@ -26262,9 +26901,11 @@ patch();
                 }
             }
 
-            function onUp() {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
+            function onUp(ev) {
+                if (ev.pointerId !== pointerId) return;
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+                document.removeEventListener('pointercancel', onUp);
                 itemEl.classList.remove('brush-swap-item-dragging');
                 if (indicator) indicator.remove();
 
@@ -26281,8 +26922,9 @@ patch();
                 renderDropdown();
             }
 
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
+            document.addEventListener('pointermove', onMove);
+            document.addEventListener('pointerup', onUp);
+            document.addEventListener('pointercancel', onUp);
         });
     }
 
@@ -26719,6 +27361,8 @@ patch();
         // Clear existing items
         const itemsContainer = dropdown.querySelector('.brush-swap-items');
         itemsContainer.innerHTML = '';
+        // Re-render can detach a hovered preview before its mouseleave fires
+        document.querySelectorAll('.brush-swap-quick-tip').forEach(tip => tip.remove());
 
         if (scriptState.brushes.length === 0) {
             const emptyMsg = document.createElement('div');
@@ -26748,6 +27392,7 @@ patch();
             // Fast tooltip that follows mouse
             let prevTip = null;
             previewWrap.addEventListener('mouseenter', (e) => {
+                if (!gppHoverTooltipAllowed()) return; // touch: tap expands, no hover tip
                 prevTip = document.createElement('div');
                 prevTip.className = 'brush-swap-quick-tip';
                 prevTip.textContent = 'click to expand';
@@ -26860,6 +27505,86 @@ patch();
         });
     }
 
+    // Keep the open menu fully inside the visible viewport. The menu is anchored to the
+    // toggle button, but the paint bar can sit partly off-screen on phones, so on narrow /
+    // coarse-pointer screens it is positioned fixed from the button's rect, capped to the
+    // room above (or below) the button, and shifted horizontally into view.
+    function fitDropdownToViewport() {
+        const dropdown = document.getElementById('brush-swap-dropdown');
+        const toggleBtn = document.getElementById('brush-swap-toggle');
+        if (!dropdown || !toggleBtn || !scriptState.dropdownOpen) return;
+
+        const M = 8;
+        const vv = window.visualViewport;
+        const minX = vv ? vv.offsetLeft : 0;
+        const minY = vv ? vv.offsetTop : 0;
+        const vw = vv ? vv.width : window.innerWidth;
+        const vh = vv ? vv.height : window.innerHeight;
+        const paintIsTop = localStorage.getItem('gpc-paint-is-top') === 'true';
+        const narrow = vw <= 768 || window.matchMedia('(pointer: coarse)').matches;
+        // Compact paint controls hide the real toggle behind their own 🖌️ button and
+        // move the menu to <body>; anchor to whichever button is actually visible.
+        const compactBtn = document.getElementById('gpc-compact-brush');
+        const compactAnchor = !!(compactBtn && compactBtn.getClientRects().length && compactBtn.style.display !== 'none');
+        const anchorEl = compactAnchor ? compactBtn : toggleBtn;
+        const useFixed = narrow || compactAnchor || dropdown.parentElement === document.body;
+        const btn = anchorEl.getBoundingClientRect();
+
+        let storedW = 300;
+        let storedH = 600;
+        try {
+            const stored = JSON.parse(localStorage.getItem(RESIZE_STORAGE_KEY));
+            if (stored) { storedW = stored.w; storedH = stored.h; }
+        } catch {}
+
+        // Reset the previous shift so every measurement uses the natural position
+        dropdown.style.transform = '';
+        dropdown.style.maxWidth = Math.min(storedW, vw - 2 * M) + 'px';
+        const room = paintIsTop ? (minY + vh - btn.bottom - 2 * M) : (btn.top - minY - 2 * M);
+        const maxH = Math.max(120, Math.min(storedH, room));
+        dropdown.style.maxHeight = maxH + 'px';
+
+        if (useFixed) {
+            dropdown.style.position = 'fixed';
+            dropdown.style.right = 'auto';
+            dropdown.style.bottom = 'auto';
+            dropdown.style.marginTop = '0';
+            dropdown.style.marginBottom = '0';
+            dropdown.style.left = '0px'; // measure the natural width with room to spare
+            dropdown.style.top = '0px';
+            // The paint bar is transformed (translateX, optional scale), which makes it the
+            // containing block for position:fixed. Measure where (0,0) actually lands and the
+            // effective scale, then convert the viewport target into that local frame.
+            const origin = dropdown.getBoundingClientRect();
+            const scale = dropdown.offsetWidth ? (origin.width / dropdown.offsetWidth) || 1 : 1;
+            const h = Math.min(maxH, dropdown.scrollHeight + 2) * scale;
+            const targetTop = paintIsTop ? btn.bottom + M : btn.top - M - h;
+            // The compact button sits left of centre, so its menu opens rightward from it;
+            // the full-size toggle keeps the menu right-aligned to it. Both are clamped below.
+            const targetLeft = compactAnchor ? btn.left : btn.right - origin.width;
+            dropdown.style.top = ((targetTop - origin.top) / scale) + 'px';
+            dropdown.style.left = ((targetLeft - origin.left) / scale) + 'px';
+        } else {
+            // Desktop: same anchoring as before (right-aligned to the button, above or below it)
+            dropdown.style.position = 'absolute';
+            dropdown.style.left = '';
+            dropdown.style.right = '';
+            dropdown.style.top = paintIsTop ? '100%' : 'auto';
+            dropdown.style.bottom = paintIsTop ? 'auto' : '100%';
+            dropdown.style.marginTop = paintIsTop ? '8px' : '0';
+            dropdown.style.marginBottom = paintIsTop ? '0' : '8px';
+        }
+
+        // Horizontal clamp: shift the menu in from whichever edge it crosses
+        const r = dropdown.getBoundingClientRect();
+        let dx = 0;
+        if (r.right > minX + vw - M) dx = minX + vw - M - r.right;
+        if (r.left + dx < minX + M) dx = minX + M - r.left;
+        // translateX is applied in the (possibly scaled) local frame of the paint bar
+        const shiftScale = dropdown.offsetWidth ? (r.width / dropdown.offsetWidth) || 1 : 1;
+        if (dx) dropdown.style.transform = `translateX(${Math.round(dx / shiftScale)}px)`;
+    }
+
     function toggleDropdown() {
         const dropdown = document.getElementById('brush-swap-dropdown');
         if (!dropdown) return;
@@ -26893,9 +27618,11 @@ patch();
             } catch {}
             dropdown.classList.add('open');
             renderDropdown();
+            fitDropdownToViewport();
         } else {
             dropdown.classList.remove('open');
             scriptState.isRenaming = null;
+            document.querySelectorAll('.brush-swap-quick-tip').forEach(tip => tip.remove());
         }
     }
 
@@ -27181,6 +27908,21 @@ patch();
                 bottom: 2px; right: 2px;
                 border-width: 0 2px 2px 0;
             }
+            /* Touch screens: no hover, so keep the grips visible and large enough to hit */
+            @media (pointer: coarse) {
+                .brush-swap-resize-handle {
+                    width: 32px;
+                    height: 32px;
+                    opacity: 0.5;
+                }
+                .brush-swap-resize-handle::after {
+                    width: 12px;
+                    height: 12px;
+                }
+                .brush-swap-drag-handle {
+                    width: 28px;
+                }
+            }
 
             /* Export/Import footer */
             .brush-swap-footer {
@@ -27279,12 +28021,8 @@ patch();
             toastTimer = setTimeout(() => toast.classList.remove('visible'), 900);
         }
 
-        toggleBtn.addEventListener('wheel', (e) => {
-            if (scriptState.brushes.length === 0) return;
-            e.preventDefault();
-            e.stopPropagation();
-
-            const dir = e.deltaY > 0 ? 1 : -1;
+        // Steps to the next (dir 1) or previous (dir -1) saved brush; shared by wheel and touch swipe
+        function stepBrush(dir, x, y) {
             const len = scriptState.brushes.length;
 
             // Initialize index to current brush if not set
@@ -27296,10 +28034,55 @@ patch();
 
             const brush = scriptState.brushes[scriptState.scrollIndex];
             applyBrushToEditor(brush);
-            showSwapToast(brush, e.clientX, e.clientY);
+            showSwapToast(brush, x, y);
 
             if (DEBUG) console.log(`Brush Swap: Scrolled to "${brush.name}" (index ${scriptState.scrollIndex})`);
+        }
+
+        toggleBtn.addEventListener('wheel', (e) => {
+            if (scriptState.brushes.length === 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            stepBrush(e.deltaY > 0 ? 1 : -1, e.clientX, e.clientY);
         }, { passive: false });
+
+        // Touch/pen: horizontal swipe on a button steps brushes (left = next, right = previous).
+        // Used for the toggle itself and for compact paint controls' 🖌️ button.
+        const SWIPE_MIN_PX = 24;
+        function attachBrushSwipe(el) {
+            if (!el || el._gpcBrushSwipe) return;
+            el._gpcBrushSwipe = true;
+            el.style.touchAction = 'pan-y';
+            let swipe = null;
+            let swiped = false;
+            el.addEventListener('pointerdown', (e) => {
+                swiped = false;
+                swipe = (e.pointerType === 'touch' || e.pointerType === 'pen')
+                    ? { id: e.pointerId, x: e.clientX, y: e.clientY }
+                    : null;
+            });
+            el.addEventListener('pointerup', (e) => {
+                if (!swipe || e.pointerId !== swipe.id) return;
+                const dx = e.clientX - swipe.x;
+                const dy = e.clientY - swipe.y;
+                swipe = null;
+                if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) <= Math.abs(dy)) return;
+                if (scriptState.brushes.length === 0) return;
+                swiped = true;
+                stepBrush(dx < 0 ? 1 : -1, e.clientX, e.clientY);
+            });
+            el.addEventListener('pointercancel', () => { swipe = null; });
+            // A click synthesized after a swipe must not also open the menu
+            // (capture phase, so it runs before the button's own click handler).
+            el.addEventListener('click', (e) => {
+                if (!swiped) return;
+                swiped = false;
+                e.preventDefault();
+                e.stopImmediatePropagation();
+            }, true);
+        }
+        attachBrushSwipe(toggleBtn);
 
         // Create dropdown container
         const dropdown = document.createElement('div');
@@ -27325,9 +28108,11 @@ patch();
         }
 
         function setupResize(handle) {
-            handle.addEventListener('mousedown', (e) => {
+            handle.style.touchAction = 'none'; // Finger drags resize instead of scrolling
+            handle.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                const pointerId = e.pointerId;
                 const startX = e.clientX;
                 const startY = e.clientY;
                 const rect = dropdown.getBoundingClientRect();
@@ -27338,6 +28123,7 @@ patch();
                 dropdown.classList.add('brush-swap-resizing');
 
                 const onMove = (ev) => {
+                    if (ev.pointerId !== pointerId) return;
                     const dx = ev.clientX - startX;
                     const dy = ev.clientY - startY;
                     // Top-right: drag up = taller. Bottom-right: drag down = taller.
@@ -27348,18 +28134,22 @@ patch();
                     dropdown.style.maxHeight = newH + 'px';
                 };
 
-                const onUp = () => {
+                const onUp = (ev) => {
+                    if (ev.pointerId !== pointerId) return;
                     dropdown.style.userSelect = '';
                     dropdown.classList.remove('brush-swap-resizing');
-                    document.removeEventListener('mousemove', onMove, true);
-                    document.removeEventListener('mouseup', onUp, true);
+                    document.removeEventListener('pointermove', onMove, true);
+                    document.removeEventListener('pointerup', onUp, true);
+                    document.removeEventListener('pointercancel', onUp, true);
                     const r = dropdown.getBoundingClientRect();
                     storedSize = { w: Math.round(r.width), h: Math.round(r.height) };
                     localStorage.setItem(RESIZE_STORAGE_KEY, JSON.stringify(storedSize));
+                    fitDropdownToViewport();
                 };
 
-                document.addEventListener('mousemove', onMove, true);
-                document.addEventListener('mouseup', onUp, true);
+                document.addEventListener('pointermove', onMove, true);
+                document.addEventListener('pointerup', onUp, true);
+                document.addEventListener('pointercancel', onUp, true);
             });
         }
 
@@ -27394,6 +28184,7 @@ patch();
             dropdown.style.width = '';
             dropdown.style.maxWidth = '';
             dropdown.style.maxHeight = '';
+            fitDropdownToViewport();
         });
 
         dropdownFooter.appendChild(exportBtn);
@@ -27401,11 +28192,23 @@ patch();
         dropdownFooter.appendChild(resetSizeBtn);
         dropdown.appendChild(dropdownFooter);
 
+        // Re-fit the open menu when the viewport changes (rotation, URL bar, zoom, page scroll).
+        // fitDropdownToViewport is a no-op while the menu is closed.
+        window.addEventListener('resize', fitDropdownToViewport);
+        window.addEventListener('orientationchange', fitDropdownToViewport);
+        window.addEventListener('scroll', fitDropdownToViewport, { passive: true });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', fitDropdownToViewport);
+            window.visualViewport.addEventListener('scroll', fitDropdownToViewport);
+        }
+
         // Assemble and insert
         wrapper.appendChild(toggleBtn);
         wrapper.appendChild(dropdown);
 
         // Insert after commitBtn
+        // Shared handle declared in hide-paint-menu.js (compact paint controls)
+        gpcBrushSwapApi = { fitDropdown: fitDropdownToViewport, attachSwipe: attachBrushSwipe };
         commitBtn.parentNode.insertBefore(wrapper, commitBtn.nextSibling);
 
         // Close dropdown on click outside
@@ -27588,6 +28391,8 @@ patch();
     let selectionCanvas = null;
     let selectionCtx = null;
     let highscoreButton = null;
+    let cancelButton = null;
+    let activePointerId = null; // only one pointer drives a selection; extra touches are ignored
     let _map = null; // resolved MapLibre map object (not the DOM element)
 
     // ==================== MAP ACCESS ====================
@@ -27642,6 +28447,7 @@ patch();
 
         createSelectionCanvas();
         createHighscoreButton();
+        createCancelButton();
         setupEventListeners();
 
         console.log('[Regions Highscore] Ready!');
@@ -27654,6 +28460,38 @@ patch();
         highscoreButton.style.display = 'none';
         highscoreButton.addEventListener('click', toggleSelectionMode);
         document.body.appendChild(highscoreButton);
+    }
+
+    function createCancelButton() {
+        cancelButton = document.createElement('button');
+        cancelButton.id = 'gpp-regions-highscore-cancel';
+        cancelButton.type = 'button';
+        cancelButton.textContent = 'Cancel';
+        cancelButton.style.cssText = `
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1002;
+            display: none;
+            padding: 12px 28px;
+            border-radius: 999px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            touch-action: manipulation;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        `;
+        cancelButton.addEventListener('click', resetSelectionMode);
+        document.body.appendChild(cancelButton);
+    }
+
+    function showCancelButton() {
+        const dark = document.body.classList.contains('dark');
+        cancelButton.style.background = dark ? '#1e1e2e' : '#ffffff';
+        cancelButton.style.color = dark ? '#cdd6f4' : '#111827';
+        cancelButton.style.border = dark ? '1px solid #45475a' : '1px solid #d1d5db';
+        cancelButton.style.display = 'block';
     }
 
     function createSelectionCanvas() {
@@ -27700,6 +28538,7 @@ patch();
             highscoreButton.style.boxShadow = '0 0 10px rgba(59, 130, 246, 0.5)';
             document.body.style.cursor = 'crosshair';
             disableMapInteractions();
+            showCancelButton();
             showNotification('Click and drag to select a region');
         } else {
             resetSelectionMode();
@@ -27713,6 +28552,7 @@ patch();
         m.boxZoom.disable();
         m.doubleClickZoom.disable();
         m.touchZoomRotate.disable();
+        m.getContainer().style.touchAction = 'none'; // keep the browser from panning under the finger
     }
 
     function enableMapInteractions() {
@@ -27722,11 +28562,13 @@ patch();
         m.boxZoom.enable();
         // Note: doubleClickZoom is intentionally NOT re-enabled — the native site disables it
         m.touchZoomRotate.enable();
+        m.getContainer().style.touchAction = '';
     }
 
     function resetSelectionMode() {
         isSelectionModeActive = false;
         isDragging = false;
+        activePointerId = null;
         selectionStart = null;
         selectionEnd = null;
 
@@ -27739,6 +28581,7 @@ patch();
         document.body.style.cursor = '';
         enableMapInteractions();
         clearSelectionCanvas();
+        if (cancelButton) cancelButton.style.display = 'none';
     }
 
     function clearSelectionCanvas() {
@@ -27749,21 +28592,23 @@ patch();
 
     // ==================== EVENT HANDLERS ====================
     function setupEventListeners() {
-        document.addEventListener('mousedown', handleMouseDown);
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('pointerdown', handlePointerDown);
+        document.addEventListener('pointermove', handlePointerMove);
+        document.addEventListener('pointerup', handlePointerUp);
+        document.addEventListener('pointercancel', handlePointerCancel);
         document.addEventListener('keydown', handleKeyDown);
     }
 
-    function handleMouseDown(e) {
-        if (!isSelectionModeActive) return;
-        if (e.button !== 0) return; // Only left click
+    function handlePointerDown(e) {
+        if (!isSelectionModeActive || isDragging) return; // a second finger must not restart the selection
+        if (e.pointerType === 'mouse' && e.button !== 0) return; // Only left click
 
         // Check if clicking on UI elements
-        if (e.target.closest('#controls-left') || e.target.closest('#controls-right') || e.target.closest('.modal-container')) {
+        if (e.target.closest('#controls-left') || e.target.closest('#controls-right') || e.target.closest('.modal-container') || e.target.closest('#gpp-regions-highscore-cancel')) {
             return;
         }
 
+        activePointerId = e.pointerId;
         isDragging = true;
         selectionStart = screenPointToGrid(e.clientX, e.clientY);
         selectionEnd = selectionStart;
@@ -27772,17 +28617,18 @@ patch();
         e.stopPropagation();
     }
 
-    function handleMouseMove(e) {
-        if (!isDragging || !selectionStart) return;
+    function handlePointerMove(e) {
+        if (!isDragging || !selectionStart || e.pointerId !== activePointerId) return;
 
         selectionEnd = screenPointToGrid(e.clientX, e.clientY);
         drawSelectionPreview();
     }
 
-    async function handleMouseUp(e) {
-        if (!isDragging || !selectionStart || !selectionEnd) return;
+    async function handlePointerUp(e) {
+        if (!isDragging || !selectionStart || !selectionEnd || e.pointerId !== activePointerId) return;
 
         isDragging = false;
+        activePointerId = null;
 
         const bounds = getSelectionBounds();
         const width = bounds.maxX - bounds.minX + 1;
@@ -27797,6 +28643,7 @@ patch();
 
         // Reset mode but keep selection visible during computation
         isSelectionModeActive = false;
+        if (cancelButton) cancelButton.style.display = 'none';
         if (highscoreButton) {
             highscoreButton.style.backgroundColor = 'white';
             highscoreButton.style.color = 'black';
@@ -27827,6 +28674,11 @@ patch();
         clearSelectionCanvas();
         selectionStart = null;
         selectionEnd = null;
+    }
+
+    function handlePointerCancel(e) {
+        if (e.pointerId !== activePointerId) return;
+        resetSelectionMode();
     }
 
     function handleKeyDown(e) {
@@ -28695,6 +29547,8 @@ patch();
     let selectionCanvas = null;
     let selectionCtx = null;
     let screenshotButton = null;
+    let cancelButton = null;
+    let activePointerId = null; // only one pointer drives a selection; extra touches are ignored
     let _map = null; // resolved MapLibre map object (not the DOM element)
     const _rscPageWindow = (typeof unsafeWindow !== 'undefined') ? unsafeWindow : window;
 
@@ -29158,6 +30012,7 @@ patch();
         console.log('[Region Screenshot] Initializing...');
         createSelectionCanvas();
         createScreenshotButton();
+        createCancelButton();
         setupEventListeners();
         console.log('[Region Screenshot] Ready!');
     }
@@ -29169,6 +30024,38 @@ patch();
         screenshotButton.style.display = 'none';
         screenshotButton.addEventListener('click', toggleSelectionMode);
         document.body.appendChild(screenshotButton);
+    }
+
+    function createCancelButton() {
+        cancelButton = document.createElement('button');
+        cancelButton.id = 'gpp-region-screenshot-cancel';
+        cancelButton.type = 'button';
+        cancelButton.textContent = 'Cancel';
+        cancelButton.style.cssText = `
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1002;
+            display: none;
+            padding: 12px 28px;
+            border-radius: 999px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            touch-action: manipulation;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        `;
+        cancelButton.addEventListener('click', resetSelectionMode);
+        document.body.appendChild(cancelButton);
+    }
+
+    function showCancelButton() {
+        const dark = document.body.classList.contains('dark');
+        cancelButton.style.background = dark ? '#1e1e2e' : '#ffffff';
+        cancelButton.style.color = dark ? '#cdd6f4' : '#111827';
+        cancelButton.style.border = dark ? '1px solid #45475a' : '1px solid #d1d5db';
+        cancelButton.style.display = 'block';
     }
 
     function createSelectionCanvas() {
@@ -29211,6 +30098,7 @@ patch();
             screenshotButton.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.6)';
             document.body.style.cursor = 'crosshair';
             disableMapInteractions();
+            showCancelButton();
             showNotification('Click and drag to select a region to screenshot');
         } else {
             resetSelectionMode();
@@ -29224,6 +30112,7 @@ patch();
         m.boxZoom.disable();
         m.doubleClickZoom.disable();
         m.touchZoomRotate.disable();
+        m.getContainer().style.touchAction = 'none'; // keep the browser from panning under the finger
     }
 
     function enableMapInteractions() {
@@ -29233,11 +30122,13 @@ patch();
         m.boxZoom.enable();
         // Note: doubleClickZoom is intentionally NOT re-enabled — the native site disables it
         m.touchZoomRotate.enable();
+        m.getContainer().style.touchAction = '';
     }
 
     function resetSelectionMode() {
         isSelectionModeActive = false;
         isDragging = false;
+        activePointerId = null;
         selectionStart = null;
         selectionEnd = null;
         if (screenshotButton) {
@@ -29248,6 +30139,7 @@ patch();
         document.body.style.cursor = '';
         enableMapInteractions();
         clearSelectionCanvas();
+        if (cancelButton) cancelButton.style.display = 'none';
     }
 
     function clearSelectionCanvas() {
@@ -29258,21 +30150,24 @@ patch();
 
     // ==================== EVENT HANDLERS ====================
     function setupEventListeners() {
-        document.addEventListener('mousedown', handleMouseDown);
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('pointerdown', handlePointerDown);
+        document.addEventListener('pointermove', handlePointerMove);
+        document.addEventListener('pointerup', handlePointerUp);
+        document.addEventListener('pointercancel', handlePointerCancel);
         document.addEventListener('keydown', handleKeyDown);
     }
 
-    function handleMouseDown(e) {
-        if (!isSelectionModeActive) return;
-        if (e.button !== 0) return;
+    function handlePointerDown(e) {
+        if (!isSelectionModeActive || isDragging) return; // a second finger must not restart the selection
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
         if (
             e.target.closest('#controls-left') ||
             e.target.closest('#controls-right') ||
-            e.target.closest('.rsc-modal-container')
+            e.target.closest('.rsc-modal-container') ||
+            e.target.closest('#gpp-region-screenshot-cancel')
         ) return;
 
+        activePointerId = e.pointerId;
         isDragging = true;
         selectionStart = screenPointToGrid(e.clientX, e.clientY);
         selectionEnd = selectionStart;
@@ -29280,15 +30175,16 @@ patch();
         e.stopPropagation();
     }
 
-    function handleMouseMove(e) {
-        if (!isDragging || !selectionStart) return;
+    function handlePointerMove(e) {
+        if (!isDragging || !selectionStart || e.pointerId !== activePointerId) return;
         selectionEnd = screenPointToGrid(e.clientX, e.clientY);
         drawSelectionPreview();
     }
 
-    async function handleMouseUp(e) {
-        if (!isDragging || !selectionStart || !selectionEnd) return;
+    async function handlePointerUp(e) {
+        if (!isDragging || !selectionStart || !selectionEnd || e.pointerId !== activePointerId) return;
         isDragging = false;
+        activePointerId = null;
 
         const bounds = getSelectionBounds();
         const width = bounds.maxX - bounds.minX + 1;
@@ -29310,6 +30206,7 @@ patch();
 
         // Exit selection mode
         isSelectionModeActive = false;
+        if (cancelButton) cancelButton.style.display = 'none';
         if (screenshotButton) {
             screenshotButton.style.backgroundColor = 'white';
             screenshotButton.style.color = 'black';
@@ -29335,6 +30232,11 @@ patch();
         clearSelectionCanvas();
         selectionStart = null;
         selectionEnd = null;
+    }
+
+    function handlePointerCancel(e) {
+        if (e.pointerId !== activePointerId) return;
+        resetSelectionMode();
     }
 
     function handleKeyDown(e) {
@@ -32078,6 +32980,76 @@ patch();
             (function _ext_pillHoverLabels() {
 
     const PROCESSED_ATTR = 'data-gpc-pill';
+    const PEEK_DELAY_MS = 400;
+    const PEEK_MOVE_TOLERANCE_PX = 10;
+    const pillLabels = new WeakMap();  // btn -> its label span
+    const pillWired = new WeakSet();   // btns whose event listeners are attached
+
+    function expand(btn) {
+        const labelSpan = pillLabels.get(btn);
+        btn.style.width = (40 + labelSpan.scrollWidth + 12) + 'px';
+        labelSpan.style.opacity = '1';
+        btn.style.background = 'var(--color-gray-100, #f3f4f6)';
+    }
+
+    function collapse(btn) {
+        btn.style.width = '40px';
+        pillLabels.get(btn).style.opacity = '0';
+        btn.style.background = 'var(--color-white, #fff)';
+    }
+
+    // Hover is mouse-only. Touch and pen get a long-press "peek": holding
+    // ~400ms reveals the label, and releasing collapses it and swallows the
+    // click that would follow. A short tap activates the button as usual.
+    function wirePillEvents(btn) {
+        if (pillWired.has(btn)) return;
+        pillWired.add(btn);
+
+        btn.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') expand(btn); });
+        btn.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') collapse(btn); });
+
+        let peekTimer = null;
+        let peekPointer = null; // { id, x, y } of the touch/pen press in progress
+        let peeking = false;
+        let swallowClick = false;
+
+        function endPeek() {
+            clearTimeout(peekTimer);
+            peekTimer = null;
+            peekPointer = null;
+            if (!peeking) return;
+            peeking = false;
+            collapse(btn);
+            swallowClick = true;
+            setTimeout(() => { swallowClick = false; }, 300);
+        }
+
+        btn.addEventListener('pointerdown', e => {
+            if (e.pointerType === 'mouse') return;
+            clearTimeout(peekTimer);
+            swallowClick = false;
+            peekPointer = { id: e.pointerId, x: e.clientX, y: e.clientY };
+            peekTimer = setTimeout(() => {
+                peekTimer = null;
+                peeking = true;
+                expand(btn);
+            }, PEEK_DELAY_MS);
+        });
+        btn.addEventListener('pointermove', e => {
+            if (!peekPointer || e.pointerId !== peekPointer.id) return;
+            if (Math.hypot(e.clientX - peekPointer.x, e.clientY - peekPointer.y) > PEEK_MOVE_TOLERANCE_PX) endPeek();
+        });
+        btn.addEventListener('pointerup', endPeek);
+        btn.addEventListener('pointercancel', endPeek);
+        btn.addEventListener('contextmenu', e => { if (peeking) e.preventDefault(); });
+        // Capture phase so this runs before the button's own click handlers.
+        btn.addEventListener('click', e => {
+            if (!swallowClick) return;
+            swallowClick = false;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }, true);
+    }
 
     function transformButton(btn) {
         if (btn.hasAttribute(PROCESSED_ATTR)) return;
@@ -32129,6 +33101,9 @@ patch();
         btn.style.justifyContent = 'flex-start';
         btn.style.border = 'none';
         btn.style.cursor = 'pointer';
+        btn.style.userSelect = 'none';
+        btn.style.webkitUserSelect = 'none';
+        btn.style.webkitTouchCallout = 'none';
         btn.style.overflow = 'hidden';
         btn.style.transition = 'width .25s cubic-bezier(.4,0,.2,1), background .15s';
         btn.style.padding = '0';
@@ -32144,17 +33119,8 @@ patch();
         btn.appendChild(iconSpan);
         btn.appendChild(labelSpan);
 
-        btn.addEventListener('mouseenter', () => {
-            const textW = labelSpan.scrollWidth + 12;
-            btn.style.width = (40 + textW) + 'px';
-            labelSpan.style.opacity = '1';
-            btn.style.background = 'var(--color-gray-100, #f3f4f6)';
-        });
-        btn.addEventListener('mouseleave', () => {
-            btn.style.width = '40px';
-            labelSpan.style.opacity = '0';
-            btn.style.background = 'var(--color-white, #fff)';
-        });
+        pillLabels.set(btn, labelSpan);
+        wirePillEvents(btn);
     }
 
     function scanAll() {
@@ -32854,25 +33820,6 @@ patch();
         area.focus();
     }
 
-    function jcMakeDraggable(panel, handle) {
-        handle.addEventListener('mousedown', (e) => {
-            if (e.target.closest('button')) return;
-            const rect = panel.getBoundingClientRect();
-            const dx = e.clientX - rect.left, dy = e.clientY - rect.top;
-            const move = (ev) => {
-                panel.style.left = Math.max(0, Math.min(window.innerWidth - 60, ev.clientX - dx)) + 'px';
-                panel.style.top = Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - dy)) + 'px';
-            };
-            const up = () => {
-                document.removeEventListener('mousemove', move);
-                document.removeEventListener('mouseup', up);
-            };
-            document.addEventListener('mousemove', move);
-            document.addEventListener('mouseup', up);
-            e.preventDefault();
-        });
-    }
-
     function jcClosePanel() {
         const panel = document.getElementById(JC_PANEL_ID);
         if (panel) panel.remove();
@@ -33255,7 +34202,8 @@ patch();
             if (st && st.rendered < st.shown.length && list.scrollTop + list.clientHeight > list.scrollHeight - 160) st.more(JC_BATCH);
         }, { passive: true });
         document.body.appendChild(panel);
-        jcMakeDraggable(panel, head);
+        // Touch and mouse drag, kept on screen; the open-time clamp keeps it fully visible on phones.
+        gpcMakeDraggablePanel(panel, head);
 
         let timer = null;
         jcMoveHandler = () => {
@@ -36891,6 +37839,7 @@ window.__gpcCanvasToggle = {
 
     // ─── Modal ───────────────────────────────────────────────────────
     let teModal = null;
+    let teDrag = null;
 
     function teBuildModal() {
         const modal = document.createElement('div'); modal.id = 'gte-modal'; modal.className = 'gte-hidden';
@@ -36904,12 +37853,8 @@ window.__gpcCanvasToggle = {
             tab.classList.add('gte-active'); modal.querySelector('#gte-panel-'+tab.dataset.panel).classList.add('gte-active');
             if (tab.dataset.panel === 'manager') renderManager();
         }));
-        // Dragging
-        let ox=0,oy=0,sx=0,sy=0;
-        const handle = modal.querySelector('#gte-titlebar');
-        handle.addEventListener('mousedown', e => { if (e.target.tagName==='BUTTON') return; e.preventDefault(); sx=e.clientX; sy=e.clientY; document.addEventListener('mousemove',drag); document.addEventListener('mouseup',dragEnd); });
-        function drag(e) { ox=sx-e.clientX; oy=sy-e.clientY; sx=e.clientX; sy=e.clientY; modal.style.top=Math.max(0,Math.min(window.innerHeight-50,modal.offsetTop-oy))+'px'; modal.style.left=Math.max(0,Math.min(window.innerWidth-100,modal.offsetLeft-ox))+'px'; modal.style.right='auto'; }
-        function dragEnd() { document.removeEventListener('mousemove',drag); document.removeEventListener('mouseup',dragEnd); }
+        // Dragging (touch and mouse), clamped to the visible viewport
+        teDrag = gpcMakeDraggablePanel(modal, modal.querySelector('#gte-titlebar'));
         return modal;
     }
 
@@ -37102,7 +38047,7 @@ window.__gpcCanvasToggle = {
         applyThemeByName: teApplyByName,
         toggleModal: () => {
             const isHidden = teModal.classList.contains('gte-hidden');
-            if (isHidden) { teModal.classList.remove('gte-hidden'); if (!document.getElementById('gte-theme-name')) renderEditor({}, ''); }
+            if (isHidden) { teModal.classList.remove('gte-hidden'); if (!document.getElementById('gte-theme-name')) renderEditor({}, ''); if (teDrag) teDrag.clamp(); }
             else teModal.classList.add('gte-hidden');
         }
     };
@@ -37163,6 +38108,7 @@ window.__gpcCanvasToggle = {
                 // Append after map container is available; done in waitForMapMM callback below
 
                 let mmModal    = null;
+                let mmDrag     = null; // shared floating-panel drag for the header
                 let placingId  = null; // id of marker currently being placed
                 let editingId  = null; // id of marker currently being edited
                 let _drag      = null; // active drag state
@@ -37634,7 +38580,9 @@ window.__gpcCanvasToggle = {
                 // ── Modal ─────────────────────────────────────────────────
                 function openModal() {
                     if (mmModal) {
-                        mmModal.style.display = mmModal.style.display === 'none' ? 'flex' : 'none';
+                        const showing = mmModal.style.display === 'none';
+                        mmModal.style.display = showing ? 'flex' : 'none';
+                        if (showing && mmDrag) mmDrag.clamp();
                         return;
                     }
                     mmModal = document.createElement('div');
@@ -37675,20 +38623,6 @@ window.__gpcCanvasToggle = {
                     xBtn.onclick = () => { mmModal.style.display = 'none'; exitPlace(); exitEdit(); };
                     hdr.appendChild(xBtn);
                     mmModal.appendChild(hdr);
-
-                    // Draggable header
-                    let dragOff = null;
-                    hdr.addEventListener('mousedown', e => {
-                        if (e.target === xBtn || e.target === compactBtn) return;
-                        dragOff = { x: e.clientX - mmModal.offsetLeft, y: e.clientY - mmModal.offsetTop };
-                        hdr.style.cursor = 'grabbing';
-                    });
-                    document.addEventListener('mousemove', e => {
-                        if (!dragOff) return;
-                        mmModal.style.left = (e.clientX - dragOff.x) + 'px';
-                        mmModal.style.top  = (e.clientY - dragOff.y) + 'px';
-                    });
-                    document.addEventListener('mouseup', () => { dragOff = null; hdr.style.cursor = 'grab'; });
 
                     // ── Shared helpers: register a new marker and enter place mode
                     async function addMarkerFromDataUrl(dataUrl, name, mediaType) {
@@ -37781,6 +38715,8 @@ window.__gpcCanvasToggle = {
                     mmModal.appendChild(list);
 
                     document.body.appendChild(mmModal);
+                    // Header drag (touch and mouse), kept on screen; map-canvas marker moves are untouched
+                    mmDrag = gpcMakeDraggablePanel(mmModal, hdr);
                     renderList(list);
                 }
 
@@ -39943,8 +40879,11 @@ if (_settings.profileColorsCollapse) {
     // function, same 'Info'/'Success' title convention, and same
     // pageWindow()-guarded call shape already used for it elsewhere in this
     // codebase (gpp-scan.js's gppScanAlertEnabledCount, gpp-native-shim.js).
-    function handlePlacementCaptureStart() {
+    function handlePlacementCaptureStart(info) {
         togglePagePrimaryMode();
+        // The mobile flow's floating Set position / Cancel bar already says
+        // what to do, so the desktop corner toast does not apply there.
+        if (info && info.mobile) return;
         const win = pageWindow();
         if (win && typeof win.showAlert === 'function') {
             win.showAlert('Info', 'Click on top right corner to place template on map.');

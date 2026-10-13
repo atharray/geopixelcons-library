@@ -503,6 +503,7 @@
     }
 
     function gppLibraryShowHoverPreview(event, template) {
+        if (!gppHoverTooltipAllowed()) return; // touch: no hover preview (see gppPaletteShowTooltip)
         const el = gppLibraryEnsureHoverEl();
         // Full/true resolution (not the bounded thumb cache) — a fresh,
         // independent canvas every call, never the cached `.small` node a

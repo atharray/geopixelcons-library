@@ -7,6 +7,76 @@
             (function _ext_pillHoverLabels() {
 
     const PROCESSED_ATTR = 'data-gpc-pill';
+    const PEEK_DELAY_MS = 400;
+    const PEEK_MOVE_TOLERANCE_PX = 10;
+    const pillLabels = new WeakMap();  // btn -> its label span
+    const pillWired = new WeakSet();   // btns whose event listeners are attached
+
+    function expand(btn) {
+        const labelSpan = pillLabels.get(btn);
+        btn.style.width = (40 + labelSpan.scrollWidth + 12) + 'px';
+        labelSpan.style.opacity = '1';
+        btn.style.background = 'var(--color-gray-100, #f3f4f6)';
+    }
+
+    function collapse(btn) {
+        btn.style.width = '40px';
+        pillLabels.get(btn).style.opacity = '0';
+        btn.style.background = 'var(--color-white, #fff)';
+    }
+
+    // Hover is mouse-only. Touch and pen get a long-press "peek": holding
+    // ~400ms reveals the label, and releasing collapses it and swallows the
+    // click that would follow. A short tap activates the button as usual.
+    function wirePillEvents(btn) {
+        if (pillWired.has(btn)) return;
+        pillWired.add(btn);
+
+        btn.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') expand(btn); });
+        btn.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') collapse(btn); });
+
+        let peekTimer = null;
+        let peekPointer = null; // { id, x, y } of the touch/pen press in progress
+        let peeking = false;
+        let swallowClick = false;
+
+        function endPeek() {
+            clearTimeout(peekTimer);
+            peekTimer = null;
+            peekPointer = null;
+            if (!peeking) return;
+            peeking = false;
+            collapse(btn);
+            swallowClick = true;
+            setTimeout(() => { swallowClick = false; }, 300);
+        }
+
+        btn.addEventListener('pointerdown', e => {
+            if (e.pointerType === 'mouse') return;
+            clearTimeout(peekTimer);
+            swallowClick = false;
+            peekPointer = { id: e.pointerId, x: e.clientX, y: e.clientY };
+            peekTimer = setTimeout(() => {
+                peekTimer = null;
+                peeking = true;
+                expand(btn);
+            }, PEEK_DELAY_MS);
+        });
+        btn.addEventListener('pointermove', e => {
+            if (!peekPointer || e.pointerId !== peekPointer.id) return;
+            if (Math.hypot(e.clientX - peekPointer.x, e.clientY - peekPointer.y) > PEEK_MOVE_TOLERANCE_PX) endPeek();
+        });
+        btn.addEventListener('pointerup', endPeek);
+        btn.addEventListener('pointercancel', endPeek);
+        btn.addEventListener('contextmenu', e => { if (peeking) e.preventDefault(); });
+        // Capture phase so this runs before the button's own click handlers.
+        btn.addEventListener('click', e => {
+            if (!swallowClick) return;
+            swallowClick = false;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }, true);
+    }
 
     function transformButton(btn) {
         if (btn.hasAttribute(PROCESSED_ATTR)) return;
@@ -58,6 +128,9 @@
         btn.style.justifyContent = 'flex-start';
         btn.style.border = 'none';
         btn.style.cursor = 'pointer';
+        btn.style.userSelect = 'none';
+        btn.style.webkitUserSelect = 'none';
+        btn.style.webkitTouchCallout = 'none';
         btn.style.overflow = 'hidden';
         btn.style.transition = 'width .25s cubic-bezier(.4,0,.2,1), background .15s';
         btn.style.padding = '0';
@@ -73,17 +146,8 @@
         btn.appendChild(iconSpan);
         btn.appendChild(labelSpan);
 
-        btn.addEventListener('mouseenter', () => {
-            const textW = labelSpan.scrollWidth + 12;
-            btn.style.width = (40 + textW) + 'px';
-            labelSpan.style.opacity = '1';
-            btn.style.background = 'var(--color-gray-100, #f3f4f6)';
-        });
-        btn.addEventListener('mouseleave', () => {
-            btn.style.width = '40px';
-            labelSpan.style.opacity = '0';
-            btn.style.background = 'var(--color-white, #fff)';
-        });
+        pillLabels.set(btn, labelSpan);
+        wirePillEvents(btn);
     }
 
     function scanAll() {

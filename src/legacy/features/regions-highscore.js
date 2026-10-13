@@ -21,6 +21,8 @@
     let selectionCanvas = null;
     let selectionCtx = null;
     let highscoreButton = null;
+    let cancelButton = null;
+    let activePointerId = null; // only one pointer drives a selection; extra touches are ignored
     let _map = null; // resolved MapLibre map object (not the DOM element)
 
     // ==================== MAP ACCESS ====================
@@ -75,6 +77,7 @@
 
         createSelectionCanvas();
         createHighscoreButton();
+        createCancelButton();
         setupEventListeners();
 
         console.log('[Regions Highscore] Ready!');
@@ -87,6 +90,38 @@
         highscoreButton.style.display = 'none';
         highscoreButton.addEventListener('click', toggleSelectionMode);
         document.body.appendChild(highscoreButton);
+    }
+
+    function createCancelButton() {
+        cancelButton = document.createElement('button');
+        cancelButton.id = 'gpp-regions-highscore-cancel';
+        cancelButton.type = 'button';
+        cancelButton.textContent = 'Cancel';
+        cancelButton.style.cssText = `
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1002;
+            display: none;
+            padding: 12px 28px;
+            border-radius: 999px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            touch-action: manipulation;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        `;
+        cancelButton.addEventListener('click', resetSelectionMode);
+        document.body.appendChild(cancelButton);
+    }
+
+    function showCancelButton() {
+        const dark = document.body.classList.contains('dark');
+        cancelButton.style.background = dark ? '#1e1e2e' : '#ffffff';
+        cancelButton.style.color = dark ? '#cdd6f4' : '#111827';
+        cancelButton.style.border = dark ? '1px solid #45475a' : '1px solid #d1d5db';
+        cancelButton.style.display = 'block';
     }
 
     function createSelectionCanvas() {
@@ -133,6 +168,7 @@
             highscoreButton.style.boxShadow = '0 0 10px rgba(59, 130, 246, 0.5)';
             document.body.style.cursor = 'crosshair';
             disableMapInteractions();
+            showCancelButton();
             showNotification('Click and drag to select a region');
         } else {
             resetSelectionMode();
@@ -146,6 +182,7 @@
         m.boxZoom.disable();
         m.doubleClickZoom.disable();
         m.touchZoomRotate.disable();
+        m.getContainer().style.touchAction = 'none'; // keep the browser from panning under the finger
     }
 
     function enableMapInteractions() {
@@ -155,11 +192,13 @@
         m.boxZoom.enable();
         // Note: doubleClickZoom is intentionally NOT re-enabled — the native site disables it
         m.touchZoomRotate.enable();
+        m.getContainer().style.touchAction = '';
     }
 
     function resetSelectionMode() {
         isSelectionModeActive = false;
         isDragging = false;
+        activePointerId = null;
         selectionStart = null;
         selectionEnd = null;
 
@@ -172,6 +211,7 @@
         document.body.style.cursor = '';
         enableMapInteractions();
         clearSelectionCanvas();
+        if (cancelButton) cancelButton.style.display = 'none';
     }
 
     function clearSelectionCanvas() {
@@ -182,21 +222,23 @@
 
     // ==================== EVENT HANDLERS ====================
     function setupEventListeners() {
-        document.addEventListener('mousedown', handleMouseDown);
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('pointerdown', handlePointerDown);
+        document.addEventListener('pointermove', handlePointerMove);
+        document.addEventListener('pointerup', handlePointerUp);
+        document.addEventListener('pointercancel', handlePointerCancel);
         document.addEventListener('keydown', handleKeyDown);
     }
 
-    function handleMouseDown(e) {
-        if (!isSelectionModeActive) return;
-        if (e.button !== 0) return; // Only left click
+    function handlePointerDown(e) {
+        if (!isSelectionModeActive || isDragging) return; // a second finger must not restart the selection
+        if (e.pointerType === 'mouse' && e.button !== 0) return; // Only left click
 
         // Check if clicking on UI elements
-        if (e.target.closest('#controls-left') || e.target.closest('#controls-right') || e.target.closest('.modal-container')) {
+        if (e.target.closest('#controls-left') || e.target.closest('#controls-right') || e.target.closest('.modal-container') || e.target.closest('#gpp-regions-highscore-cancel')) {
             return;
         }
 
+        activePointerId = e.pointerId;
         isDragging = true;
         selectionStart = screenPointToGrid(e.clientX, e.clientY);
         selectionEnd = selectionStart;
@@ -205,17 +247,18 @@
         e.stopPropagation();
     }
 
-    function handleMouseMove(e) {
-        if (!isDragging || !selectionStart) return;
+    function handlePointerMove(e) {
+        if (!isDragging || !selectionStart || e.pointerId !== activePointerId) return;
 
         selectionEnd = screenPointToGrid(e.clientX, e.clientY);
         drawSelectionPreview();
     }
 
-    async function handleMouseUp(e) {
-        if (!isDragging || !selectionStart || !selectionEnd) return;
+    async function handlePointerUp(e) {
+        if (!isDragging || !selectionStart || !selectionEnd || e.pointerId !== activePointerId) return;
 
         isDragging = false;
+        activePointerId = null;
 
         const bounds = getSelectionBounds();
         const width = bounds.maxX - bounds.minX + 1;
@@ -230,6 +273,7 @@
 
         // Reset mode but keep selection visible during computation
         isSelectionModeActive = false;
+        if (cancelButton) cancelButton.style.display = 'none';
         if (highscoreButton) {
             highscoreButton.style.backgroundColor = 'white';
             highscoreButton.style.color = 'black';
@@ -260,6 +304,11 @@
         clearSelectionCanvas();
         selectionStart = null;
         selectionEnd = null;
+    }
+
+    function handlePointerCancel(e) {
+        if (e.pointerId !== activePointerId) return;
+        resetSelectionMode();
     }
 
     function handleKeyDown(e) {

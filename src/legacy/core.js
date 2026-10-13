@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2.19.1';
+    const VERSION = '2.20.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -24,7 +24,7 @@
     const EXTENSION_LIST = [
         { key: 'extAutoHoverMenus', name: 'Auto-open Menus on Hover', icon: '🖱️', desc: 'Automatically opens group button dropdown menus when you hover over them.', features: ['Hover over any group button to auto-open its dropdown', 'Configurable vertical hover zone (250px)', 'Per-button cooldown to prevent rapid toggles', 'MutationObserver-based — detects new buttons automatically'] },
         { key: 'extGoToLastLocation', name: 'Auto-Go to Last Location', icon: '📍', desc: 'Automatically returns you to your last location on page load if you spawned at the default area.', features: ['Detects if you spawned in the default area', 'Auto-clicks the "Last Location" button on load', 'One-shot — only fires once per page load', 'Automatic cleanup after 10 seconds to prevent leaks'] },
-        { key: 'extPillHoverLabels', name: 'Hover Labels', icon: '💊', desc: 'Adds the expanding pill-style hover animation with text labels to all submenu buttons under controls-left.', features: ['Expanding pill animation on hover', 'Shows button title/name as a label', 'Applies to all native dropdown submenu buttons', 'Respects dark mode colors', 'MutationObserver-based — detects dynamically added buttons'] },
+        { key: 'extPillHoverLabels', name: 'Hover Labels', icon: '💊', desc: 'Adds the expanding pill-style hover animation with text labels to all submenu buttons under controls-left (long-press on touch).', features: ['Expanding pill animation on hover', 'Shows button title/name as a label', 'Applies to all native dropdown submenu buttons', 'Respects dark mode colors', 'MutationObserver-based — detects dynamically added buttons'] },
         { key: 'extJanitorView', name: 'Janitor View', icon: '🛡️', desc: 'Reveals the hidden moderation button for janitors/moderators.', features: ['Removes the hidden class from the moderation group button', 'Makes the 🛡️ Moderation button visible in the controls', 'Adds a 🎨 Janitor Colors panel to set persistent per-user colors for Janitor View (import/export JSON)'] },
         { key: 'extJanitorColors', name: 'Janitor Colors', icon: '🎨', requires: 'extJanitorView', desc: 'Adds a 🎨 Janitor Colors panel under Toggle User View. Requires Janitor View.', features: ['Lists users currently in view', 'Saves a custom hex color per user ID for Janitor View', 'Import/export colors as JSON', 'Hover a user to flash their pixels'] },
         { key: 'extMapMovementLock', name: 'Map Movement Lock', icon: '🔒', desc: 'Adds a right-side lock button that freezes map panning, zooming, and page scrolling until you unlock it.', features: ['Creates a lock toggle in controls-right', 'Blocks mouse, touch, keyboard, zoom button, scripted pan/zoom movement, and page-wide scrolling while locked', 'Preserves the locked state across reloads while the extension is enabled'] },
@@ -265,6 +265,101 @@
 
     // Theme-aware colors
     function t(light, dark) { return isDarkMode() ? dark : light; }
+
+    // The map control columns are buttons, not text. On touch screens a long
+    // press (including Hover Labels' long-press peek) would otherwise select
+    // a button label and open the browser's copy/share bar. Text fields
+    // inside the columns stay selectable.
+    (function gpcDisableControlsTextSelection() {
+        const id = 'gpp-controls-no-select-style';
+        if (document.getElementById(id)) return;
+        const style = document.createElement('style');
+        style.id = id;
+        style.textContent = `
+            #controls-left, #controls-left *:not(input):not(textarea):not([contenteditable="true"]),
+            #controls-right, #controls-right *:not(input):not(textarea):not([contenteditable="true"]) {
+                -webkit-user-select: none !important;
+                user-select: none !important;
+                -webkit-touch-callout: none !important;
+            }
+        `;
+        (document.head || document.documentElement).appendChild(style);
+    })();
+
+    // ============================================================
+    //  SHARED FLOATING-PANEL DRAG
+    //  Pointer Events so touch and pen drag like the mouse, clamped to
+    //  the visible viewport so a panel cannot be dragged or left
+    //  off-screen. Presses on controls are ignored. touch-action:none
+    //  goes on the handle only, so the panel body still scrolls by touch.
+    //  Returns { clamp } so callers can re-clamp after the panel opens.
+    // ============================================================
+    function gpcMakeDraggablePanel(panel, handle, { margin = 8 } = {}) {
+        const visibleViewport = () => {
+            const vv = window.visualViewport;
+            const width = vv && Number.isFinite(vv.width) && vv.width > 0 ? vv.width : window.innerWidth;
+            const height = vv && Number.isFinite(vv.height) && vv.height > 0 ? vv.height : window.innerHeight;
+            return { width: width || 1200, height: height || 900 };
+        };
+        // Hidden panels have no box yet; they are clamped once they show.
+        const place = (requestedLeft, requestedTop) => {
+            if (!panel.isConnected) return;
+            const rect = panel.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            const vp = visibleViewport();
+            const maxLeft = Math.max(margin, vp.width - rect.width - margin);
+            const maxTop = Math.max(margin, vp.height - rect.height - margin);
+            const left = Number.isFinite(requestedLeft) ? requestedLeft : rect.left;
+            const top = Number.isFinite(requestedTop) ? requestedTop : rect.top;
+            panel.style.right = 'auto';
+            panel.style.left = Math.min(maxLeft, Math.max(margin, left)) + 'px';
+            panel.style.top = Math.min(maxTop, Math.max(margin, top)) + 'px';
+        };
+
+        // Mouse primary button is 0; touch and pen may report -1 (no button changed).
+        const isPrimaryPress = event => {
+            if (event.isPrimary === false && event.pointerType) return false;
+            return event.pointerType && event.pointerType !== 'mouse'
+                ? (event.button === 0 || event.button === -1)
+                : event.button === 0;
+        };
+
+        let drag = null;
+        handle.style.touchAction = 'none';
+        handle.addEventListener('pointerdown', event => {
+            if (!isPrimaryPress(event) || event.target.closest('button, input, select, textarea, a')) return;
+            event.preventDefault();
+            const rect = panel.getBoundingClientRect();
+            drag = { id: event.pointerId, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+            // Best-effort: synthetic events have no active pointer to capture.
+            try { handle.setPointerCapture(event.pointerId); } catch (_) { /* no active pointer */ }
+        });
+        handle.addEventListener('pointermove', event => {
+            if (!drag || drag.id !== event.pointerId) return;
+            event.preventDefault();
+            place(event.clientX - drag.dx, event.clientY - drag.dy);
+        });
+        const finishDrag = event => { if (drag && drag.id === event.pointerId) drag = null; };
+        handle.addEventListener('pointerup', finishDrag);
+        handle.addEventListener('pointercancel', finishDrag);
+
+        // Re-clamp when the viewport changes; detach once the panel is removed.
+        const onViewportChange = () => {
+            if (!panel.isConnected) { detach(); return; }
+            place();
+        };
+        const detach = () => {
+            window.removeEventListener('resize', onViewportChange);
+            window.removeEventListener('orientationchange', onViewportChange);
+            if (window.visualViewport) window.visualViewport.removeEventListener('resize', onViewportChange);
+        };
+        window.addEventListener('resize', onViewportChange, { passive: true });
+        window.addEventListener('orientationchange', onViewportChange, { passive: true });
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', onViewportChange, { passive: true });
+
+        place();
+        return { clamp: () => place() };
+    }
 
     // ============================================================
     //  UI: SETTINGS MODAL (Tabbed)
@@ -1470,6 +1565,24 @@
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.20.0',
+            date: '2026-10-13',
+            items: [
+                { type: 'fixed', text: 'Guild Panel: opens fully on screen on phones, drags and resizes by touch, stays inside the screen when rotated, and its body scrolls by touch' },
+                { type: 'fixed', text: 'Brush editor: tapping a cell toggles it on touch screens; a finger drag paints or erases depending on the first cell; saved brushes reorder and the brush menu resizes by touch' },
+                { type: 'fixed', text: 'Region Screenshot and Regions Highscore: area selection works with a finger drag, and a Cancel button appears while selecting' },
+                { type: 'fixed', text: 'Ghost++ palette: a sideways finger drag toggles every swatch it passes over; vertical swipes still scroll' },
+                { type: 'added', text: 'Ghost++: on touch screens, Place hides the Ghost++ window so you can tap or drag the template into position, then press Set position or Cancel' },
+                { type: 'fixed', text: 'Hover tooltips (brush preview "click to expand", Ghost++ palette and library previews) no longer stay on screen after a tap' },
+                { type: 'added', text: 'Paint Brush Swap: swipe left or right on the ▲ brushes button to cycle saved brushes on touch screens' },
+                { type: 'fixed', text: 'Theme Editor, Janitor Colors and Map Markers windows drag by touch and can no longer be dragged off screen; Janitor Colors opens fully on screen on phones' },
+                { type: 'fixed', text: 'Saved-brushes menu always opens inside the screen on phones, including from the compact 🖌️ button, and swiping the compact 🖌️ button also cycles brushes' },
+                { type: 'added', text: 'Hover Labels: long-press a menu button on touch screens to see its label' },
+                { type: 'changed', text: 'Guild Panel now uses the same look as Ghost++ and Janitor Colors and follows the GeoPixels++ light/dark theme live' },
+                { type: 'fixed', text: 'Long-pressing a map control button on touch screens no longer selects its label text or opens the copy/share bar' },
+            ]
+        },
         {
             version: '2.19.1',
             date: '2026-10-08',

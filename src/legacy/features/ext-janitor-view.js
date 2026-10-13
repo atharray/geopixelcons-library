@@ -604,25 +604,6 @@
         area.focus();
     }
 
-    function jcMakeDraggable(panel, handle) {
-        handle.addEventListener('mousedown', (e) => {
-            if (e.target.closest('button')) return;
-            const rect = panel.getBoundingClientRect();
-            const dx = e.clientX - rect.left, dy = e.clientY - rect.top;
-            const move = (ev) => {
-                panel.style.left = Math.max(0, Math.min(window.innerWidth - 60, ev.clientX - dx)) + 'px';
-                panel.style.top = Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - dy)) + 'px';
-            };
-            const up = () => {
-                document.removeEventListener('mousemove', move);
-                document.removeEventListener('mouseup', up);
-            };
-            document.addEventListener('mousemove', move);
-            document.addEventListener('mouseup', up);
-            e.preventDefault();
-        });
-    }
-
     function jcClosePanel() {
         const panel = document.getElementById(JC_PANEL_ID);
         if (panel) panel.remove();
@@ -1005,7 +986,8 @@
             if (st && st.rendered < st.shown.length && list.scrollTop + list.clientHeight > list.scrollHeight - 160) st.more(JC_BATCH);
         }, { passive: true });
         document.body.appendChild(panel);
-        jcMakeDraggable(panel, head);
+        // Touch and mouse drag, kept on screen; the open-time clamp keeps it fully visible on phones.
+        gpcMakeDraggablePanel(panel, head);
 
         let timer = null;
         jcMoveHandler = () => {

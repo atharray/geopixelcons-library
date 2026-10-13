@@ -31,7 +31,7 @@ test('publishes the library bridge when @require wraps the source', () => {
 test('keeps the legacy application behind the boot boundary', () => {
     assert.match(artifact, /function boot\(\)/);
     assert.match(artifact, /FEATURE: Ghost Template Manager/);
-    assert.match(artifact, /const VERSION = '2\.19\.1';/);
+    assert.match(artifact, /const VERSION = '2\.20\.0';/);
     const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const versionPattern = new RegExp(`const LIBRARY_VERSION = '${escapedVersion}'; // x-release-please-version`);
     assert.match(artifact, versionPattern);
@@ -411,4 +411,17 @@ test('gives every Blocked User List element a gpp- prefixed id', () => {
 
     assert.match(source, /const MODAL_ID\s*=\s*'gpp-blocked-users-modal'/);
     assert.match(source, /const HOVER_BTN_ID\s*=\s*'gpp-blocked-users-hover-btn'/);
+});
+
+test('region selection tools use pointer events with touch-safe cancel', () => {
+    const highscoreSource = readFileSync(new URL('../src/legacy/features/regions-highscore.js', import.meta.url), 'utf8');
+    for (const source of [regionScreenshotSource, highscoreSource]) {
+        assert.match(source, /addEventListener\('pointerdown', handlePointerDown\)/);
+        assert.match(source, /addEventListener\('pointercancel', handlePointerCancel\)/);
+        assert.match(source, /e\.pointerId !== activePointerId/);
+        assert.match(source, /m\.getContainer\(\)\.style\.touchAction = 'none'/);
+        assert.doesNotMatch(source, /addEventListener\('mouse(down|move|up)'/);
+    }
+    assert.match(regionScreenshotSource, /id = 'gpp-region-screenshot-cancel'/);
+    assert.match(highscoreSource, /id = 'gpp-regions-highscore-cancel'/);
 });

@@ -1550,6 +1550,85 @@ function buildDriverScript() {
     L.push('    return "ArrowLeft/Right/Up/Down nudge the focused template by one cell, and E enters the same click-to-place capture as the Place button";');
     L.push('  });');
     L.push('');
+    // ---- item placement.mobile-set-and-cancel ----
+    // Mobile placement (issue #80): a touch/pen press on Place hides the
+    // Ghost++ modal and shows the Set position / Cancel bar, a tap moves the
+    // preview without committing, a one-finger drag that starts on the
+    // footprint moves it (and the map never sees those pointer events), Set
+    // position commits and restores the modal, and Cancel restores the modal
+    // leaving the original position untouched. Only runs in the mobile pass.
+    L.push('  if (FIXTURE_MOBILE) {');
+    L.push('    await step("placement.mobile-set-and-cancel", async function() {');
+    L.push('      function liveT() { return gppState.templates.find(function(t) { return t.id === template.id; }); }');
+    L.push('      var modal = document.getElementById(GPP_IDS.modal);');
+    L.push('      if (!modal || modal.classList.contains("gpp-hidden")) document.getElementById(GPP_IDS.opener).click();');
+    L.push('      if (!await waitFor(function() { var m = document.getElementById(GPP_IDS.modal); return m && !m.classList.contains("gpp-hidden"); }, 3000)) throw new Error("test setup: modal did not open for the mobile placement check");');
+    L.push('      await gppState.focusTemplate(template.id);');
+    L.push('      var live = liveT();');
+    L.push('      live.locked = false;');
+    L.push('      live.position = { gridX: 10, gridY: 10 };');
+    L.push('      await gppState.persistTemplateState(live);');
+    L.push('      var mapBox = __mapShellEl.getBoundingClientRect();');
+    L.push('      var probeCount = 0;');
+    L.push('      function probe() { probeCount++; }');
+    L.push('      __mapShellEl.addEventListener("pointerdown", probe);');
+    L.push('      __mapShellEl.addEventListener("pointermove", probe);');
+    L.push('      __mapShellEl.addEventListener("pointerup", probe);');
+    L.push('      function ptr(type, id, x, y) { return new PointerEvent(type, { bubbles: true, cancelable: true, button: -1, pointerId: id, pointerType: "touch", isPrimary: true, clientX: x, clientY: y }); }');
+    L.push('      function cellAt(x, y) { return gppMapClientPointToGrid(map, turf, gppReadGridConstants(), x, y); }');
+    L.push('      function footprint() { return gppRendererProjectTemplate(map, turf, gppReadGridConstants(), liveT()); }');
+    L.push('      function insideFootprint(x, y) { var fp = footprint(); if (!fp) return false; return x >= Math.min(fp.x, fp.x + fp.width) - 12 && x <= Math.max(fp.x, fp.x + fp.width) + 12 && y >= Math.min(fp.y, fp.y + fp.height) - 12 && y <= Math.max(fp.y, fp.y + fp.height) + 12; }');
+    L.push('      function pickTapPoint() { var corners = [[20, 20], [mapBox.width - 20, 20], [20, mapBox.height - 20], [mapBox.width - 20, mapBox.height - 20]]; for (var i = 0; i < corners.length; i++) { var x = mapBox.left + corners[i][0], y = mapBox.top + corners[i][1]; if (!insideFootprint(x - mapBox.left, y - mapBox.top)) return { x: x, y: y }; } throw new Error("test setup: every candidate tap point is inside the template footprint"); }');
+    L.push('      function tapAt(x, y, id) { __mapShellEl.dispatchEvent(ptr("pointerdown", id, x, y)); __mapShellEl.dispatchEvent(ptr("pointerup", id, x, y)); __mapShellEl.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: x, clientY: y })); }');
+    L.push('      function placeWithTouch() { document.getElementById("gpp-pt-place").dispatchEvent(new PointerEvent("click", { bubbles: true, cancelable: true, button: 0, pointerType: "touch", isPrimary: true })); }');
+    L.push('      placeWithTouch();');
+    L.push('      if (!modal.classList.contains("gpp-hidden")) throw new Error("REGRESSION: a touch Place press did not hide the Ghost++ modal");');
+    L.push('      if (!document.getElementById("gpp-place-bar")) throw new Error("a touch Place press did not show the Set position / Cancel bar");');
+    L.push('      if (gppPlacementCaptureCleanup === null) throw new Error("a touch Place press did not start a placement capture");');
+    L.push('      if (!gppPlacementPreview || gppPlacementPreview.templateId !== template.id) throw new Error("a touch Place press did not show the preview on the map");');
+    L.push('      var originalPosition = { gridX: liveT().position.gridX, gridY: liveT().position.gridY };');
+    L.push('      var tap = pickTapPoint();');
+    L.push('      tapAt(tap.x, tap.y, 71);');
+    L.push('      var tapCell = cellAt(tap.x, tap.y);');
+    L.push('      if (!gppPlacementPreview || gppPlacementPreview.position.gridX !== tapCell.gridX || gppPlacementPreview.position.gridY !== tapCell.gridY) throw new Error("a tap did not move the preview to the tapped cell: expected " + JSON.stringify(tapCell) + " got " + JSON.stringify(gppPlacementPreview && gppPlacementPreview.position));');
+    L.push('      if (liveT().position.gridX !== originalPosition.gridX || liveT().position.gridY !== originalPosition.gridY) throw new Error("REGRESSION: a tap committed the position before Set position was pressed");');
+    L.push('      var fpNow = footprint();');
+    L.push('      var sx = mapBox.left + fpNow.x + fpNow.width / 2, sy = mapBox.top + fpNow.y + fpNow.height / 2;');
+    L.push('      var startCell = cellAt(sx, sy);');
+    L.push('      var base = { gridX: gppPlacementPreview.position.gridX, gridY: gppPlacementPreview.position.gridY };');
+    L.push('      var probeBeforeDrag = probeCount;');
+    L.push('      __mapShellEl.dispatchEvent(ptr("pointerdown", 72, sx, sy));');
+    L.push('      var endX = sx + 3 * gridSize * MAP_SCALE, endY = sy;');
+    L.push('      __mapShellEl.dispatchEvent(ptr("pointermove", 72, endX, endY));');
+    L.push('      __mapShellEl.dispatchEvent(ptr("pointerup", 72, endX, endY));');
+    L.push('      var endCell = cellAt(endX, endY);');
+    L.push('      var expectedDrag = { gridX: base.gridX + endCell.gridX - startCell.gridX, gridY: base.gridY + endCell.gridY - startCell.gridY };');
+    L.push('      if (expectedDrag.gridX === base.gridX && expectedDrag.gridY === base.gridY) throw new Error("test setup: the drag did not move far enough to change the cell");');
+    L.push('      if (!gppPlacementPreview || gppPlacementPreview.position.gridX !== expectedDrag.gridX || gppPlacementPreview.position.gridY !== expectedDrag.gridY) throw new Error("dragging the preview did not move it by the drag distance: expected " + JSON.stringify(expectedDrag) + " got " + JSON.stringify(gppPlacementPreview && gppPlacementPreview.position));');
+    L.push('      if (probeCount !== probeBeforeDrag) throw new Error("REGRESSION: the map received pointer events for a press that started on the template footprint (it would pan)");');
+    L.push('      var finalPosition = { gridX: gppPlacementPreview.position.gridX, gridY: gppPlacementPreview.position.gridY };');
+    L.push('      document.getElementById("gpp-place-bar-set").click();');
+    L.push('      if (document.getElementById("gpp-place-bar")) throw new Error("Set position did not remove the placement bar");');
+    L.push('      if (gppPlacementCaptureCleanup !== null) throw new Error("Set position did not end the placement capture");');
+    L.push('      if (modal.classList.contains("gpp-hidden")) throw new Error("REGRESSION: Set position did not restore the Ghost++ modal");');
+    L.push('      var committed = await waitFor(function() { var p = liveT().position; return p && p.gridX === finalPosition.gridX && p.gridY === finalPosition.gridY; }, 3000);');
+    L.push('      if (!committed) throw new Error("Set position did not commit the previewed cell: expected " + JSON.stringify(finalPosition) + " got " + JSON.stringify(liveT().position));');
+    L.push('      placeWithTouch();');
+    L.push('      if (!modal.classList.contains("gpp-hidden")) throw new Error("a second touch Place press did not hide the modal");');
+    L.push('      var tap2 = pickTapPoint();');
+    L.push('      tapAt(tap2.x, tap2.y, 73);');
+    L.push('      document.getElementById("gpp-place-bar-cancel").click();');
+    L.push('      if (document.getElementById("gpp-place-bar")) throw new Error("Cancel did not remove the placement bar");');
+    L.push('      if (gppPlacementCaptureCleanup !== null || gppPlacementPreview !== null) throw new Error("Cancel did not end the placement capture and clear its preview");');
+    L.push('      if (modal.classList.contains("gpp-hidden")) throw new Error("REGRESSION: Cancel did not restore the Ghost++ modal");');
+    L.push('      if (liveT().position.gridX !== finalPosition.gridX || liveT().position.gridY !== finalPosition.gridY) throw new Error("REGRESSION: Cancel changed the template position (it should keep the last committed one)");');
+    L.push('      __mapShellEl.removeEventListener("pointerdown", probe);');
+    L.push('      __mapShellEl.removeEventListener("pointermove", probe);');
+    L.push('      __mapShellEl.removeEventListener("pointerup", probe);');
+    L.push('      return "a touch Place press hides the modal and shows the Set position / Cancel bar, a tap moves the preview without committing, a drag starting on the footprint moves it without reaching the map, Set position commits and restores the modal, and Cancel restores the modal and keeps the committed position";');
+    L.push('    });');
+    L.push('  }');
+    L.push('');
     // ---- item manage.grid-thumb-full-res ----
     // Manage Templates grid cards used to draw from gppLibraryEnsureThumb's
     // bounded/downsampled cache into a fixed 92x92 canvas; they now use
@@ -2013,6 +2092,87 @@ function buildDriverScript() {
     L.push('    return "the left panel\'s own header (.gpp-head) now spans the true full panel width on both edges, flush to gpp-panel-splitter, instead of stopping ~27px short due to gpp-modal-left\'s own horizontal padding plus its redundant scrollbar-gutter reservation; each collapsible section\'s border-top divider reaches the left edge exactly and stops only the expected, deliberate scrollbar-gutter width short on the right (#gpp-left-body\'s own reservation, kept on purpose)";');
     L.push('  });');
     L.push('');
+    // ---- item palette.pointer-drag-toggles-swatches ----
+    // Regression guard for the Pointer Events drag-to-toggle in gpp-palette.js
+    // (issue #79). A touch drag that moves sideways must toggle every swatch
+    // the finger passes over (resolved with elementFromPoint, because touch
+    // pointermoves keep targeting the element the finger went down on); a
+    // mostly-vertical touch move is a scroll and must paint nothing; mouse
+    // left-drag enables and right-drag disables, and right-drag still
+    // suppresses the native context menu. Synthetic PointerEvents, placed in
+    // a fixed, top-most host so elementFromPoint hits the real swatches.
+    L.push('  await step("palette.pointer-drag-toggles-swatches", async function() {');
+    L.push('    var noop = function() {};');
+    L.push('    var live = gppState.templates.find(function(t) { return t.id === template.id; });');
+    L.push('    var host = document.createElement("div");');
+    L.push('    host.style.cssText = "position:fixed;left:0;top:0;width:300px;z-index:2147483647;background:#fff;";');
+    L.push('    document.body.appendChild(host);');
+    L.push('    function setMask(allOn) { for (var i = 0; i < live.palette.length; i++) core.maskSet(live.mask, i, allOn); }');
+    L.push('    function renderFresh(allOn) {');
+    L.push('      setMask(allOn);');
+    L.push('      gppRenderPalette(host, live, noop);');
+    L.push('      return Array.from(host.querySelectorAll(".gpp-swatch"));');
+    L.push('    }');
+    L.push('    function centerOf(el) { var r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }');
+    L.push('    function fire(target, type, pt, init) {');
+    L.push('      var opts = Object.assign({ bubbles: true, cancelable: true, isPrimary: true, pointerId: 91, clientX: pt.x, clientY: pt.y }, init);');
+    L.push('      target.dispatchEvent(new PointerEvent(type, opts));');
+    L.push('    }');
+    L.push('    var touch = { pointerType: "touch", button: 0, buttons: 1 };');
+    L.push('    var touchEnd = { pointerType: "touch", button: 0, buttons: 0 };');
+    L.push('    var mouseLeft = { pointerType: "mouse", button: 0, buttons: 1 };');
+    L.push('    var mouseLeftEnd = { pointerType: "mouse", button: 0, buttons: 0 };');
+    L.push('    var mouseRight = { pointerType: "mouse", button: 2, buttons: 2 };');
+    L.push('    var mouseRightEnd = { pointerType: "mouse", button: 2, buttons: 0 };');
+    L.push('');
+    L.push('    var sw = renderFresh(false);');
+    L.push('    if (sw.length < 2) throw new Error("test setup: need at least 2 palette swatches, got " + sw.length);');
+    L.push('    var pa = centerOf(sw[0]), pb = centerOf(sw[1]);');
+    L.push('    if (Math.abs(pa.y - pb.y) > 2) throw new Error("test setup: expected the first two swatches on one row for a sideways drag");');
+    L.push('    var idxA = Number(sw[0].dataset.colorIndex), idxB = Number(sw[1].dataset.colorIndex);');
+    L.push('');
+    L.push('    // Touch, sideways: the finger passes over both swatches and both must turn on.');
+    L.push('    fire(sw[0], "pointerdown", pa, touch);');
+    L.push('    fire(sw[0], "pointermove", { x: pa.x + 12, y: pa.y }, touch);');
+    L.push('    fire(sw[0], "pointermove", pb, touch);');
+    L.push('    fire(document, "pointerup", pb, touchEnd);');
+    L.push('    if (!core.maskHas(live.mask, idxA) || !core.maskHas(live.mask, idxB)) throw new Error("REGRESSION: a sideways touch drag did not enable every swatch it passed over, mask=" + JSON.stringify(Array.from(live.mask)));');
+    L.push('');
+    L.push('    // Touch, vertical: a scroll gesture must not paint anything.');
+    L.push('    sw = renderFresh(false);');
+    L.push('    pa = centerOf(sw[0]); pb = centerOf(sw[1]);');
+    L.push('    fire(sw[0], "pointerdown", pa, touch);');
+    L.push('    fire(sw[0], "pointermove", { x: pa.x, y: pa.y + 30 }, touch);');
+    L.push('    fire(sw[0], "pointermove", pb, touch);');
+    L.push('    fire(document, "pointerup", pb, touchEnd);');
+    L.push('    if (core.maskHas(live.mask, idxA) || core.maskHas(live.mask, idxB)) throw new Error("REGRESSION: a vertical touch move (a scroll) toggled swatches, mask=" + JSON.stringify(Array.from(live.mask)));');
+    L.push('');
+    L.push('    // Mouse left-drag: enables every swatch passed over, same as before.');
+    L.push('    sw = renderFresh(false);');
+    L.push('    pa = centerOf(sw[0]); pb = centerOf(sw[1]);');
+    L.push('    fire(sw[0], "pointerdown", pa, mouseLeft);');
+    L.push('    fire(sw[1], "pointermove", pb, mouseLeft);');
+    L.push('    fire(document, "pointerup", pb, mouseLeftEnd);');
+    L.push('    if (!core.maskHas(live.mask, idxA) || !core.maskHas(live.mask, idxB)) throw new Error("REGRESSION: mouse left-drag no longer enables every swatch passed over, mask=" + JSON.stringify(Array.from(live.mask)));');
+    L.push('');
+    L.push('    // Mouse right-drag: disables every swatch passed over, and still suppresses the context menu.');
+    L.push('    sw = renderFresh(true);');
+    L.push('    pa = centerOf(sw[0]); pb = centerOf(sw[1]);');
+    L.push('    fire(sw[0], "pointerdown", pa, mouseRight);');
+    L.push('    fire(sw[1], "pointermove", pb, mouseRight);');
+    L.push('    fire(document, "pointerup", pb, mouseRightEnd);');
+    L.push('    var menu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });');
+    L.push('    sw[1].dispatchEvent(menu);');
+    L.push('    if (core.maskHas(live.mask, idxA) || core.maskHas(live.mask, idxB)) throw new Error("REGRESSION: mouse right-drag no longer disables every swatch passed over, mask=" + JSON.stringify(Array.from(live.mask)));');
+    L.push('    if (!menu.defaultPrevented) throw new Error("REGRESSION: right-drag over a swatch no longer suppresses the native context menu");');
+    L.push('');
+    L.push('    live.mask = core.makeFullMask(live.palette.length, live.counts);');
+    L.push('    await gppState.persistTemplateState(live);');
+    L.push('    host.remove();');
+    L.push('    return "Ghost++ palette drag-to-toggle works with pointer events: a sideways touch drag toggles every swatch it passes over (resolved by coordinates), a vertical touch move paints nothing (scroll), and mouse left-drag enables, right-drag disables and suppresses the context menu";');
+    L.push('  });');
+    L.push('');
+
     // ---- item palette.bulk-rows-and-enable-filtered ----
     // Regression guard for two related UI changes to the palette panel's
     // bulk-action area:

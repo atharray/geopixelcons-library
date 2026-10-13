@@ -376,24 +376,33 @@
 
         let isDragging = false;
         let dragMode = null;    // 'paint' | 'erase'
+        let dragPointerId = null;
 
-        grid.addEventListener('mousedown', (e) => {
+        // Pointer Events cover mouse, pen and touch. Mouse keeps its buttons
+        // (left = paint, right = erase). Touch has no right button, so the
+        // first cell decides the stroke: an inactive cell paints, an active
+        // cell erases. A plain tap therefore toggles the cell.
+        grid.style.touchAction = 'none'; // Finger drags paint instead of scrolling
+
+        grid.addEventListener('pointerdown', (e) => {
             const cell = e.target.closest('[data-x][data-y]');
             if (!cell) return;
-            e.preventDefault(); // Prevent text selection
-            if (e.button === 0) {
-                dragMode = 'paint';
-                isDragging = true;
-                setCellActive(cell, true); // Immediately activate on mousedown
-            } else if (e.button === 2) {
-                dragMode = 'erase';
-                isDragging = true;
-                setCellActive(cell, false); // Right-click immediately erases
+            e.preventDefault(); // Prevent text selection and compat mouse events
+            if (e.pointerType === 'mouse') {
+                if (e.button === 0) dragMode = 'paint';
+                else if (e.button === 2) dragMode = 'erase';
+                else return;
+            } else {
+                dragMode = cell.dataset.active === 'true' ? 'erase' : 'paint';
+                try { grid.setPointerCapture(e.pointerId); } catch (_) { /* synthetic events have no active pointer */ }
             }
+            isDragging = true;
+            dragPointerId = e.pointerId;
+            setCellActive(cell, dragMode === 'paint'); // Immediately apply on pointerdown
         });
 
-        grid.addEventListener('mousemove', (e) => {
-            if (!isDragging || !dragMode) return;
+        grid.addEventListener('pointermove', (e) => {
+            if (!isDragging || e.pointerId !== dragPointerId) return;
             const el = document.elementFromPoint(e.clientX, e.clientY);
             const cell = el ? el.closest('[data-x][data-y]') : null;
             if (!cell) return;
@@ -404,10 +413,14 @@
             e.preventDefault(); // Suppress right-click context menu on the grid
         });
 
-        document.addEventListener('mouseup', () => {
+        function endGridDrag(e) {
+            if (!isDragging || e.pointerId !== dragPointerId) return;
             isDragging = false;
             dragMode = null;
-        });
+            dragPointerId = null;
+        }
+        document.addEventListener('pointerup', endGridDrag);
+        document.addEventListener('pointercancel', endGridDrag);
     }
 
     // ============================================
@@ -478,9 +491,11 @@
     // ============================================
 
     function setupDragReorder(handle, itemEl, fromIdx, container) {
-        handle.addEventListener('mousedown', (e) => {
+        handle.style.touchAction = 'none'; // Finger drags reorder instead of scrolling
+        handle.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            const pointerId = e.pointerId;
 
             const items = Array.from(container.querySelectorAll('[data-brush-idx]'));
             const rects = items.map(el => el.getBoundingClientRect());
@@ -492,6 +507,7 @@
             let indicator = container.querySelector('.brush-swap-drop-indicator');
 
             function onMove(ev) {
+                if (ev.pointerId !== pointerId) return;
                 const y = ev.clientY;
 
                 // Find which slot we're hovering
@@ -519,9 +535,11 @@
                 }
             }
 
-            function onUp() {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
+            function onUp(ev) {
+                if (ev.pointerId !== pointerId) return;
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+                document.removeEventListener('pointercancel', onUp);
                 itemEl.classList.remove('brush-swap-item-dragging');
                 if (indicator) indicator.remove();
 
@@ -538,8 +556,9 @@
                 renderDropdown();
             }
 
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
+            document.addEventListener('pointermove', onMove);
+            document.addEventListener('pointerup', onUp);
+            document.addEventListener('pointercancel', onUp);
         });
     }
 
@@ -976,6 +995,8 @@
         // Clear existing items
         const itemsContainer = dropdown.querySelector('.brush-swap-items');
         itemsContainer.innerHTML = '';
+        // Re-render can detach a hovered preview before its mouseleave fires
+        document.querySelectorAll('.brush-swap-quick-tip').forEach(tip => tip.remove());
 
         if (scriptState.brushes.length === 0) {
             const emptyMsg = document.createElement('div');
@@ -1005,6 +1026,7 @@
             // Fast tooltip that follows mouse
             let prevTip = null;
             previewWrap.addEventListener('mouseenter', (e) => {
+                if (!gppHoverTooltipAllowed()) return; // touch: tap expands, no hover tip
                 prevTip = document.createElement('div');
                 prevTip.className = 'brush-swap-quick-tip';
                 prevTip.textContent = 'click to expand';
@@ -1117,6 +1139,86 @@
         });
     }
 
+    // Keep the open menu fully inside the visible viewport. The menu is anchored to the
+    // toggle button, but the paint bar can sit partly off-screen on phones, so on narrow /
+    // coarse-pointer screens it is positioned fixed from the button's rect, capped to the
+    // room above (or below) the button, and shifted horizontally into view.
+    function fitDropdownToViewport() {
+        const dropdown = document.getElementById('brush-swap-dropdown');
+        const toggleBtn = document.getElementById('brush-swap-toggle');
+        if (!dropdown || !toggleBtn || !scriptState.dropdownOpen) return;
+
+        const M = 8;
+        const vv = window.visualViewport;
+        const minX = vv ? vv.offsetLeft : 0;
+        const minY = vv ? vv.offsetTop : 0;
+        const vw = vv ? vv.width : window.innerWidth;
+        const vh = vv ? vv.height : window.innerHeight;
+        const paintIsTop = localStorage.getItem('gpc-paint-is-top') === 'true';
+        const narrow = vw <= 768 || window.matchMedia('(pointer: coarse)').matches;
+        // Compact paint controls hide the real toggle behind their own 🖌️ button and
+        // move the menu to <body>; anchor to whichever button is actually visible.
+        const compactBtn = document.getElementById('gpc-compact-brush');
+        const compactAnchor = !!(compactBtn && compactBtn.getClientRects().length && compactBtn.style.display !== 'none');
+        const anchorEl = compactAnchor ? compactBtn : toggleBtn;
+        const useFixed = narrow || compactAnchor || dropdown.parentElement === document.body;
+        const btn = anchorEl.getBoundingClientRect();
+
+        let storedW = 300;
+        let storedH = 600;
+        try {
+            const stored = JSON.parse(localStorage.getItem(RESIZE_STORAGE_KEY));
+            if (stored) { storedW = stored.w; storedH = stored.h; }
+        } catch {}
+
+        // Reset the previous shift so every measurement uses the natural position
+        dropdown.style.transform = '';
+        dropdown.style.maxWidth = Math.min(storedW, vw - 2 * M) + 'px';
+        const room = paintIsTop ? (minY + vh - btn.bottom - 2 * M) : (btn.top - minY - 2 * M);
+        const maxH = Math.max(120, Math.min(storedH, room));
+        dropdown.style.maxHeight = maxH + 'px';
+
+        if (useFixed) {
+            dropdown.style.position = 'fixed';
+            dropdown.style.right = 'auto';
+            dropdown.style.bottom = 'auto';
+            dropdown.style.marginTop = '0';
+            dropdown.style.marginBottom = '0';
+            dropdown.style.left = '0px'; // measure the natural width with room to spare
+            dropdown.style.top = '0px';
+            // The paint bar is transformed (translateX, optional scale), which makes it the
+            // containing block for position:fixed. Measure where (0,0) actually lands and the
+            // effective scale, then convert the viewport target into that local frame.
+            const origin = dropdown.getBoundingClientRect();
+            const scale = dropdown.offsetWidth ? (origin.width / dropdown.offsetWidth) || 1 : 1;
+            const h = Math.min(maxH, dropdown.scrollHeight + 2) * scale;
+            const targetTop = paintIsTop ? btn.bottom + M : btn.top - M - h;
+            // The compact button sits left of centre, so its menu opens rightward from it;
+            // the full-size toggle keeps the menu right-aligned to it. Both are clamped below.
+            const targetLeft = compactAnchor ? btn.left : btn.right - origin.width;
+            dropdown.style.top = ((targetTop - origin.top) / scale) + 'px';
+            dropdown.style.left = ((targetLeft - origin.left) / scale) + 'px';
+        } else {
+            // Desktop: same anchoring as before (right-aligned to the button, above or below it)
+            dropdown.style.position = 'absolute';
+            dropdown.style.left = '';
+            dropdown.style.right = '';
+            dropdown.style.top = paintIsTop ? '100%' : 'auto';
+            dropdown.style.bottom = paintIsTop ? 'auto' : '100%';
+            dropdown.style.marginTop = paintIsTop ? '8px' : '0';
+            dropdown.style.marginBottom = paintIsTop ? '0' : '8px';
+        }
+
+        // Horizontal clamp: shift the menu in from whichever edge it crosses
+        const r = dropdown.getBoundingClientRect();
+        let dx = 0;
+        if (r.right > minX + vw - M) dx = minX + vw - M - r.right;
+        if (r.left + dx < minX + M) dx = minX + M - r.left;
+        // translateX is applied in the (possibly scaled) local frame of the paint bar
+        const shiftScale = dropdown.offsetWidth ? (r.width / dropdown.offsetWidth) || 1 : 1;
+        if (dx) dropdown.style.transform = `translateX(${Math.round(dx / shiftScale)}px)`;
+    }
+
     function toggleDropdown() {
         const dropdown = document.getElementById('brush-swap-dropdown');
         if (!dropdown) return;
@@ -1150,9 +1252,11 @@
             } catch {}
             dropdown.classList.add('open');
             renderDropdown();
+            fitDropdownToViewport();
         } else {
             dropdown.classList.remove('open');
             scriptState.isRenaming = null;
+            document.querySelectorAll('.brush-swap-quick-tip').forEach(tip => tip.remove());
         }
     }
 
@@ -1438,6 +1542,21 @@
                 bottom: 2px; right: 2px;
                 border-width: 0 2px 2px 0;
             }
+            /* Touch screens: no hover, so keep the grips visible and large enough to hit */
+            @media (pointer: coarse) {
+                .brush-swap-resize-handle {
+                    width: 32px;
+                    height: 32px;
+                    opacity: 0.5;
+                }
+                .brush-swap-resize-handle::after {
+                    width: 12px;
+                    height: 12px;
+                }
+                .brush-swap-drag-handle {
+                    width: 28px;
+                }
+            }
 
             /* Export/Import footer */
             .brush-swap-footer {
@@ -1536,12 +1655,8 @@
             toastTimer = setTimeout(() => toast.classList.remove('visible'), 900);
         }
 
-        toggleBtn.addEventListener('wheel', (e) => {
-            if (scriptState.brushes.length === 0) return;
-            e.preventDefault();
-            e.stopPropagation();
-
-            const dir = e.deltaY > 0 ? 1 : -1;
+        // Steps to the next (dir 1) or previous (dir -1) saved brush; shared by wheel and touch swipe
+        function stepBrush(dir, x, y) {
             const len = scriptState.brushes.length;
 
             // Initialize index to current brush if not set
@@ -1553,10 +1668,55 @@
 
             const brush = scriptState.brushes[scriptState.scrollIndex];
             applyBrushToEditor(brush);
-            showSwapToast(brush, e.clientX, e.clientY);
+            showSwapToast(brush, x, y);
 
             if (DEBUG) console.log(`Brush Swap: Scrolled to "${brush.name}" (index ${scriptState.scrollIndex})`);
+        }
+
+        toggleBtn.addEventListener('wheel', (e) => {
+            if (scriptState.brushes.length === 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            stepBrush(e.deltaY > 0 ? 1 : -1, e.clientX, e.clientY);
         }, { passive: false });
+
+        // Touch/pen: horizontal swipe on a button steps brushes (left = next, right = previous).
+        // Used for the toggle itself and for compact paint controls' 🖌️ button.
+        const SWIPE_MIN_PX = 24;
+        function attachBrushSwipe(el) {
+            if (!el || el._gpcBrushSwipe) return;
+            el._gpcBrushSwipe = true;
+            el.style.touchAction = 'pan-y';
+            let swipe = null;
+            let swiped = false;
+            el.addEventListener('pointerdown', (e) => {
+                swiped = false;
+                swipe = (e.pointerType === 'touch' || e.pointerType === 'pen')
+                    ? { id: e.pointerId, x: e.clientX, y: e.clientY }
+                    : null;
+            });
+            el.addEventListener('pointerup', (e) => {
+                if (!swipe || e.pointerId !== swipe.id) return;
+                const dx = e.clientX - swipe.x;
+                const dy = e.clientY - swipe.y;
+                swipe = null;
+                if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) <= Math.abs(dy)) return;
+                if (scriptState.brushes.length === 0) return;
+                swiped = true;
+                stepBrush(dx < 0 ? 1 : -1, e.clientX, e.clientY);
+            });
+            el.addEventListener('pointercancel', () => { swipe = null; });
+            // A click synthesized after a swipe must not also open the menu
+            // (capture phase, so it runs before the button's own click handler).
+            el.addEventListener('click', (e) => {
+                if (!swiped) return;
+                swiped = false;
+                e.preventDefault();
+                e.stopImmediatePropagation();
+            }, true);
+        }
+        attachBrushSwipe(toggleBtn);
 
         // Create dropdown container
         const dropdown = document.createElement('div');
@@ -1582,9 +1742,11 @@
         }
 
         function setupResize(handle) {
-            handle.addEventListener('mousedown', (e) => {
+            handle.style.touchAction = 'none'; // Finger drags resize instead of scrolling
+            handle.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                const pointerId = e.pointerId;
                 const startX = e.clientX;
                 const startY = e.clientY;
                 const rect = dropdown.getBoundingClientRect();
@@ -1595,6 +1757,7 @@
                 dropdown.classList.add('brush-swap-resizing');
 
                 const onMove = (ev) => {
+                    if (ev.pointerId !== pointerId) return;
                     const dx = ev.clientX - startX;
                     const dy = ev.clientY - startY;
                     // Top-right: drag up = taller. Bottom-right: drag down = taller.
@@ -1605,18 +1768,22 @@
                     dropdown.style.maxHeight = newH + 'px';
                 };
 
-                const onUp = () => {
+                const onUp = (ev) => {
+                    if (ev.pointerId !== pointerId) return;
                     dropdown.style.userSelect = '';
                     dropdown.classList.remove('brush-swap-resizing');
-                    document.removeEventListener('mousemove', onMove, true);
-                    document.removeEventListener('mouseup', onUp, true);
+                    document.removeEventListener('pointermove', onMove, true);
+                    document.removeEventListener('pointerup', onUp, true);
+                    document.removeEventListener('pointercancel', onUp, true);
                     const r = dropdown.getBoundingClientRect();
                     storedSize = { w: Math.round(r.width), h: Math.round(r.height) };
                     localStorage.setItem(RESIZE_STORAGE_KEY, JSON.stringify(storedSize));
+                    fitDropdownToViewport();
                 };
 
-                document.addEventListener('mousemove', onMove, true);
-                document.addEventListener('mouseup', onUp, true);
+                document.addEventListener('pointermove', onMove, true);
+                document.addEventListener('pointerup', onUp, true);
+                document.addEventListener('pointercancel', onUp, true);
             });
         }
 
@@ -1651,6 +1818,7 @@
             dropdown.style.width = '';
             dropdown.style.maxWidth = '';
             dropdown.style.maxHeight = '';
+            fitDropdownToViewport();
         });
 
         dropdownFooter.appendChild(exportBtn);
@@ -1658,11 +1826,23 @@
         dropdownFooter.appendChild(resetSizeBtn);
         dropdown.appendChild(dropdownFooter);
 
+        // Re-fit the open menu when the viewport changes (rotation, URL bar, zoom, page scroll).
+        // fitDropdownToViewport is a no-op while the menu is closed.
+        window.addEventListener('resize', fitDropdownToViewport);
+        window.addEventListener('orientationchange', fitDropdownToViewport);
+        window.addEventListener('scroll', fitDropdownToViewport, { passive: true });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', fitDropdownToViewport);
+            window.visualViewport.addEventListener('scroll', fitDropdownToViewport);
+        }
+
         // Assemble and insert
         wrapper.appendChild(toggleBtn);
         wrapper.appendChild(dropdown);
 
         // Insert after commitBtn
+        // Shared handle declared in hide-paint-menu.js (compact paint controls)
+        gpcBrushSwapApi = { fitDropdown: fitDropdownToViewport, attachSwipe: attachBrushSwipe };
         commitBtn.parentNode.insertBefore(wrapper, commitBtn.nextSibling);
 
         // Close dropdown on click outside
