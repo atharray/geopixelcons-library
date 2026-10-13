@@ -445,6 +445,35 @@
         button.append(chip, hexLabel, progressText, barOuter);
     }
 
+    // Hover tooltips are for mouse/pen hover only. On touch, a tap fires a
+    // synthetic mouseenter on the tapped element but never a matching
+    // mouseleave, so a hover tooltip would stay on screen. Track the last
+    // pointer type (pointerover fires before the synthetic mouseenter) and
+    // skip creating hover tooltips for touch. Shared by every hover tip in the
+    // single program scope (palette, library preview, brush-swap quick tip).
+    let gppLastPointerType = 'mouse';
+    function gppTrackPointerType(event) {
+        gppLastPointerType = event.pointerType || 'mouse';
+    }
+    function gppHoverTooltipAllowed() {
+        return gppLastPointerType !== 'touch';
+    }
+    // Safety net: remove any visible hover tip on a touch tap or a scroll,
+    // in case its mouseleave never arrives.
+    function gppDismissHoverTips() {
+        gppPaletteHideTooltip();
+        if (typeof gppLibraryHideHoverPreview === 'function') gppLibraryHideHoverPreview();
+        document.querySelectorAll('.brush-swap-quick-tip').forEach(tip => tip.remove());
+    }
+    document.addEventListener('pointerover', gppTrackPointerType, true);
+    document.addEventListener('pointerdown', (event) => {
+        gppTrackPointerType(event);
+        if (event.pointerType === 'touch') gppDismissHoverTips();
+    }, true);
+    document.addEventListener('scroll', () => {
+        if (gppLastPointerType === 'touch') gppDismissHoverTips();
+    }, { capture: true, passive: true });
+
     // ── Custom floating swatch tooltip (mouse-following) ────────────────
     // Replaces the native `title` attribute and the old shared "Hex:"
     // readout row — hovering a swatch shows hex + completed/remaining right
@@ -462,6 +491,7 @@
         return el;
     }
     function gppPaletteShowTooltip(event, hex, stats, hasProgress) {
+        if (!gppHoverTooltipAllowed()) return;
         const el = gppPaletteEnsureTooltipEl();
         const hexLine = document.createElement('div');
         hexLine.className = 'gpp-palette-tooltip-hex';

@@ -976,6 +976,8 @@
         // Clear existing items
         const itemsContainer = dropdown.querySelector('.brush-swap-items');
         itemsContainer.innerHTML = '';
+        // Re-render can detach a hovered preview before its mouseleave fires
+        document.querySelectorAll('.brush-swap-quick-tip').forEach(tip => tip.remove());
 
         if (scriptState.brushes.length === 0) {
             const emptyMsg = document.createElement('div');
@@ -1005,6 +1007,7 @@
             // Fast tooltip that follows mouse
             let prevTip = null;
             previewWrap.addEventListener('mouseenter', (e) => {
+                if (!gppHoverTooltipAllowed()) return; // touch: tap expands, no hover tip
                 prevTip = document.createElement('div');
                 prevTip.className = 'brush-swap-quick-tip';
                 prevTip.textContent = 'click to expand';
@@ -1153,6 +1156,7 @@
         } else {
             dropdown.classList.remove('open');
             scriptState.isRenaming = null;
+            document.querySelectorAll('.brush-swap-quick-tip').forEach(tip => tip.remove());
         }
     }
 

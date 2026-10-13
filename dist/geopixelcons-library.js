@@ -1,4 +1,4 @@
-/* GeoPixelcons Library v2.19.0 - readable release bundle */
+/* GeoPixelcons Library v2.19.1 - readable release bundle */
 /* The legacy program is intentionally evaluated only when the shell calls boot(). */
 var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     const LIBRARY_VERSION = '2.19.1'; // x-release-please-version
@@ -12231,6 +12231,35 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         button.append(chip, hexLabel, progressText, barOuter);
     }
 
+    // Hover tooltips are for mouse/pen hover only. On touch, a tap fires a
+    // synthetic mouseenter on the tapped element but never a matching
+    // mouseleave, so a hover tooltip would stay on screen. Track the last
+    // pointer type (pointerover fires before the synthetic mouseenter) and
+    // skip creating hover tooltips for touch. Shared by every hover tip in the
+    // single program scope (palette, library preview, brush-swap quick tip).
+    let gppLastPointerType = 'mouse';
+    function gppTrackPointerType(event) {
+        gppLastPointerType = event.pointerType || 'mouse';
+    }
+    function gppHoverTooltipAllowed() {
+        return gppLastPointerType !== 'touch';
+    }
+    // Safety net: remove any visible hover tip on a touch tap or a scroll,
+    // in case its mouseleave never arrives.
+    function gppDismissHoverTips() {
+        gppPaletteHideTooltip();
+        if (typeof gppLibraryHideHoverPreview === 'function') gppLibraryHideHoverPreview();
+        document.querySelectorAll('.brush-swap-quick-tip').forEach(tip => tip.remove());
+    }
+    document.addEventListener('pointerover', gppTrackPointerType, true);
+    document.addEventListener('pointerdown', (event) => {
+        gppTrackPointerType(event);
+        if (event.pointerType === 'touch') gppDismissHoverTips();
+    }, true);
+    document.addEventListener('scroll', () => {
+        if (gppLastPointerType === 'touch') gppDismissHoverTips();
+    }, { capture: true, passive: true });
+
     // ── Custom floating swatch tooltip (mouse-following) ────────────────
     // Replaces the native `title` attribute and the old shared "Hex:"
     // readout row — hovering a swatch shows hex + completed/remaining right
@@ -12248,6 +12277,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
         return el;
     }
     function gppPaletteShowTooltip(event, hex, stats, hasProgress) {
+        if (!gppHoverTooltipAllowed()) return;
         const el = gppPaletteEnsureTooltipEl();
         const hexLine = document.createElement('div');
         hexLine.className = 'gpp-palette-tooltip-hex';
@@ -13878,6 +13908,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     }
 
     function gppLibraryShowHoverPreview(event, template) {
+        if (!gppHoverTooltipAllowed()) return; // touch: no hover preview (see gppPaletteShowTooltip)
         const el = gppLibraryEnsureHoverEl();
         // Full/true resolution (not the bounded thumb cache) — a fresh,
         // independent canvas every call, never the cached `.small` node a
@@ -26719,6 +26750,8 @@ patch();
         // Clear existing items
         const itemsContainer = dropdown.querySelector('.brush-swap-items');
         itemsContainer.innerHTML = '';
+        // Re-render can detach a hovered preview before its mouseleave fires
+        document.querySelectorAll('.brush-swap-quick-tip').forEach(tip => tip.remove());
 
         if (scriptState.brushes.length === 0) {
             const emptyMsg = document.createElement('div');
@@ -26748,6 +26781,7 @@ patch();
             // Fast tooltip that follows mouse
             let prevTip = null;
             previewWrap.addEventListener('mouseenter', (e) => {
+                if (!gppHoverTooltipAllowed()) return; // touch: tap expands, no hover tip
                 prevTip = document.createElement('div');
                 prevTip.className = 'brush-swap-quick-tip';
                 prevTip.textContent = 'click to expand';
@@ -26896,6 +26930,7 @@ patch();
         } else {
             dropdown.classList.remove('open');
             scriptState.isRenaming = null;
+            document.querySelectorAll('.brush-swap-quick-tip').forEach(tip => tip.remove());
         }
     }
 
