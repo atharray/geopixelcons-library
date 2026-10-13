@@ -266,6 +266,26 @@
     // Theme-aware colors
     function t(light, dark) { return isDarkMode() ? dark : light; }
 
+    // The map control columns are buttons, not text. On touch screens a long
+    // press (including Hover Labels' long-press peek) would otherwise select
+    // a button label and open the browser's copy/share bar. Text fields
+    // inside the columns stay selectable.
+    (function gpcDisableControlsTextSelection() {
+        const id = 'gpp-controls-no-select-style';
+        if (document.getElementById(id)) return;
+        const style = document.createElement('style');
+        style.id = id;
+        style.textContent = `
+            #controls-left, #controls-left *:not(input):not(textarea):not([contenteditable="true"]),
+            #controls-right, #controls-right *:not(input):not(textarea):not([contenteditable="true"]) {
+                -webkit-user-select: none !important;
+                user-select: none !important;
+                -webkit-touch-callout: none !important;
+            }
+        `;
+        (document.head || document.documentElement).appendChild(style);
+    })();
+
     // ============================================================
     //  SHARED FLOATING-PANEL DRAG
     //  Pointer Events so touch and pen drag like the mouse, clamped to
@@ -1560,6 +1580,7 @@
                 { type: 'fixed', text: 'Saved-brushes menu always opens inside the screen on phones' },
                 { type: 'added', text: 'Hover Labels: long-press a menu button on touch screens to see its label' },
                 { type: 'changed', text: 'Guild Panel now uses the same look as Ghost++ and Janitor Colors and follows the GeoPixels++ light/dark theme live' },
+                { type: 'fixed', text: 'Long-pressing a map control button on touch screens no longer selects its label text or opens the copy/share bar' },
             ]
         },
         {
