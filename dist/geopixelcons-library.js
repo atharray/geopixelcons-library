@@ -14,7 +14,7 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
 (function () {
     'use strict';
 
-    const VERSION = '2.19.1';
+    const VERSION = '2.20.0';
 
     // ============================================================
     //  SETTINGS SYSTEM
@@ -1557,6 +1557,22 @@ var GeoPixelconsLibrary = (function createGeoPixelconsLibrary() {
     //  UI: CHANGELOG MODAL
     // ============================================================
     const CHANGELOG = [
+        {
+            version: '2.20.0',
+            date: '2026-10-13',
+            items: [
+                { type: 'fixed', text: 'Guild Panel: opens fully on screen on phones, drags and resizes by touch, stays inside the screen when rotated, and its body scrolls by touch' },
+                { type: 'fixed', text: 'Brush editor: tapping a cell toggles it on touch screens; a finger drag paints or erases depending on the first cell; saved brushes reorder and the brush menu resizes by touch' },
+                { type: 'fixed', text: 'Region Screenshot and Regions Highscore: area selection works with a finger drag, and a Cancel button appears while selecting' },
+                { type: 'fixed', text: 'Ghost++ palette: a sideways finger drag toggles every swatch it passes over; vertical swipes still scroll' },
+                { type: 'added', text: 'Ghost++: on touch screens, Place hides the Ghost++ window so you can tap or drag the template into position, then press Set position or Cancel' },
+                { type: 'fixed', text: 'Hover tooltips (brush preview "click to expand", Ghost++ palette and library previews) no longer stay on screen after a tap' },
+                { type: 'added', text: 'Paint Brush Swap: swipe left or right on the ▲ brushes button to cycle saved brushes on touch screens' },
+                { type: 'fixed', text: 'Theme Editor, Janitor Colors and Map Markers windows drag by touch and can no longer be dragged off screen; Janitor Colors opens fully on screen on phones' },
+                { type: 'fixed', text: 'Saved-brushes menu always opens inside the screen on phones' },
+                { type: 'added', text: 'Hover Labels: long-press a menu button on touch screens to see its label' },
+            ]
+        },
         {
             version: '2.19.1',
             date: '2026-10-08',
