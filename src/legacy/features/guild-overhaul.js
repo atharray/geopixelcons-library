@@ -151,9 +151,79 @@
     }
 
     // --- CSS Styles ---
-    // --- CSS Styles (Tailwind-compatible for geopixels++ dark theme) ---
-    const style = document.createElement('style');
-    style.textContent = `
+    // One stylesheet for the whole Guild Panel, built from the GeoPixels++ theme
+    // (isDarkMode(), the same signal Ghost++ and Janitor Colors use). Every color is
+    // a --gpp-g-* token on :root, so a live theme switch only re-runs
+    // gpcGuildInjectStyle(); inline styles that reference the tokens follow for free.
+    const GPC_GUILD_STYLE_ID = 'gpp-guild-overhaul-style';
+    function gpcGuildInjectStyle() {
+        const t = (l, d) => (isDarkMode() ? d : l);
+        const palette = `
+        :root {
+            --gpp-g-panel: ${t('#ffffff', '#1e1e2e')};
+            --gpp-g-control: ${t('#ffffff', '#11111b')};
+            --gpp-g-header: ${t('#f8fafc', '#181825')};
+            --gpp-g-row: ${t('#ffffff', '#181825')};
+            --gpp-g-row-hover: ${t('#f3f4f6', '#232336')};
+            --gpp-g-text: ${t('#111827', '#f5f5f5')};
+            --gpp-g-muted: ${t('#64748b', '#a6adc8')};
+            --gpp-g-border: ${t('#d1d5db', '#45475a')};
+            --gpp-g-divider: ${t('#e5e7eb', '#313244')};
+            --gpp-g-hover: ${t('#f3f4f6', '#313244')};
+            --gpp-g-accent: ${t('#3b82f6', '#89b4fa')};
+            --gpp-g-accent-hover: ${t('#2563eb', '#74a0f0')};
+            --gpp-g-on-accent: ${t('#ffffff', '#1e1e2e')};
+            --gpp-g-danger: ${t('#dc2626', '#f38ba8')};
+            --gpp-g-danger-hover: ${t('#b91c1c', '#eba0ac')};
+            --gpp-g-danger-line: ${t('#fca5a5', '#7f4a5e')};
+            --gpp-g-success: ${t('#16a34a', '#a6e3a1')};
+            --gpp-g-success-hover: ${t('#15803d', '#94d3a0')};
+            --gpp-g-warn: ${t('#d97706', '#f9e2af')};
+            --gpp-g-purple: ${t('#7c3aed', '#cba6f7')};
+            --gpp-g-purple-hover: ${t('#6d28d9', '#b4a0e0')};
+            --gpp-g-info: ${t('#0284c7', '#89dceb')};
+            --gpp-g-tooltip: ${t('#1f2937', '#11111b')};
+            --gpp-g-tooltip-text: ${t('#f3f4f6', '#f5f5f5')};
+            --gpp-g-shadow: ${t('rgba(15,23,42,.28)', 'rgba(0,0,0,.62)')};
+            --gpp-g-discord: #5865F2;
+            --gpp-coord-base: ${t('97%', '22%')};
+            --gpp-coord-step: ${t('-1%', '1%')};
+        }
+        /* Panel surface and header, per the GeoPixels++ style guide (Ghost++ / Janitor Colors).
+           The ID selector outranks the site's Tailwind dark: variants. */
+        #myGuildPanel.draggable-panel {
+            background: var(--gpp-g-panel) !important;
+            color: var(--gpp-g-text) !important;
+            border-color: var(--gpp-g-border) !important;
+            box-shadow: 0 12px 32px var(--gpp-g-shadow);
+        }
+        .guild-modal-header {
+            background: var(--gpp-g-header);
+            color: var(--gpp-g-text);
+            box-shadow: inset 0 -1px 0 var(--gpp-g-border);
+            font-weight: 700;
+            font-size: 13px;
+        }
+        .guild-modal-header span { font-weight: 700; font-size: 13px; }
+        .guild-modal-header button {
+            background: transparent; border: none; color: inherit; font-size: 14px;
+        }
+        .guild-modal-header button:hover { background: var(--gpp-g-hover); }
+        .guild-modal-resize {
+            background: linear-gradient(135deg, transparent 0 50%, var(--gpp-g-border) 50%);
+        }
+        /* Tabs and inputs injected next to the site's own controls */
+        #myGuildPanel button.text-blue-600 { color: var(--gpp-g-accent) !important; }
+        #myGuildPanel button.text-gray-500 { color: var(--gpp-g-muted) !important; }
+        #myGuildPanel button.border-blue-500 { border-color: var(--gpp-g-accent) !important; }
+        .gpp-guild-input {
+            border: 1px solid var(--gpp-g-border); background: var(--gpp-g-control); color: var(--gpp-g-text);
+        }
+        .gpp-guild-muted { color: var(--gpp-g-muted); }
+        `;
+        let style = document.getElementById(GPC_GUILD_STYLE_ID);
+        if (!style) { style = document.createElement('style'); style.id = GPC_GUILD_STYLE_ID; document.head.appendChild(style); }
+        style.textContent = palette + `
         .guild-modal-header {
             touch-action: none !important;
             -webkit-user-select: none !important;
@@ -171,10 +241,10 @@
         
         /* Use Tailwind CSS variables for dark mode compatibility */
         .guild-message-section {
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
             border-radius: 0.5rem;
             overflow: hidden;
-            background-color: var(--color-white, #fff);
+            background-color: var(--gpp-g-panel);
         }
 
         .guild-message-header {
@@ -182,14 +252,14 @@
             align-items: center;
             justify-content: space-between;
             padding: 0.75rem;
-            background-color: var(--color-gray-50, #f9fafb);
+            background-color: var(--gpp-g-header);
             cursor: pointer;
             user-select: none;
-            color: var(--color-gray-900, #111827);
+            color: var(--gpp-g-text);
         }
 
         .guild-message-header:hover {
-            background-color: var(--color-gray-100, #f3f4f6);
+            background-color: var(--gpp-g-hover);
         }
 
         .guild-message-toggle {
@@ -199,7 +269,7 @@
             text-align: center;
             line-height: 20px;
             font-weight: bold;
-            color: var(--color-gray-500, #6b7280);
+            color: var(--gpp-g-muted);
             transition: transform 0.2s ease;
         }
 
@@ -212,8 +282,8 @@
             overflow: hidden;
             transition: max-height 0.3s ease, padding 0.3s ease;
             padding: 0.75rem;
-            background-color: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background-color: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
         }
 
         .guild-message-content.collapsed {
@@ -234,16 +304,16 @@
         #infoTab.message-collapsed > .grid { display: block; }
         #infoTab.message-collapsed #guildMembersContainer { margin-top: 1rem; }
 
-        .guild-find-btn.visited { background-color: var(--color-purple-500, #a855f7) !important; }
-        .guild-find-btn.visited:hover { background-color: var(--color-purple-600, #9333ea) !important; }
+        .guild-find-btn.visited { background-color: var(--gpp-g-purple) !important; }
+        .guild-find-btn.visited:hover { background-color: var(--gpp-g-purple-hover) !important; }
 
         .xp-changes-section {
             margin-top: 1.5rem;
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
             border-radius: 0.5rem;
             overflow: hidden;
             width: 100%;
-            background-color: var(--color-white, #fff);
+            background-color: var(--gpp-g-panel);
         }
 
         .xp-changes-header {
@@ -251,18 +321,18 @@
             align-items: center;
             justify-content: space-between;
             padding: 0.75rem;
-            background-color: var(--color-gray-100, #f1f5f9);
+            background-color: var(--gpp-g-hover);
             cursor: pointer;
             user-select: none;
             font-weight: 600;
-            color: var(--color-gray-700, #334155);
+            color: var(--gpp-g-text);
         }
-        .xp-changes-header:hover { background-color: var(--color-gray-200, #e2e8f0); }
+        .xp-changes-header:hover { background-color: var(--gpp-g-divider); }
 
         .xp-changes-content { 
             padding: 1rem; 
-            background-color: var(--color-white, #fff); 
-            color: var(--color-gray-900, #111827);
+            background-color: var(--gpp-g-panel); 
+            color: var(--gpp-g-text);
             display: block; 
         }
         .xp-changes-content.hidden { display: none; }
@@ -271,28 +341,31 @@
             width: 100%; 
             border-collapse: collapse; 
             margin-top: 10px;
-            color: var(--color-gray-900, #111827);
+            color: var(--gpp-g-text);
         }
         .daily-brief-table th, .daily-brief-table td { 
-            border: 1px solid var(--color-gray-300, #d1d5db); 
+            border: 1px solid var(--gpp-g-border); 
             padding: 8px; 
             text-align: left; 
         }
         .daily-brief-table th { 
-            background-color: var(--color-gray-100, #f2f2f2);
-            color: var(--color-gray-900, #111827);
+            background-color: var(--gpp-g-hover);
+            color: var(--gpp-g-text);
         }
         .daily-brief-table td {
-            background-color: var(--color-white, #fff);
+            background-color: var(--gpp-g-panel);
         }
 
-        .xp-gain { color: var(--color-green-500, #22c55e); }
-        .xp-loss { color: var(--color-red-500, #ef4444); }
-        .xp-neutral { color: var(--color-gray-500, #94a3b8); }
+        .xp-gain { color: var(--gpp-g-success); }
+        .xp-loss { color: var(--gpp-g-danger); }
+        .xp-neutral { color: var(--gpp-g-muted); }
 
         .user-cell-content { display: flex; flex-direction: column; gap: 2px; }
-        .user-name { font-weight: 500; color: var(--color-gray-900, #111827); }
-        .user-coords { font-size: 13px; }
+        .user-name { font-weight: 500; color: var(--gpp-g-text); }
+        .user-coords {
+            font-size: 13px;
+            background-color: hsl(var(--gpp-coord-h, 120) 50% calc(var(--gpp-coord-base) + var(--gpp-coord-step) * var(--gpp-coord-i, 0)));
+        }
 
         .member-icon-btn {
             display: inline-flex; align-items: center; justify-content: center;
@@ -300,41 +373,41 @@
             transition: background-color 0.2s; margin-left: 4px; border: none;
             background: transparent; padding: 0;
         }
-        .member-icon-btn:hover { background-color: var(--color-gray-100, rgba(0,0,0,0.05)); }
-        .discord-icon { color: #5865F2; }
-        .map-icon { color: var(--color-sky-500, #0ea5e9); }
-        .map-icon.out-of-territory { color: var(--color-red-500, #ef4444); }
-        .map-icon.visited { color: var(--color-purple-500, #a855f7); }
+        .member-icon-btn:hover { background-color: var(--gpp-g-hover); }
+        .discord-icon { color: var(--gpp-g-discord); }
+        .map-icon { color: var(--gpp-g-info); }
+        .map-icon.out-of-territory { color: var(--gpp-g-danger); }
+        .map-icon.visited { color: var(--gpp-g-purple); }
         
         .control-button {
             padding: 6px 12px; 
-            border: 1px solid var(--color-gray-300, #d1d5db); 
-            background: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            border: 1px solid var(--gpp-g-border); 
+            background: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
             border-radius: 4px; 
             cursor: pointer; 
             font-size: 12px; 
             transition: background-color 0.2s;
         }
-        .control-button:hover { background-color: var(--color-gray-100, #f0f0f0); }
+        .control-button:hover { background-color: var(--gpp-g-hover); }
         .control-button.active { 
-            background-color: var(--color-blue-500, #3b82f6); 
-            color: var(--color-white, #fff); 
-            border-color: var(--color-blue-500, #3b82f6); 
+            background-color: var(--gpp-g-accent); 
+            color: var(--gpp-g-on-accent); 
+            border-color: var(--gpp-g-accent); 
         }
         
         .trash-btn {
             background: none; border: none; 
-            color: var(--color-red-500, #ef4444); 
+            color: var(--gpp-g-danger); 
             cursor: pointer;
             padding: 2px 4px; font-size: 12px;
         }
-        .trash-btn:hover { color: var(--color-red-600, #dc2626); }
+        .trash-btn:hover { color: var(--gpp-g-danger-hover); }
         
         .tooltip-popup {
             position: fixed; 
-            background: var(--color-gray-800, #333); 
-            color: var(--color-gray-100, #fff); 
+            background: var(--gpp-g-text); 
+            color: var(--gpp-g-hover); 
             padding: 4px 8px;
             border-radius: 4px; font-size: 12px; z-index: 10000; pointer-events: none;
             opacity: 0; transition: opacity 0.2s;
@@ -342,16 +415,16 @@
         .tooltip-popup.visible { opacity: 1; }
 
         #snapshotIntervalSelect {
-            background-color: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background-color: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
         }
         #snapshotIntervalSelect:hover {
-            border-color: var(--color-blue-500, #3b82f6) !important;
+            border-color: var(--gpp-g-accent) !important;
             box-shadow: 0 0 4px rgba(59, 130, 246, 0.2) !important;
         }
 
         #snapshotIntervalSelect:focus {
-            border-color: var(--color-blue-500, #3b82f6) !important;
+            border-color: var(--gpp-g-accent) !important;
             box-shadow: 0 0 6px rgba(59, 130, 246, 0.3) !important;
             outline: none !important;
         }
@@ -385,8 +458,8 @@
             left: 50%;
             transform: translateX(-50%);
             margin-bottom: 6px;
-            background: var(--color-gray-800, #1f2937);
-            color: var(--color-gray-100, #f3f4f6);
+            background: var(--gpp-g-text);
+            color: var(--gpp-g-hover);
             padding: 4px 8px;
             border-radius: 4px;
             font-size: 11px;
@@ -405,7 +478,7 @@
             left: 50%;
             transform: translateX(-50%);
             border: 5px solid transparent;
-            border-top-color: var(--color-gray-800, #1f2937);
+            border-top-color: var(--gpp-g-text);
         }
 
         .player-marker:hover .player-marker-tooltip {
@@ -429,7 +502,7 @@
             gap: 5px;
             font-size: 12px;
             font-weight: 500;
-            color: var(--color-gray-600, #4b5563);
+            color: var(--gpp-g-text);
             cursor: pointer;
             user-select: none;
         }
@@ -438,7 +511,7 @@
             width: 14px;
             height: 14px;
             cursor: pointer;
-            accent-color: var(--color-blue-500, #3b82f6);
+            accent-color: var(--gpp-g-accent);
         }
 
         /* --- Territory Overlay Styles --- */
@@ -451,8 +524,8 @@
 
         /* Territory Controls Container */
         #territoryControlsContainer {
-            background-color: var(--color-gray-100, #f0f9ff);
-            border: 1px solid var(--color-gray-300, #bae6fd);
+            background-color: var(--gpp-g-hover);
+            border: 1px solid var(--gpp-g-border);
         }
 
         .territory-setting-row {
@@ -465,15 +538,15 @@
         .territory-setting-row label {
             font-size: 13px;
             font-weight: 500;
-            color: var(--color-gray-700, #374151);
+            color: var(--gpp-g-text);
         }
 
         .territory-settings-collapsible {
             width: 100%;
-            border: 1px solid var(--color-gray-300, #d1d5db);
+            border: 1px solid var(--gpp-g-border);
             border-radius: 8px;
             overflow: hidden;
-            background: var(--color-white, #fff);
+            background: var(--gpp-g-panel);
         }
 
         .territory-settings-toggle {
@@ -481,18 +554,18 @@
             align-items: center;
             justify-content: space-between;
             padding: 8px 12px;
-            background: var(--color-gray-100, #f3f4f6);
+            background: var(--gpp-g-hover);
             cursor: pointer;
             user-select: none;
             font-size: 13px;
             font-weight: 600;
-            color: var(--color-blue-500, #3b82f6);
+            color: var(--gpp-g-accent);
             border: none;
             width: 100%;
         }
 
         .territory-settings-toggle:hover {
-            background: var(--color-gray-200, #e5e7eb);
+            background: var(--gpp-g-divider);
         }
 
         .territory-settings-toggle .toggle-arrow {
@@ -509,8 +582,8 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
-            border-top: 1px solid var(--color-gray-200, #e5e7eb);
-            background: var(--color-white, #fff);
+            border-top: 1px solid var(--gpp-g-divider);
+            background: var(--gpp-g-panel);
         }
 
         .territory-settings-content.collapsed {
@@ -518,12 +591,12 @@
         }
 
         .territory-section-divider {
-            border-top: 1px solid var(--color-gray-200, #e5e7eb);
+            border-top: 1px solid var(--gpp-g-divider);
             margin: 2px 0;
             padding-top: 4px;
             font-size: 11px;
             font-weight: 600;
-            color: var(--color-gray-500, #6b7280);
+            color: var(--gpp-g-muted);
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
@@ -542,37 +615,37 @@
         }
 
         .territory-toggle-btn.active {
-            background: var(--color-blue-500, #3b82f6);
-            color: var(--color-white, #fff);
+            background: var(--gpp-g-accent);
+            color: var(--gpp-g-on-accent);
             box-shadow: 0 2px 8px rgba(59,130,246,0.3);
         }
 
         .territory-toggle-btn.inactive {
-            background: var(--color-gray-200, #e5e7eb);
-            color: var(--color-gray-700, #374151);
+            background: var(--gpp-g-divider);
+            color: var(--gpp-g-text);
         }
 
         .territory-toggle-btn.inactive:hover {
-            background: var(--color-gray-300, #d1d5db);
+            background: var(--gpp-g-border);
         }
 
         /* Territory settings inputs */
         .territory-settings-content input[type="color"] {
-            border: 2px solid var(--color-gray-300, #d1d5db);
+            border: 2px solid var(--gpp-g-border);
         }
         .territory-settings-content select {
-            background-color: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
-            border: 1px solid var(--color-gray-300, #d1d5db);
+            background-color: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
+            border: 1px solid var(--gpp-g-border);
         }
         .territory-settings-content input[type="range"] {
-            accent-color: var(--color-blue-500, #3b82f6);
+            accent-color: var(--gpp-g-accent);
         }
 
         /* Info text in territory controls */
         .territory-info-text {
             font-size: 12px;
-            color: var(--color-gray-500, #64748b);
+            color: var(--gpp-g-muted);
         }
 
         /* --- Modal Styling for Dark Mode Compatibility --- */
@@ -591,20 +664,20 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: var(--color-white, #fff);
-            border: 2px solid var(--color-blue-500, #3b82f6);
+            background: var(--gpp-g-panel);
+            border: 2px solid var(--gpp-g-accent);
             border-radius: 8px;
             padding: 20px;
             z-index: 10000;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-            color: var(--color-gray-900, #111827);
+            color: var(--gpp-g-text);
         }
 
         .gmi-modal h3 {
             margin: 0 0 15px 0;
             font-size: 18px;
             font-weight: bold;
-            color: var(--color-gray-900, #111827);
+            color: var(--gpp-g-text);
         }
 
         .gmi-modal-btn {
@@ -612,10 +685,10 @@
             width: 100%;
             padding: 10px;
             margin: 8px 0;
-            border: 1px solid var(--color-gray-300, #d1d5db);
+            border: 1px solid var(--gpp-g-border);
             border-radius: 4px;
-            background: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
             cursor: pointer;
             font-size: 14px;
             transition: background-color 0.2s;
@@ -623,11 +696,11 @@
         }
 
         .gmi-modal-btn:hover {
-            background-color: var(--color-gray-100, #f3f4f6);
+            background-color: var(--gpp-g-hover);
         }
 
         .gmi-modal-btn.danger {
-            color: var(--color-red-500, #ef4444);
+            color: var(--gpp-g-danger);
         }
 
         .gmi-modal-btn.danger:hover {
@@ -635,7 +708,7 @@
         }
 
         .gmi-modal-btn.warning {
-            color: var(--color-yellow-500, #f59e0b);
+            color: var(--gpp-g-warn);
         }
 
         .gmi-modal-btn.warning:hover {
@@ -643,7 +716,7 @@
         }
 
         .gmi-modal-btn.primary {
-            color: var(--color-blue-500, #3b82f6);
+            color: var(--gpp-g-accent);
         }
 
         .gmi-modal-btn.primary:hover {
@@ -652,18 +725,18 @@
 
         .gmi-modal-section {
             padding: 10px;
-            background: var(--color-gray-50, #f9fafb);
+            background: var(--gpp-g-header);
             border-radius: 4px;
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
             margin-bottom: 15px;
         }
 
         .gmi-modal-select {
             padding: 6px 10px;
-            border: 1px solid var(--color-gray-300, #d1d5db);
+            border: 1px solid var(--gpp-g-border);
             border-radius: 4px;
-            background: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
             font-size: 12px;
             cursor: pointer;
         }
@@ -671,7 +744,7 @@
         .gmi-modal-label {
             font-weight: 600;
             font-size: 12px;
-            color: var(--color-gray-700, #374151);
+            color: var(--gpp-g-text);
             user-select: none;
         }
 
@@ -679,16 +752,16 @@
             display: flex;
             align-items: center;
             padding: 8px;
-            border: 2px solid var(--color-gray-300, #d1d5db);
+            border: 2px solid var(--gpp-g-border);
             border-radius: 4px;
-            background: var(--color-white, #fff);
+            background: var(--gpp-g-panel);
             cursor: pointer;
             font-size: 12px;
             transition: all 0.2s;
         }
 
         .gmi-checkbox-option:hover {
-            border-color: var(--color-gray-400, #9ca3af);
+            border-color: var(--gpp-g-border);
         }
 
         .gmi-checkbox-option input[type="checkbox"] {
@@ -696,17 +769,17 @@
             height: 16px;
             margin-right: 8px;
             cursor: pointer;
-            accent-color: var(--color-blue-500, #3b82f6);
+            accent-color: var(--gpp-g-accent);
         }
 
         .gmi-snapshot-list {
             flex: 1;
             overflow-y: auto;
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
             border-radius: 4px;
             padding: 10px;
             margin-bottom: 15px;
-            background: var(--color-gray-50, #f9fafb);
+            background: var(--gpp-g-header);
         }
 
         .gmi-snapshot-item {
@@ -714,26 +787,26 @@
             align-items: center;
             padding: 8px;
             margin: 4px 0;
-            background: var(--color-white, #fff);
+            background: var(--gpp-g-panel);
             border-radius: 4px;
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
             transition: background-color 0.2s, border-color 0.2s;
         }
 
         .gmi-snapshot-item.selected {
             background: rgba(239, 68, 68, 0.1);
-            border-color: var(--color-red-300, #fca5a5);
+            border-color: var(--gpp-g-danger-line);
         }
 
         .gmi-snapshot-item label {
             flex: 1;
             cursor: pointer;
             font-size: 12px;
-            color: var(--color-gray-700, #374151);
+            color: var(--gpp-g-text);
         }
 
         .gmi-snapshot-item.selected label {
-            color: var(--color-red-700, #b91c1c);
+            color: var(--gpp-g-danger);
             text-decoration: line-through;
         }
 
@@ -755,39 +828,39 @@
         }
 
         .gmi-action-btn.danger {
-            background: var(--color-red-500, #dc2626);
-            color: var(--color-white, #fff);
+            background: var(--gpp-g-danger);
+            color: var(--gpp-g-on-accent);
         }
 
         .gmi-action-btn.danger:hover {
-            background: var(--color-red-600, #b91c1c);
+            background: var(--gpp-g-danger-hover);
         }
 
         .gmi-action-btn.primary {
-            background: var(--color-blue-500, #3b82f6);
-            color: var(--color-white, #fff);
+            background: var(--gpp-g-accent);
+            color: var(--gpp-g-on-accent);
         }
 
         .gmi-action-btn.primary:hover {
-            background: var(--color-blue-600, #2563eb);
+            background: var(--gpp-g-accent-hover);
         }
 
         .gmi-action-btn.success {
-            background: var(--color-green-500, #10b981);
-            color: var(--color-white, #fff);
+            background: var(--gpp-g-success);
+            color: var(--gpp-g-on-accent);
         }
 
         .gmi-action-btn.success:hover {
-            background: var(--color-green-600, #059669);
+            background: var(--gpp-g-success-hover);
         }
 
         .gmi-action-btn.neutral {
-            background: var(--color-gray-100, #f3f4f6);
-            color: var(--color-gray-600, #6b7280);
+            background: var(--gpp-g-hover);
+            color: var(--gpp-g-text);
         }
 
         .gmi-action-btn.neutral:hover {
-            background: var(--color-gray-200, #e5e7eb);
+            background: var(--gpp-g-divider);
         }
 
         /* Progress popup */
@@ -796,8 +869,8 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -807,13 +880,13 @@
         }
 
         .gmi-progress-popup p {
-            color: var(--color-gray-700, #374151);
+            color: var(--gpp-g-text);
         }
 
         .gmi-progress-bar-container {
             width: 100%;
             height: 20px;
-            background: var(--color-gray-200, #e5e7eb);
+            background: var(--gpp-g-divider);
             border-radius: 4px;
             margin-top: 10px;
             overflow: hidden;
@@ -821,7 +894,7 @@
 
         .gmi-progress-bar {
             height: 100%;
-            background: var(--color-blue-500, #3b82f6);
+            background: var(--gpp-g-accent);
             transition: width 0.3s;
         }
 
@@ -831,7 +904,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background-color: var(--color-white, #fff);
+            background-color: var(--gpp-g-panel);
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.2);
@@ -845,7 +918,7 @@
 
         .gmi-csv-modal h3 {
             margin: 0 0 10px 0;
-            color: var(--color-gray-800, #1e293b);
+            color: var(--gpp-g-text);
             font-size: 1.25rem;
             font-weight: 600;
         }
@@ -855,14 +928,37 @@
             height: 300px;
             font-family: monospace;
             font-size: 12px;
-            border: 1px solid var(--color-gray-300, #ccc);
+            border: 1px solid var(--gpp-g-border);
             border-radius: 4px;
             resize: vertical;
-            background: var(--color-white, #fff);
-            color: var(--color-gray-900, #111827);
+            background: var(--gpp-g-panel);
+            color: var(--gpp-g-text);
         }
     `;
-    document.head.appendChild(style);
+    }
+    gpcGuildInjectStyle();
+
+    // Live GeoPixels++ theme switch: re-run the stylesheet while the panel is open.
+    let gpcGuildThemeTimer = 0;
+    let gpcGuildLastDark = null;
+    function gpcGuildIsOpen() {
+        const modal = document.getElementById('myGuildModal');
+        if (modal && !modal.classList.contains('hidden')) return true;
+        return !!document.querySelector('.gmi-modal-overlay, .gmi-csv-modal, .gmi-progress-popup');
+    }
+    function gpcGuildStartThemeWatch() {
+        gpcGuildLastDark = isDarkMode();
+        if (gpcGuildThemeTimer) return;
+        gpcGuildThemeTimer = setInterval(() => {
+            if (!gpcGuildIsOpen()) {
+                clearInterval(gpcGuildThemeTimer);
+                gpcGuildThemeTimer = 0;
+                return;
+            }
+            const dark = isDarkMode();
+            if (dark !== gpcGuildLastDark) { gpcGuildLastDark = dark; gpcGuildInjectStyle(); }
+        }, 1000);
+    }
 
     // --- Helper Functions ---
 
@@ -1189,12 +1285,12 @@
         const jsonString = JSON.stringify(allUsersData, null, 2);
         navigator.clipboard.writeText(jsonString).then(() => {
             progressDiv.innerHTML = `
-                <p style="font-weight: bold; color: #10b981; margin-bottom: 5px;">✓ Success!</p>
-                <p style="font-size: 14px; color: #666;">Fetched: ${successCount} users<br>Failed: ${failCount} users<br><br><strong>JSON copied to clipboard!</strong></p>
+                <p style="font-weight: bold; color: var(--gpp-g-success); margin-bottom: 5px;">✓ Success!</p>
+                <p style="font-size: 14px; color: var(--gpp-g-muted);">Fetched: ${successCount} users<br>Failed: ${failCount} users<br><br><strong>JSON copied to clipboard!</strong></p>
             `;
             setTimeout(() => progressDiv.remove(), 3000);
         }).catch((err) => {
-            progressDiv.innerHTML = `<p style="font-weight: bold; color: #dc2626;">Error copying to clipboard!</p><p style="font-size: 12px; color: #666;">${err.message}</p>`;
+            progressDiv.innerHTML = `<p style="font-weight: bold; color: var(--gpp-g-danger);">Error copying to clipboard!</p><p style="font-size: 12px; color: var(--gpp-g-muted);">${err.message}</p>`;
             setTimeout(() => progressDiv.remove(), 3000);
         });
 
@@ -1230,27 +1326,21 @@
     }
 
     function getCoordinateColor(coords) {
-        if (!coords || coords.length < 2) return { bg: '#f3f4f6', text: '#1f2937' };
+        if (!coords || coords.length < 2) return { hue: 0, intensity: 0 };
         const x = coords[0];
         const y = coords[1];
         const distance = Math.sqrt(x * x + y * y);
         const distanceBand = Math.floor(distance / 25000);
         
-        let baseColor;
-        if (x >= 0 && y >= 0) {
-            const intensity = Math.min(distanceBand * 3, 15);
-            baseColor = `hsl(120, 50%, ${97 - intensity}%)`;
-        } else if (x < 0 && y >= 0) {
-            const intensity = Math.min(distanceBand * 3, 15);
-            baseColor = `hsl(0, 50%, ${97 - intensity}%)`;
-        } else if (x < 0 && y < 0) {
-            const intensity = Math.min(distanceBand * 3, 15);
-            baseColor = `hsl(240, 50%, ${97 - intensity}%)`;
-        } else {
-            const intensity = Math.min(distanceBand * 3, 15);
-            baseColor = `hsl(30, 50%, ${97 - intensity}%)`;
-        }
-        return { bg: baseColor, text: '#1f2937' };
+        // Hue by quadrant; the chip's lightness is set by the theme tokens in
+        // .user-coords (light: 97% fading with distance, dark: 22% rising with it).
+        const intensity = Math.min(distanceBand * 3, 15);
+        let hue;
+        if (x >= 0 && y >= 0) hue = 120;
+        else if (x < 0 && y >= 0) hue = 0;
+        else if (x < 0 && y < 0) hue = 240;
+        else hue = 30;
+        return { hue, intensity };
     }
 
     // --- XP Changes Section ---
@@ -1308,8 +1398,7 @@
             xpTabPane.classList.remove('hidden');
             xpTabBtn.classList.remove('text-gray-500', 'border-transparent');
             xpTabBtn.classList.add('text-blue-600', 'border-blue-500');
-            xpTabBtn.style.borderBottom = '2px solid #3b82f6';
-            xpTabBtn.style.color = '#3b82f6';
+            xpTabBtn.style.borderBottom = '2px solid var(--gpp-g-accent)';
             renderXPChanges(xpTabPane);
         };
 
@@ -1648,7 +1737,7 @@
         const delete7DaysBtn = document.createElement('button');
         delete7DaysBtn.innerHTML = 'Select Snapshots Older Than 7 Days for Deletion';
         delete7DaysBtn.className = 'gmi-modal-btn';
-        delete7DaysBtn.style.color = 'var(--color-purple-500, #8b5cf6)';
+        delete7DaysBtn.style.color = 'var(--gpp-g-purple)';
         delete7DaysBtn.onclick = () => {
             const result = deleteHistoryOlderThan7Days();
             if (result !== null) {
@@ -1661,7 +1750,7 @@
         cancelBtn.innerHTML = 'Cancel';
         cancelBtn.className = 'gmi-modal-btn';
         cancelBtn.style.marginTop = '15px';
-        cancelBtn.style.borderTop = '1px solid var(--color-gray-300, #ddd)';
+        cancelBtn.style.borderTop = '1px solid var(--gpp-g-border)';
         cancelBtn.style.paddingTop = '15px';
         cancelBtn.onclick = () => {
             overlay.remove();
@@ -1772,7 +1861,7 @@
 
         // Header
         const header = document.createElement('div');
-        header.style.cssText = 'margin-bottom: 15px; border-bottom: 2px solid var(--color-gray-200, #e5e7eb); padding-bottom: 10px;';
+        header.style.cssText = 'margin-bottom: 15px; border-bottom: 2px solid var(--gpp-g-divider); padding-bottom: 10px;';
 
         const title = document.createElement('h3');
         title.textContent = 'Manage Snapshots';
@@ -1780,7 +1869,7 @@
 
         const info = document.createElement('p');
         info.textContent = `Total snapshots: ${history.length}`;
-        info.style.cssText = 'margin: 0; font-size: 12px; color: var(--color-gray-500, #6b7280);';
+        info.style.cssText = 'margin: 0; font-size: 12px; color: var(--gpp-g-muted);';
         header.appendChild(info);
 
         modal.appendChild(header);
@@ -1793,9 +1882,9 @@
             gap: 10px;
             margin-bottom: 15px;
             padding: 10px;
-            background: #f9fafb;
+            background: var(--gpp-g-header);
             border-radius: 4px;
-            border: 1px solid var(--color-gray-200, #e5e7eb);
+            border: 1px solid var(--gpp-g-divider);
         `;
 
         const maxLabel = document.createElement('label');
@@ -1845,12 +1934,12 @@
         intervalSelect.className = 'gmi-modal-select';
         intervalSelect.style.cssText = `
             padding: 8px 12px;
-            border: 2px solid #d1d5db;
+            border: 2px solid var(--gpp-g-border);
             border-radius: 6px;
-            background: white;
+            background: var(--gpp-g-control);
             font-size: 13px;
             cursor: pointer;
-            color: #374151;
+            color: var(--gpp-g-text);
             transition: all 0.2s ease;
             font-weight: 500;
             max-width: 280px;
@@ -1858,21 +1947,21 @@
         
         // Add hover and focus styles through a style tag
         intervalSelect.onmouseover = () => {
-            intervalSelect.style.borderColor = '#3b82f6';
+            intervalSelect.style.borderColor = 'var(--gpp-g-accent)';
             intervalSelect.style.boxShadow = '0 0 4px rgba(59, 130, 246, 0.2)';
         };
         intervalSelect.onmouseout = () => {
             if (document.activeElement !== intervalSelect) {
-                intervalSelect.style.borderColor = '#d1d5db';
+                intervalSelect.style.borderColor = 'var(--gpp-g-border)';
                 intervalSelect.style.boxShadow = 'none';
             }
         };
         intervalSelect.onfocus = () => {
-            intervalSelect.style.borderColor = '#3b82f6';
+            intervalSelect.style.borderColor = 'var(--gpp-g-accent)';
             intervalSelect.style.boxShadow = '0 0 6px rgba(59, 130, 246, 0.3)';
         };
         intervalSelect.onblur = () => {
-            intervalSelect.style.borderColor = '#d1d5db';
+            intervalSelect.style.borderColor = 'var(--gpp-g-border)';
             intervalSelect.style.boxShadow = 'none';
         };
 
@@ -1952,7 +2041,7 @@
             height: 16px;
             margin-right: 8px;
             cursor: pointer;
-            accent-color: var(--color-blue-500, #3b82f6);
+            accent-color: var(--gpp-g-accent);
         `;
 
         // Helper function to update preset selection
@@ -2032,7 +2121,7 @@
         // All snapshots checkbox
         const allOption = document.createElement('label');
         allOption.className = 'gmi-checkbox-option';
-        allOption.style.color = 'var(--color-red-500, #ef4444)';
+        allOption.style.color = 'var(--gpp-g-danger)';
         const allCheckbox = document.createElement('input');
         allCheckbox.type = 'checkbox';
         allCheckbox.style.cssText = checkboxInputStyle;
@@ -2044,18 +2133,18 @@
         allOption.onclick = (e) => {
             if (e.target === allCheckbox) updatePresetSelection('all');
         };
-        allOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--color-red-500, #ef4444)';
-        allOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'all' ? 'var(--color-red-500, #ef4444)' : 'var(--color-gray-300, #ddd)';
+        allOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--gpp-g-danger)';
+        allOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'all' ? 'var(--gpp-g-danger)' : 'var(--gpp-g-border)';
         shortcutsDiv.appendChild(allOption);
 
         // Keep daily checkbox
         const dailyOption = document.createElement('label');
         dailyOption.className = 'gmi-checkbox-option';
-        dailyOption.style.color = 'var(--color-yellow-500, #f59e0b)';
+        dailyOption.style.color = 'var(--gpp-g-warn)';
         const dailyCheckbox = document.createElement('input');
         dailyCheckbox.type = 'checkbox';
         dailyCheckbox.style.cssText = checkboxInputStyle;
-        dailyCheckbox.style.accentColor = 'var(--color-yellow-500, #f59e0b)';
+        dailyCheckbox.style.accentColor = 'var(--gpp-g-warn)';
         const dailyLabel = document.createElement('span');
         dailyLabel.textContent = 'Keep One Per Day';
         dailyLabel.style.cssText = 'user-select: none;';
@@ -2064,14 +2153,14 @@
         dailyOption.onclick = (e) => {
             if (e.target === dailyCheckbox) updatePresetSelection('daily');
         };
-        dailyOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--color-yellow-500, #f59e0b)';
-        dailyOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'daily' ? 'var(--color-yellow-500, #f59e0b)' : 'var(--color-gray-300, #ddd)';
+        dailyOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--gpp-g-warn)';
+        dailyOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'daily' ? 'var(--gpp-g-warn)' : 'var(--gpp-g-border)';
         shortcutsDiv.appendChild(dailyOption);
 
         // Keep weekly checkbox
         const weeklyOption = document.createElement('label');
         weeklyOption.className = 'gmi-checkbox-option';
-        weeklyOption.style.color = 'var(--color-blue-500, #3b82f6)';
+        weeklyOption.style.color = 'var(--gpp-g-accent)';
         const weeklyCheckbox = document.createElement('input');
         weeklyCheckbox.type = 'checkbox';
         weeklyCheckbox.style.cssText = checkboxInputStyle;
@@ -2083,18 +2172,18 @@
         weeklyOption.onclick = (e) => {
             if (e.target === weeklyCheckbox) updatePresetSelection('weekly');
         };
-        weeklyOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--color-blue-500, #3b82f6)';
-        weeklyOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'weekly' ? 'var(--color-blue-500, #3b82f6)' : 'var(--color-gray-300, #ddd)';
+        weeklyOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--gpp-g-accent)';
+        weeklyOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === 'weekly' ? 'var(--gpp-g-accent)' : 'var(--gpp-g-border)';
         shortcutsDiv.appendChild(weeklyOption);
 
         // 7+ days old checkbox
         const deleteOldOption = document.createElement('label');
         deleteOldOption.className = 'gmi-checkbox-option';
-        deleteOldOption.style.color = 'var(--color-purple-500, #8b5cf6)';
+        deleteOldOption.style.color = 'var(--gpp-g-purple)';
         const deleteOldCheckbox = document.createElement('input');
         deleteOldCheckbox.type = 'checkbox';
         deleteOldCheckbox.style.cssText = checkboxInputStyle;
-        deleteOldCheckbox.style.accentColor = 'var(--color-purple-500, #8b5cf6)';
+        deleteOldCheckbox.style.accentColor = 'var(--gpp-g-purple)';
         const deleteOldLabel = document.createElement('span');
         deleteOldLabel.textContent = 'Delete 7+ Days Old';
         deleteOldLabel.style.cssText = 'user-select: none;';
@@ -2103,8 +2192,8 @@
         deleteOldOption.onclick = (e) => {
             if (e.target === deleteOldCheckbox) updatePresetSelection('7days');
         };
-        deleteOldOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--color-purple-500, #8b5cf6)';
-        deleteOldOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === '7days' ? 'var(--color-purple-500, #8b5cf6)' : 'var(--color-gray-300, #ddd)';
+        deleteOldOption.onmouseover = (e) => e.currentTarget.style.borderColor = 'var(--gpp-g-purple)';
+        deleteOldOption.onmouseout = (e) => e.currentTarget.style.borderColor = selectedPreset === '7days' ? 'var(--gpp-g-purple)' : 'var(--gpp-g-border)';
         shortcutsDiv.appendChild(deleteOldOption);
 
         modal.appendChild(shortcutsDiv);
@@ -2122,7 +2211,7 @@
             listContainer.innerHTML = '';
             
             if (history.length === 0) {
-                listContainer.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">No snapshots available.</p>';
+                listContainer.innerHTML = '<p style="color: var(--gpp-g-muted); text-align: center; padding: 20px;">No snapshots available.</p>';
                 return;
             }
 
@@ -2143,13 +2232,13 @@
                 
                 item.className = isSelected ? 'gmi-snapshot-item selected' : 'gmi-snapshot-item';
                 if (!isSelected && useAltColor) {
-                    item.style.background = 'var(--color-gray-100, #f3f4f6)';
+                    item.style.background = 'var(--gpp-g-hover)';
                 }
 
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.checked = selectedIndices.has(idx);
-                checkbox.style.cssText = 'margin-right: 10px; cursor: pointer; accent-color: var(--color-blue-500, #3b82f6);';
+                checkbox.style.cssText = 'margin-right: 10px; cursor: pointer; accent-color: var(--gpp-g-accent);';
                 checkbox.onchange = (e) => {
                     if (e.target.checked) {
                         selectedIndices.add(idx);
@@ -2161,7 +2250,7 @@
                 item.appendChild(checkbox);
 
                 const label = document.createElement('label');
-                label.style.cssText = `flex: 1; cursor: pointer; font-size: 12px; color: ${isSelected ? 'var(--color-red-700, #991b1b)' : 'var(--color-gray-700, #374151)'}; ${isSelected ? 'text-decoration: line-through;' : ''}`;
+                label.style.cssText = `flex: 1; cursor: pointer; font-size: 12px; color: ${isSelected ? 'var(--gpp-g-danger)' : 'var(--gpp-g-text)'}; ${isSelected ? 'text-decoration: line-through;' : ''}`;
                 label.onclick = () => {
                     checkbox.checked = !checkbox.checked;
                     if (checkbox.checked) {
@@ -2177,7 +2266,7 @@
                 label.innerHTML = `
                     <span style="font-weight: bold;">${idx + 1})</span>
                     ${timestamp.toLocaleString()} 
-                    <span style="color: ${isSelected ? 'var(--color-red-600, #b91c1c)' : 'var(--color-gray-500, #6b7280)'};">(${memberCount} members)</span>
+                    <span style="color: ${isSelected ? 'var(--gpp-g-danger-hover)' : 'var(--gpp-g-muted)'};">(${memberCount} members)</span>
                 `;
                 item.appendChild(label);
 
@@ -2193,7 +2282,7 @@
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
-            border-top: 1px solid var(--color-gray-200, #e5e7eb);
+            border-top: 1px solid var(--gpp-g-divider);
             padding-top: 15px;
         `;
 
@@ -2306,7 +2395,7 @@
         const exportAllDataBtn = document.createElement('button');
         exportAllDataBtn.innerHTML = '🎨 Export All User Data';
         exportAllDataBtn.className = 'control-button';
-        exportAllDataBtn.style.color = '#a855f7';
+        exportAllDataBtn.style.color = 'var(--gpp-g-purple)';
         exportAllDataBtn.title = 'Fetch and export all guild members\' data (including colors) as JSON';
         exportAllDataBtn.onclick = async () => {
             exportAllDataBtn.disabled = true;
@@ -2320,7 +2409,7 @@
         const cleanBtn = document.createElement('button');
         cleanBtn.innerHTML = '🧹 Manage History';
         cleanBtn.className = 'control-button';
-        cleanBtn.style.color = '#ef4444';
+        cleanBtn.style.color = 'var(--gpp-g-danger)';
         cleanBtn.onclick = () => {
             renderCleanHistoryModal((newHistory) => {
                 history = newHistory;
@@ -2432,13 +2521,13 @@
         const fromSelect = document.createElement('select');
         fromSelect.style.flex = '1';
         fromSelect.style.padding = '4px';
-        fromSelect.style.border = '2px solid #3b82f6';
+        fromSelect.style.border = '2px solid var(--gpp-g-accent)';
         fromSelect.style.borderRadius = '4px';
         
         const toSelect = document.createElement('select');
         toSelect.style.flex = '1';
         toSelect.style.padding = '4px';
-        toSelect.style.border = '2px solid #3b82f6';
+        toSelect.style.border = '2px solid var(--gpp-g-accent)';
         toSelect.style.borderRadius = '4px';
 
         // Populate
@@ -2502,7 +2591,7 @@
         resultsDiv.style.flex = '1';
         resultsDiv.style.overflowY = 'auto';
         resultsDiv.style.minHeight = '0'; // Crucial for flexbox scrolling
-        resultsDiv.style.border = '1px solid #e5e7eb';
+        resultsDiv.style.border = '1px solid var(--gpp-g-divider)';
         resultsDiv.style.borderRadius = '0.5rem';
 
         const updateTable = () => {
@@ -2671,31 +2760,32 @@
                         
                         // Get colors based on quadrant and distance
                         const colors = getCoordinateColor(change.coords);
-                        coordsSpan.style.backgroundColor = colors.bg;
+                        coordsSpan.style.setProperty('--gpp-coord-h', String(colors.hue));
+                        coordsSpan.style.setProperty('--gpp-coord-i', String(colors.intensity));
                         coordsSpan.style.padding = '2px 6px';
                         coordsSpan.style.borderRadius = '3px';
                         
                         // Create styled parts
                         const openParen = document.createElement('span');
-                        openParen.style.color = colors.text;
+                        openParen.style.color = 'var(--gpp-g-text)';
                         openParen.textContent = '(';
                         
                         const xVal = document.createElement('span');
-                        xVal.style.color = colors.text;
+                        xVal.style.color = 'var(--gpp-g-text)';
                         xVal.style.fontWeight = '500';
                         xVal.textContent = change.coords[0];
                         
                         const comma = document.createElement('span');
-                        comma.style.color = colors.text;
+                        comma.style.color = 'var(--gpp-g-text)';
                         comma.textContent = ', ';
                         
                         const yVal = document.createElement('span');
-                        yVal.style.color = colors.text;
+                        yVal.style.color = 'var(--gpp-g-text)';
                         yVal.style.fontWeight = '500';
                         yVal.textContent = change.coords[1];
                         
                         const closeParen = document.createElement('span');
-                        closeParen.style.color = colors.text;
+                        closeParen.style.color = 'var(--gpp-g-text)';
                         closeParen.textContent = ')';
                         
                         coordsSpan.appendChild(openParen);
@@ -3387,7 +3477,7 @@
                 <div class="flex items-center gap-1.5">
                     <input type="range" id="territoryFillAlphaRange" min="0.01" max="1" step="0.01" value="${territorySettings.fillAlpha}"
                            class="w-20 cursor-pointer">
-                    <span id="territoryFillAlphaValue" class="text-xs min-w-[30px]" style="color: var(--color-gray-500, #6b7280);">${fillOpacityPct}%</span>
+                    <span id="territoryFillAlphaValue" class="text-xs min-w-[30px]" style="color: var(--gpp-g-muted);">${fillOpacityPct}%</span>
                 </div>
             </div>
 
@@ -3419,18 +3509,18 @@
                     <input type="color" id="territoryAbandonedFillInput" value="${territorySettings.abandonedFillColor}"
                            class="w-10 h-7 rounded-md cursor-pointer p-0.5">
                 </div>
-                <p style="font-size:11px;color:var(--color-gray-500,#6b7280);margin:0;">
+                <p style="font-size:11px;color:var(--gpp-g-muted);margin:0;">
                     Active = guild members drawing inside. Abandoned = no members inside.
                 </p>
             </div>
 
             <div class="territory-section-divider">Preview</div>
             <div id="territoryPreviewContainer" class="flex items-center justify-center gap-2.5 py-1">
-                <div id="territoryPreviewBox" style="width: 70px; height: 44px; border: ${territorySettings.borderThickness}px solid ${territorySettings.colorByActivity ? territorySettings.activeBorderColor : territorySettings.borderColor}; border-radius: 2px; position: relative; display: flex; align-items: flex-start; justify-content: flex-start; padding: 2px; background: var(--color-white, #fff);">
+                <div id="territoryPreviewBox" style="width: 70px; height: 44px; border: ${territorySettings.borderThickness}px solid ${territorySettings.colorByActivity ? territorySettings.activeBorderColor : territorySettings.borderColor}; border-radius: 2px; position: relative; display: flex; align-items: flex-start; justify-content: flex-start; padding: 2px; background: var(--gpp-g-panel);">
                     <div id="territoryPreviewFill" style="position: absolute; inset: 0; background: ${territorySettings.colorByActivity ? territorySettings.activeFillColor : territorySettings.fillColor}; opacity: ${territorySettings.showFill ? territorySettings.fillAlpha : 0}; border-radius: 1px;"></div>
                     <span style="font-size: ${territorySettings.labelFontSize}px; font-weight: bold; color: ${territorySettings.colorByActivity ? territorySettings.activeBorderColor : territorySettings.borderColor}; position: relative; z-index: 1;">${territorySettings.colorByActivity ? 'Active' : '#1'}</span>
                 </div>
-                <div id="territoryPreviewBoxAbandoned" style="width: 70px; height: 44px; border: ${territorySettings.borderThickness}px solid ${territorySettings.abandonedBorderColor}; border-radius: 2px; position: relative; display: ${territorySettings.colorByActivity ? 'flex' : 'none'}; align-items: flex-start; justify-content: flex-start; padding: 2px; background: var(--color-white, #fff);">
+                <div id="territoryPreviewBoxAbandoned" style="width: 70px; height: 44px; border: ${territorySettings.borderThickness}px solid ${territorySettings.abandonedBorderColor}; border-radius: 2px; position: relative; display: ${territorySettings.colorByActivity ? 'flex' : 'none'}; align-items: flex-start; justify-content: flex-start; padding: 2px; background: var(--gpp-g-panel);">
                     <div id="territoryPreviewFillAbandoned" style="position: absolute; inset: 0; background: ${territorySettings.abandonedFillColor}; opacity: ${territorySettings.showFill ? territorySettings.fillAlpha : 0}; border-radius: 1px;"></div>
                     <span style="font-size: ${territorySettings.labelFontSize}px; font-weight: bold; color: ${territorySettings.abandonedBorderColor}; position: relative; z-index: 1;">Done</span>
                 </div>
@@ -3454,11 +3544,11 @@
         inactiveAfterInput.min = '1';
         inactiveAfterInput.step = '1';
         inactiveAfterInput.value = String(playerSettings.inactiveAfterDays);
-        inactiveAfterInput.className = 'w-20 px-2 py-1 rounded-md text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100';
+        inactiveAfterInput.className = 'gpp-guild-input w-20 px-2 py-1 rounded-md text-xs';
 
         const daysLabel = document.createElement('span');
         daysLabel.textContent = 'days';
-        daysLabel.className = 'text-xs text-gray-500 dark:text-gray-400';
+        daysLabel.className = 'gpp-guild-muted text-xs';
         activityControls.append(inactiveAfterInput, daysLabel);
         activitySettings.append(activityLabel, activityControls);
 
@@ -3618,8 +3708,8 @@
                 position: absolute;
                 top: 6px;
                 left: 6px;
-                background: var(--color-blue-500, #3b82f6);
-                color: var(--color-white, #fff);
+                background: var(--gpp-g-accent);
+                color: var(--gpp-g-on-accent);
                 font-size: 11px;
                 font-weight: 700;
                 padding: 2px 7px;
@@ -4100,14 +4190,14 @@
                         <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="${playerSettings.defaultColor}"/>
                         <circle cx="12" cy="11" r="4.5" fill="white"/>
                     </svg>
-                    <span style="font-size:10px;color:var(--color-gray-500,#6b7280);">Outside</span>
+                    <span style="font-size:10px;color:var(--gpp-g-muted);">Outside</span>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
                     <svg id="playerPreviewTerritory" xmlns="http://www.w3.org/2000/svg" width="${playerSettings.markerSize}" height="${Math.round(playerSettings.markerSize*40/28)}" viewBox="0 0 24 36">
                         <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="${playerSettings.territoryColor}"/>
                         <circle cx="12" cy="11" r="4.5" fill="white"/>
                     </svg>
-                    <span style="font-size:10px;color:var(--color-gray-500,#6b7280);">In Territory</span>
+                    <span style="font-size:10px;color:var(--gpp-g-muted);">In Territory</span>
                 </div>
             </div>
         `;
@@ -4366,14 +4456,14 @@
         container.id = 'guild-loading-bar-container';
         container.style.cssText = `
             position: absolute; top: 40px; left: 0; right: 0; height: 3px;
-            background: rgba(0,0,0,0.1); z-index: 52; overflow: hidden;
+            background: var(--gpp-g-divider); z-index: 52; overflow: hidden;
             transition: opacity 0.5s ease; cursor: pointer;
         `;
 
         const bar = document.createElement('div');
         bar.id = 'guild-loading-bar';
         bar.style.cssText = `
-            height: 100%; width: 0%; background: linear-gradient(90deg, #60a5fa, #3b82f6);
+            height: 100%; width: 0%; background: var(--gpp-g-accent);
             transition: width 0.4s ease; border-radius: 0 2px 2px 0;
             pointer-events: none;
         `;
@@ -4384,7 +4474,8 @@
         tooltip.id = 'guild-loading-tooltip';
         tooltip.style.cssText = `
             position: fixed; display: none; padding: 6px 10px;
-            background: ${isDarkMode() ? '#1e1e2e' : '#1f2937'}; color: #f3f4f6;
+            background: var(--gpp-g-tooltip); color: var(--gpp-g-tooltip-text);
+            border: 1px solid var(--gpp-g-border);
             font-size: 11px; line-height: 1.5; border-radius: 6px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3); pointer-events: none;
             z-index: 100000; white-space: nowrap;
@@ -4513,10 +4604,9 @@
             headerBar.className = 'guild-modal-header';
             headerBar.style.cssText = `
                 position: absolute; top: 0; left: 0; right: 0; height: 40px;
-                background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
                 cursor: move; border-radius: 0.75rem 0.75rem 0 0;
                 display: flex; align-items: center; justify-content: space-between;
-                padding: 0 16px; color: white; font-weight: 600;
+                padding: 0 16px;
                 user-select: none; z-index: 50; pointer-events: auto;
             `;
             
@@ -4527,13 +4617,10 @@
             const closeBtn = document.createElement('button');
             closeBtn.textContent = '✕';
             closeBtn.style.cssText = `
-                background: none; border: none; color: white; font-size: 24px;
                 cursor: pointer; padding: 0; margin: 0;
                 display: flex; align-items: center; justify-content: center;
                 width: 30px; height: 30px; border-radius: 4px; transition: background-color 0.2s;
             `;
-            closeBtn.onmouseover = () => closeBtn.style.backgroundColor = 'rgba(255,255,255,0.2)';
-            closeBtn.onmouseout = () => closeBtn.style.backgroundColor = 'transparent';
             closeBtn.onclick = (e) => {
                 e.stopPropagation();
                 if (typeof window.toggleMyGuildModal === 'function') {
@@ -4553,7 +4640,6 @@
             resizeHandle.style.cssText = `
                 position: absolute; bottom: 0; right: 0; width: 32px; height: 32px;
                 cursor: nwse-resize; touch-action: none;
-                background: linear-gradient(135deg, transparent 0%, #3b82f6 100%);
                 border-radius: 0 0 0.75rem 0; z-index: 51; pointer-events: auto;
             `;
 
@@ -4581,10 +4667,15 @@
                 const vp = guildPanelViewport();
                 fitGuildPanel(panel, (vp.width - panel.offsetWidth) / 2, guildPanelTop(vp));
             };
+            // Opening the panel re-reads the GeoPixels++ theme and restarts the live theme watch.
             const _visibilityObserver = new MutationObserver(() => {
-                if (!modal.classList.contains('hidden')) _centerPanel();
+                if (modal.classList.contains('hidden')) return;
+                gpcGuildInjectStyle();
+                gpcGuildStartThemeWatch();
+                _centerPanel();
             });
             _visibilityObserver.observe(modal, { attributes: true, attributeFilter: ['class'] });
+            gpcGuildStartThemeWatch();
 
             // Keep the open panel on screen when the viewport, orientation or on-screen keyboard changes.
             const _refitPanel = () => {
