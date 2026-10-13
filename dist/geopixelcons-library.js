@@ -26119,24 +26119,33 @@ patch();
 
         let isDragging = false;
         let dragMode = null;    // 'paint' | 'erase'
+        let dragPointerId = null;
 
-        grid.addEventListener('mousedown', (e) => {
+        // Pointer Events cover mouse, pen and touch. Mouse keeps its buttons
+        // (left = paint, right = erase). Touch has no right button, so the
+        // first cell decides the stroke: an inactive cell paints, an active
+        // cell erases. A plain tap therefore toggles the cell.
+        grid.style.touchAction = 'none'; // Finger drags paint instead of scrolling
+
+        grid.addEventListener('pointerdown', (e) => {
             const cell = e.target.closest('[data-x][data-y]');
             if (!cell) return;
-            e.preventDefault(); // Prevent text selection
-            if (e.button === 0) {
-                dragMode = 'paint';
-                isDragging = true;
-                setCellActive(cell, true); // Immediately activate on mousedown
-            } else if (e.button === 2) {
-                dragMode = 'erase';
-                isDragging = true;
-                setCellActive(cell, false); // Right-click immediately erases
+            e.preventDefault(); // Prevent text selection and compat mouse events
+            if (e.pointerType === 'mouse') {
+                if (e.button === 0) dragMode = 'paint';
+                else if (e.button === 2) dragMode = 'erase';
+                else return;
+            } else {
+                dragMode = cell.dataset.active === 'true' ? 'erase' : 'paint';
+                try { grid.setPointerCapture(e.pointerId); } catch (_) { /* synthetic events have no active pointer */ }
             }
+            isDragging = true;
+            dragPointerId = e.pointerId;
+            setCellActive(cell, dragMode === 'paint'); // Immediately apply on pointerdown
         });
 
-        grid.addEventListener('mousemove', (e) => {
-            if (!isDragging || !dragMode) return;
+        grid.addEventListener('pointermove', (e) => {
+            if (!isDragging || e.pointerId !== dragPointerId) return;
             const el = document.elementFromPoint(e.clientX, e.clientY);
             const cell = el ? el.closest('[data-x][data-y]') : null;
             if (!cell) return;
@@ -26147,10 +26156,14 @@ patch();
             e.preventDefault(); // Suppress right-click context menu on the grid
         });
 
-        document.addEventListener('mouseup', () => {
+        function endGridDrag(e) {
+            if (!isDragging || e.pointerId !== dragPointerId) return;
             isDragging = false;
             dragMode = null;
-        });
+            dragPointerId = null;
+        }
+        document.addEventListener('pointerup', endGridDrag);
+        document.addEventListener('pointercancel', endGridDrag);
     }
 
     // ============================================
@@ -26221,9 +26234,11 @@ patch();
     // ============================================
 
     function setupDragReorder(handle, itemEl, fromIdx, container) {
-        handle.addEventListener('mousedown', (e) => {
+        handle.style.touchAction = 'none'; // Finger drags reorder instead of scrolling
+        handle.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            const pointerId = e.pointerId;
 
             const items = Array.from(container.querySelectorAll('[data-brush-idx]'));
             const rects = items.map(el => el.getBoundingClientRect());
@@ -26235,6 +26250,7 @@ patch();
             let indicator = container.querySelector('.brush-swap-drop-indicator');
 
             function onMove(ev) {
+                if (ev.pointerId !== pointerId) return;
                 const y = ev.clientY;
 
                 // Find which slot we're hovering
@@ -26262,9 +26278,11 @@ patch();
                 }
             }
 
-            function onUp() {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
+            function onUp(ev) {
+                if (ev.pointerId !== pointerId) return;
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+                document.removeEventListener('pointercancel', onUp);
                 itemEl.classList.remove('brush-swap-item-dragging');
                 if (indicator) indicator.remove();
 
@@ -26281,8 +26299,9 @@ patch();
                 renderDropdown();
             }
 
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
+            document.addEventListener('pointermove', onMove);
+            document.addEventListener('pointerup', onUp);
+            document.addEventListener('pointercancel', onUp);
         });
     }
 
@@ -27181,6 +27200,21 @@ patch();
                 bottom: 2px; right: 2px;
                 border-width: 0 2px 2px 0;
             }
+            /* Touch screens: no hover, so keep the grips visible and large enough to hit */
+            @media (pointer: coarse) {
+                .brush-swap-resize-handle {
+                    width: 32px;
+                    height: 32px;
+                    opacity: 0.5;
+                }
+                .brush-swap-resize-handle::after {
+                    width: 12px;
+                    height: 12px;
+                }
+                .brush-swap-drag-handle {
+                    width: 28px;
+                }
+            }
 
             /* Export/Import footer */
             .brush-swap-footer {
@@ -27355,9 +27389,11 @@ patch();
         }
 
         function setupResize(handle) {
-            handle.addEventListener('mousedown', (e) => {
+            handle.style.touchAction = 'none'; // Finger drags resize instead of scrolling
+            handle.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                const pointerId = e.pointerId;
                 const startX = e.clientX;
                 const startY = e.clientY;
                 const rect = dropdown.getBoundingClientRect();
@@ -27368,6 +27404,7 @@ patch();
                 dropdown.classList.add('brush-swap-resizing');
 
                 const onMove = (ev) => {
+                    if (ev.pointerId !== pointerId) return;
                     const dx = ev.clientX - startX;
                     const dy = ev.clientY - startY;
                     // Top-right: drag up = taller. Bottom-right: drag down = taller.
@@ -27378,18 +27415,21 @@ patch();
                     dropdown.style.maxHeight = newH + 'px';
                 };
 
-                const onUp = () => {
+                const onUp = (ev) => {
+                    if (ev.pointerId !== pointerId) return;
                     dropdown.style.userSelect = '';
                     dropdown.classList.remove('brush-swap-resizing');
-                    document.removeEventListener('mousemove', onMove, true);
-                    document.removeEventListener('mouseup', onUp, true);
+                    document.removeEventListener('pointermove', onMove, true);
+                    document.removeEventListener('pointerup', onUp, true);
+                    document.removeEventListener('pointercancel', onUp, true);
                     const r = dropdown.getBoundingClientRect();
                     storedSize = { w: Math.round(r.width), h: Math.round(r.height) };
                     localStorage.setItem(RESIZE_STORAGE_KEY, JSON.stringify(storedSize));
                 };
 
-                document.addEventListener('mousemove', onMove, true);
-                document.addEventListener('mouseup', onUp, true);
+                document.addEventListener('pointermove', onMove, true);
+                document.addEventListener('pointerup', onUp, true);
+                document.addEventListener('pointercancel', onUp, true);
             });
         }
 
