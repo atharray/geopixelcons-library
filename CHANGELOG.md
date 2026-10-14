@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.20.0](https://github.com/atharray/geopixelcons-library/compare/v2.19.1...v2.20.0) (2026-10-13)
+
+
+### Features
+
+* mobile and touch fixes ([#76](https://github.com/atharray/geopixelcons-library/issues/76)-[#85](https://github.com/atharray/geopixelcons-library/issues/85), [#93](https://github.com/atharray/geopixelcons-library/issues/93)) ([#98](https://github.com/atharray/geopixelcons-library/issues/98)) ([4183962](https://github.com/atharray/geopixelcons-library/commit/4183962e2572cafa0911cbc58b7f7153e0488268))
+
 ## [2.19.1](https://github.com/atharray/geopixelcons-library/compare/v2.19.0...v2.19.1) (2026-10-08)
 
 
